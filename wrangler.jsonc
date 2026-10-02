@@ -1,0 +1,17 @@
+{
+  // Personal Cloudflare account (Chad, 2026-10-02).
+  "name": "cover-generator",
+  "account_id": "b750d0f7242bbc76f115f72840453083",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  // Copies core/ into public/core/ so the browser and the Worker run the SAME keyer/prompt code.
+  "build": { "command": "node scripts/copy-core.mjs" },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/img/*"]
+  },
+  "r2_buckets": [{ "binding": "COVERS", "bucket_name": "cover-generator" }],
+  "observability": { "enabled": true }
+  // Secrets (wrangler secret put): GEMINI_API_KEY, PASSCODE. Optional var: GEMINI_MODEL.
+}
