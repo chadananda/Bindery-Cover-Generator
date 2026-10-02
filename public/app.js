@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=5';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=6';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -50,9 +50,10 @@ const insert = (table, rows) => persist(() => api(`${base()}/${table}`, { method
 const remove = (table, ids) => persist(() => api(`${base()}/${table}`, { method: 'DELETE', body: JSON.stringify({ ids }) }));
 
 // ---------------------------------------------------------------- theme (covers must read on dark AND light)
-const setTheme = (t) => { document.documentElement.dataset.theme = t; store.set('theme', t); };
-setTheme(store.get('theme', 'dark'));
-$('theme-btn').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+// Light by default: dark leather covers need a light wall to be seen. Dark is for checking transparency.
+const setTheme = (t) => { document.documentElement.dataset.theme = t; };
+setTheme(store.get('theme-choice', 'light'));
+$('theme-btn').addEventListener('click', () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; setTheme(t); store.set('theme-choice', t); });
 
 // ---------------------------------------------------------------- login / libraries
 function showLogin() { if (!$('login').open) $('login').showModal(); $('login-pass').focus(); }
