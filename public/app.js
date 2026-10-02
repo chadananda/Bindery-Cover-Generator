@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=19';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=20';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -641,7 +641,8 @@ function renderManager() {
   $('im-strip').innerHTML = [...vers].reverse().map((x) => `<button type="button" class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : x.prompt.slice(0, 200))}">
       ${pic(x.cover || x.raw, '', '84px', [160, 240], false, x)}
       <span class="ver-lab">${esc(verLabel(x))}${x.cover ? '' : ' · raw'}</span>
-      <span class="ver-date">${new Date(x.at).toLocaleDateString()}</span></button>`).join('');
+      <span class="ver-date">${new Date(x.at).toLocaleDateString()}</span>
+      ${x.edit !== 'current site cover' ? `<span class="ver-del" role="button" tabindex="0" data-delver="${x.id}" data-write title="Delete this version (and its images)" aria-label="Delete version">×</span>` : ''}</button>`).join('');
 }
 // Field edits persist as you type (they live on the book).
 const imFields = { 'im-content': 'content', 'im-style': 'style', 'im-t': 'title', 'im-sub': 'subtitle', 'im-by': 'author' };
@@ -658,6 +659,17 @@ $('imgmgr').addEventListener('click', async (e) => {
   const b = imBook(); if (!b) return;
   const bd = e.target.closest('[data-bd]');
   if (bd) { store.set('backdrop', bd.dataset.bd); renderManager(); return; }
+  const del = e.target.closest('[data-delver]');
+  if (del && authed) {
+    e.stopPropagation();
+    if (!confirm('Delete this version? Its images are removed; this can\'t be undone.')) return;
+    const id = del.dataset.delver;
+    try { await remove('versions', [id]); } catch (err) { imStatus(err.message, 'err'); return; }
+    b.versions = b.versions.filter((x) => x.id !== id);
+    if (b.selected === id) { b.selected = b.versions.at(-1)?.id || null; patch('books', b.id, { selected: b.selected }); }
+    renderManager(); renderCard(b.id); imStatus('Version deleted', 'ok');
+    return;
+  }
   const ver = e.target.closest('[data-ver]');
   if (ver && authed) { b.selected = ver.dataset.ver; patch('books', b.id, { selected: b.selected }); renderManager(); renderCard(b.id); imStatus('Now the current cover ✓', 'ok'); return; }
   const act = e.target.closest('[data-act]')?.dataset.act;

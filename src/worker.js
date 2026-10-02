@@ -1,7 +1,7 @@
 // Bindery Worker. Public read, passcode (cookie) for writes, Gemini proxy (key never leaves the server), D1 for data + prompts
 // (src/store.js), R2 for images only. Static UI is served from public/; this handles /api/* and /img/*.
 // R2 layout: sets/<lib>/raw/<book>/<ts>.png · sets/<lib>/covers/<book>/<ts>.png · fx/v<N>/<key>/<recipe> (resized
-// renditions, generate-once). Nothing is ever deleted from R2.
+// renditions, generate-once). Only a deleted generated version's own images are ever removed from R2.
 import { generateImage } from '../core/gemini.js';
 import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
@@ -169,7 +169,13 @@ export default {
       // tables and columns, and refuses to delete history (versions, looks).
       if (part && req.method === 'POST' && !id) { const { rows = [] } = await body(); return json({ ok: true, inserted: await insertRows(env.DB, lib, part, rows) }); }
       if (part && req.method === 'PATCH' && id) return json({ ok: true, changed: await patchRow(env.DB, lib, part, id, await body()) });
-      if (part && req.method === 'DELETE' && !id) { const { ids = [] } = await body(); return json({ ok: true, deleted: await deleteRows(env.DB, lib, part, ids.filter((x) => ID.test(x))) }); }
+      if (part && req.method === 'DELETE' && !id) {
+        const { ids = [] } = await body();
+        const r = await deleteRows(env.DB, lib, part, ids.filter((x) => ID.test(x)));
+        // Deleted versions: remove their images from R2 unless another version still uses them.
+        if (part === 'versions') { const keys = r.orphanKeys.filter((k) => KEY.test(k) && k.startsWith(`sets/${lib}/`)); if (keys.length) await env.COVERS.delete(keys); return json({ ok: true, deleted: r.deleted, removed: keys.length }); }
+        return json({ ok: true, deleted: r });
+      }
       return fail(404, 'No such route');
     } catch (e) {
       return fail(/Unknown table|can't be deleted|Use createLibrary/.test(e.message) ? 400 : 500, String(e.message || e));

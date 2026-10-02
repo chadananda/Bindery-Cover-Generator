@@ -1,7 +1,7 @@
 // D1 data layer. Rows ↔ the client's project object ({app, shelves, collections, books[+versions], looks}).
 // Column whitelists per table guard every write; every query is scoped by lib. Order = insertion (rowid).
-// History is append-only: versions and looks can't be deleted and their content can't change (a version's pixel
-// size w/h is patchable metadata); deleting a book keeps its versions.
+// Looks are append-only. Versions can't be edited (w/h size is patchable metadata); generated versions can be deleted
+// (failed iterations), site covers never. Deleting a book keeps its versions.
 const COLS = {
   libraries: ['name', 'style', 'keyColor', 'lookId'],
   shelves: ['id', 'name', 'style'],
@@ -68,8 +68,20 @@ export async function patchRow(db, lib, table, id, fields) {
   return r.meta.changes;
 }
 
-/** Delete shelves, collections or books. Shelves/collections are unassigned from whatever used them. */
+/** Delete generated versions (iteration failures). Site covers — the imported originals — are protected. Returns the
+ *  R2 keys no remaining version uses, for the caller to delete (a re-key shares its raw with the version it came from). */
+async function deleteVersions(db, lib, ids) {
+  const rows = (await Promise.all(ids.map((id) => db.prepare('SELECT * FROM versions WHERE lib = ? AND id = ?').bind(lib, id).first()))).filter(Boolean);
+  if (rows.some((v) => v.edit === 'current site cover')) throw new Error("A site cover is the original and can't be deleted");
+  if (rows.length) await db.batch(rows.map((v) => db.prepare('DELETE FROM versions WHERE lib = ? AND id = ?').bind(lib, v.id)));
+  const keys = [...new Set(rows.flatMap((v) => [v.raw, v.cover]).filter(Boolean))];
+  const still = await Promise.all(keys.map((k) => db.prepare('SELECT 1 FROM versions WHERE lib = ? AND (raw = ? OR cover = ?) LIMIT 1').bind(lib, k, k).first()));
+  return { deleted: rows.length, orphanKeys: keys.filter((_, i) => !still[i]) };
+}
+
+/** Delete shelves, collections or books (shelves/collections are unassigned from whatever used them), or versions. */
 export async function deleteRows(db, lib, table, ids) {
+  if (table === 'versions') return deleteVersions(db, lib, ids);
   if (!DELETABLE.has(table)) throw new Error(`${table} is history and can't be deleted`);
   const stmts = ids.flatMap((id) => [
     db.prepare(`DELETE FROM ${table} WHERE lib = ? AND id = ?`).bind(lib, id),

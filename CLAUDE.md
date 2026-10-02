@@ -17,7 +17,8 @@ Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read;
 - Do NOT bulk-generate until Chad has dialled in the prompts (each generation is paid). Tune on single covers.
 - Bump `?v=N` on styles.css/app.js/core import in public/ when shipping UI changes (cache).
 - Local dev: `npm run dev` → http://localhost:8788, on LIVE D1 + R2 (remote bindings). .dev.vars holds GEMINI_API_KEY + ADMIN_PASSWORD; never commit it.
-- Never delete covers or versions: history is how looks are compared. No R2 deletes anywhere.
+- Keep history: site covers (imported originals) and looks are never deleted. Generated versions CAN be deleted
+  (failed iterations) — store.deleteVersions removes the row + its R2 images unless another version shares them.
 - Every <svg>/<img> carries width/height attributes (stale cached CSS must not break layout).
 - `scripts/backfill-covers.mjs` (site covers → versions), `scripts/image-maintenance.mjs dims|warm` (sizes; pre-render).
 - Shell: fnm isn't initialised in non-interactive shells; prefix PATH with ~/.local/share/fnm/node-versions/v25.9.0/installation/bin and avoid `cd` into the repo (fnm hook errors).

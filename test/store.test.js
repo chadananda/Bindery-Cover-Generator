@@ -53,8 +53,18 @@ describe('store', () => {
     expect((await loadLibrary(db, 'ocean')).looks.map((l) => [l.id, l.styles.app])).toEqual([['L2', 'b'], ['L1', 'a']]);
   });
 
-  it('never deletes versions or looks', async () => {
-    await expect(deleteRows(db, 'ocean', 'versions', ['v1'])).rejects.toThrow();
+  it('deletes generated versions (iteration failures) but never site covers or looks', async () => {
+    await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'A' }]);
+    await insertRows(db, 'ocean', 'versions', [
+      { id: 'site', bookId: 'b1', cover: 's.png', edit: 'current site cover', at: 1 },
+      { id: 'gen', bookId: 'b1', raw: 'r.png', cover: 'g.png', at: 2 },
+      { id: 'rekey', bookId: 'b1', raw: 'r.png', cover: 'g2.png', at: 3 },
+    ]);
+    await expect(deleteRows(db, 'ocean', 'versions', ['site'])).rejects.toThrow(/site cover/);
+    // the shared raw stays (the re-key still uses it); the generated cover goes
+    expect(await deleteRows(db, 'ocean', 'versions', ['gen'])).toEqual({ deleted: 1, orphanKeys: ['g.png'] });
+    expect((await loadLibrary(db, 'ocean')).books[0].versions.map((v) => v.id)).toEqual(['site', 'rekey']);
+    expect(await deleteRows(db, 'ocean', 'versions', ['rekey'])).toEqual({ deleted: 1, orphanKeys: ['r.png', 'g2.png'] });
     await expect(deleteRows(db, 'ocean', 'looks', ['L1'])).rejects.toThrow();
     await insertRows(db, 'ocean', 'versions', [{ id: 'v1', bookId: 'b1', cover: 'k', at: 1 }]);
     expect(await patchRow(db, 'ocean', 'versions', 'v1', { cover: 'x' })).toBe(0); // history: image keys never change
