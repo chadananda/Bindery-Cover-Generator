@@ -8,7 +8,7 @@ each collection), and generate. Every cover comes back as a transparent PNG you 
 alongside the exact prompt that made it, so any single cover can be regenerated later.
 
 **Live demo: [bindery.lnker.com](https://bindery.lnker.com)**
-*(anyone can browse; adding, editing and generating need the passcode, because every generation spends Gemini credit; ask Chad for it)*
+*(anyone can browse; adding, editing and generating need the admin password, because every generation spends Gemini credit; ask Chad for it)*
 
 ![The Bindery: house style and bookshelf styles on the left, the library on walnut shelves](docs/3-app.jpg)
 
@@ -179,7 +179,7 @@ has a Node example.
 ```sh
 npm install
 npm test                          # 51 tests: keyer, prompts, CSV, Gemini client, looks, D1 store
-cp .dev.vars.example .dev.vars    # add GEMINI_API_KEY and a PASSCODE
+cp .dev.vars.example .dev.vars    # add GEMINI_API_KEY and ADMIN_PASSWORD (the one password, dev and prod)
 npm run dev                       # http://localhost:8788 (pinned) on the LIVE D1 + R2
 ```
 
@@ -202,9 +202,11 @@ The demo runs on Chad's personal Cloudflare account (`account_id` in [`wrangler.
 ```sh
 npx wrangler r2 bucket create cover-generator
 npx wrangler d1 create bindery
-npx wrangler secret put GEMINI_API_KEY
-npx wrangler secret put PASSCODE
+npm run secrets                   # copies ADMIN_PASSWORD + GEMINI_API_KEY from .dev.vars to production
 ```
+
+The password lives only in `.dev.vars`. Cloudflare secrets can't be read back, so after changing it there,
+run `npm run secrets` again.
 
 `npm run deploy` copies `core/` into `public/core/`, applies any new D1 migrations, then deploys.
 

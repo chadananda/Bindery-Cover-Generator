@@ -36,8 +36,8 @@ function bytesToB64(bytes) {
 }
 
 async function authed(req, env) {
-  if (!env.PASSCODE) return false; // fail closed: no passcode configured means nobody gets in
-  return same(cookieOf(req), await sha256(env.PASSCODE));
+  if (!env.ADMIN_PASSWORD) return false; // fail closed: no ADMIN_PASSWORD configured means nobody gets in
+  return same(cookieOf(req), await sha256(env.ADMIN_PASSWORD));
 }
 
 export default {
@@ -48,8 +48,8 @@ export default {
 
     if (path === '/api/login' && req.method === 'POST') {
       const { passcode = '' } = await body();
-      if (!env.PASSCODE || !same(await sha256(passcode), await sha256(env.PASSCODE))) return fail(401, 'Wrong passcode');
-      const token = await sha256(env.PASSCODE);
+      if (!env.ADMIN_PASSWORD || !same(await sha256(passcode), await sha256(env.ADMIN_PASSWORD))) return fail(401, 'Wrong passcode');
+      const token = await sha256(env.ADMIN_PASSWORD);
       return json({ ok: true }, 200, { 'set-cookie': `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000` });
     }
     if (path === '/api/logout') {

@@ -8,7 +8,8 @@
     "build": "node scripts/copy-core.mjs",
     "dev": "node scripts/copy-core.mjs && wrangler dev",
     "deploy": "node scripts/copy-core.mjs && wrangler d1 migrations apply bindery --remote && wrangler deploy",
-    "test": "vitest run"
+    "test": "vitest run",
+    "secrets": "node scripts/sync-secrets.mjs"
   },
   "devDependencies": {
     "vitest": "^3.2.4",

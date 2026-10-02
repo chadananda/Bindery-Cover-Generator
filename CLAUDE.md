@@ -1,6 +1,6 @@
 # Bindery Cover Generator
 Book-cover PoC: Gemini art on magenta → chroma key → transparent PNG. Cloudflare Worker + D1 (data, prompts) + R2 (images only).
-Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read; writes need the passcode. Production secret PASSCODE = the PASSCODE in .dev.vars — keep them identical (secrets are write-only; set with `printf %s "$PASS" | wrangler secret put PASSCODE`). Clean paths /<lib>/<shelf-slug> (SPA fallback). Repo public: chadananda/Bindery-Cover-Generator. Worker + R2 bucket keep the name `cover-generator`.
+Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read; writes need ADMIN_PASSWORD. It lives ONLY in .dev.vars (dev and prod share data, so one password); `npm run secrets` copies it + GEMINI_API_KEY to production (Cloudflare secrets are write-only). Clean paths /<lib>/<shelf-slug> (SPA fallback). Repo public: chadananda/Bindery-Cover-Generator. Worker + R2 bucket keep the name `cover-generator`.
 
 ## Layout
 - `core/` — ALL cover logic, zero deps, runs in browser/Worker/Node. Edit here; `public/core/` is a generated copy.
@@ -16,7 +16,7 @@ Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read;
 - Cloudflare: Chad's PERSONAL account (b750d0f7…). Export CLOUDFLARE_ACCOUNT_ID if wrangler asks which account.
 - Do NOT bulk-generate until Chad has dialled in the prompts (each generation is paid). Tune on single covers.
 - Bump `?v=N` on styles.css/app.js/core import in public/ when shipping UI changes (cache).
-- Local dev: `npm run dev` → http://localhost:8788, on LIVE D1 + R2 (remote bindings). .dev.vars holds GEMINI_API_KEY + PASSCODE; never commit it.
+- Local dev: `npm run dev` → http://localhost:8788, on LIVE D1 + R2 (remote bindings). .dev.vars holds GEMINI_API_KEY + ADMIN_PASSWORD; never commit it.
 - Never delete covers or versions: history is how looks are compared. No R2 deletes anywhere.
 - Every <svg>/<img> carries width/height attributes (stale cached CSS must not break layout).
 - `scripts/backfill-covers.mjs` (site covers → versions), `scripts/image-maintenance.mjs dims|warm` (sizes; pre-render).
