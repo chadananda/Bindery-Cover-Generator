@@ -436,3 +436,7 @@ body.dock-chat .card .book { cursor: copy; }
 .tray-head b { font: 700 19px var(--display); color: var(--ink); }
 .tray-head .btn { margin-left: auto; }
 .tray-grid { display: grid; grid-template-columns: repeat(auto-fill, var(--col)); gap: 1.7rem 1.4rem; }
+
+/* New-version notice (an open tab keeps running old code after a deploy). */
+.update-bar { position: fixed; top: calc(var(--libbar-h) + .6rem); left: 50%; transform: translateX(-50%); z-index: 70; display: flex; align-items: center; gap: .8rem;
+  padding: .55rem .6rem .55rem 1.1rem; border-radius: 999px; font: 600 14px var(--sans); color: var(--ink); background: var(--panel); border: 1px solid var(--accent); box-shadow: 0 14px 34px -12px var(--shadow); }

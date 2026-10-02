@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=15';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=16';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -813,6 +813,19 @@ $('chat-body').addEventListener('click', (e) => {
     renderChat(); generate(books);
   }
 });
+
+// ---------------------------------------------------------------- new-version notice
+// The page is a single load: an open tab keeps running old code after a deploy. Compare the app.js version this page
+// loaded with the one the live index.html points at; offer a reload when they differ.
+const loadedV = new URL(import.meta.url).searchParams.get('v');
+async function checkVersion() {
+  try {
+    const live = (await (await fetch('/', { cache: 'no-store' })).text()).match(/app\.js\?v=(\d+)/)?.[1];
+    if (live && loadedV && live !== loadedV && !$('update-bar')) document.body.insertAdjacentHTML('beforeend', `<div class="update-bar" id="update-bar" role="status">A newer version of Bindery is available. <button type="button" class="btn small gold" onclick="location.reload()">Reload</button></div>`);
+  } catch {}
+}
+setInterval(checkVersion, 5 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
 
 // Keep the shelf headers just under the library bar, whatever height it wraps to.
 new ResizeObserver(([e]) => document.documentElement.style.setProperty('--libbar-h', `${e.target.offsetHeight}px`)).observe($('libbar'));
