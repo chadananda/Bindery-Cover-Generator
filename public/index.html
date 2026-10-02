@@ -47,6 +47,9 @@
     </nav>
   </header>
 
+  <!-- Shadow lift for the Adjust preview (CSS has no gamma filter); exponent set from the Shadows slider. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="adj-gamma" color-interpolation-filters="sRGB"><feComponentTransfer>
+    <feFuncR type="gamma" exponent="1" /><feFuncG type="gamma" exponent="1" /><feFuncB type="gamma" exponent="1" /></feComponentTransfer></filter></svg>
   <main id="app" class="shelves" hidden></main>
   <p id="empty" class="empty" hidden>This library is empty. Use <b>+ Books</b> to paste a CSV or add one.</p>
 
@@ -161,8 +164,9 @@
       <details class="adjust" id="im-adjust">
         <summary>Adjust <small>· brightness, contrast, colour — free, instant, saved as a new version</small></summary>
         <div class="sliders">
-          <label><span>Brightness</span><input type="range" min="60" max="140" value="100" data-adj="brightness" /><output>100</output></label>
-          <label><span>Contrast</span><input type="range" min="60" max="160" value="100" data-adj="contrast" /><output>100</output></label>
+          <label><span>Shadows</span><input type="range" min="0" max="100" value="0" data-adj="gamma" title="Lift the dark tones (dark leather) without blowing out the light ones" /><output>0</output></label>
+          <label><span>Brightness</span><input type="range" min="50" max="250" value="100" data-adj="brightness" /><output>100</output></label>
+          <label><span>Contrast</span><input type="range" min="50" max="200" value="100" data-adj="contrast" /><output>100</output></label>
           <label><span>Saturation</span><input type="range" min="0" max="200" value="100" data-adj="saturate" /><output>100</output></label>
           <label><span>Warmth</span><input type="range" min="0" max="50" value="0" data-adj="sepia" /><output>0</output></label>
         </div>
@@ -237,6 +241,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=23"></script>
+  <script type="module" src="/app.js?v=24"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=23';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=24';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -623,15 +623,21 @@ function openManager(bookId) {
 }
 // ---- Adjust: brightness/contrast/saturation/warmth. Live as a CSS filter on the preview; "Save" bakes the same
 // filter into the full-resolution cover on a canvas (alpha kept) and stores it as a new version. Free, no model call.
+// Shadows = a gamma lift (exponent < 1 raises dark tones most): CSS has no gamma, so the preview uses an SVG filter
+// and Save applies the same curve per pixel.
 const adjSliders = () => [...document.querySelectorAll('#im-adjust [data-adj]')];
-const adjFilter = () => adjSliders().map((s) => `${s.dataset.adj}(${s.value}%)`).join(' ');
-const adjNeutral = () => adjSliders().every((s) => +s.value === (s.dataset.adj === 'sepia' ? 0 : 100));
+const ZERO = { sepia: 0, gamma: 0 };
+const neutralOf = (s) => ZERO[s.dataset.adj] ?? 100;
+const gammaExp = () => 1 / (1 + (+document.querySelector('[data-adj="gamma"]').value) / 30);
+const cssFilters = () => adjSliders().filter((s) => s.dataset.adj !== 'gamma').map((s) => `${s.dataset.adj}(${s.value}%)`).join(' ');
+const adjNeutral = () => adjSliders().every((s) => +s.value === neutralOf(s));
 function applyAdjust() {
   adjSliders().forEach((s) => { s.nextElementSibling.textContent = s.value; });
-  $('im-preview').style.setProperty('--adj', adjNeutral() ? 'none' : adjFilter());
+  document.querySelectorAll('#adj-gamma feComponentTransfer > *').forEach((f) => f.setAttribute('exponent', gammaExp()));
+  $('im-preview').style.setProperty('--adj', adjNeutral() ? 'none' : `${gammaExp() < 1 ? 'url(#adj-gamma) ' : ''}${cssFilters()}`);
   $('adj-save').disabled = adjNeutral();
 }
-function resetAdjust() { adjSliders().forEach((s) => { s.value = s.dataset.adj === 'sepia' ? 0 : 100; }); applyAdjust(); }
+function resetAdjust() { adjSliders().forEach((s) => { s.value = neutralOf(s); }); applyAdjust(); }
 $('im-adjust').addEventListener('input', (e) => { if (e.target.matches('[data-adj]')) applyAdjust(); });
 $('adj-reset').addEventListener('click', resetAdjust);
 $('adj-save').addEventListener('click', async () => {
@@ -640,8 +646,15 @@ $('adj-save').addEventListener('click', async () => {
   try {
     const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
     const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
-    const ctx = c.getContext('2d'); ctx.filter = adjFilter(); ctx.drawImage(bmp, 0, 0);
-    const label = adjSliders().filter((s) => +s.value !== (s.dataset.adj === 'sepia' ? 0 : 100)).map((s) => `${s.closest('label').querySelector('span').textContent.toLowerCase()} ${s.value}`).join(', ');
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    const g = gammaExp();
+    if (g < 1) { // shadow lift first, per pixel (alpha untouched), then the CSS-style filters
+      const t = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height }), tx = t.getContext('2d', { willReadFrequently: true });
+      tx.drawImage(bmp, 0, 0); const d = tx.getImageData(0, 0, t.width, t.height), lut = Uint8ClampedArray.from({ length: 256 }, (_, i) => 255 * (i / 255) ** g);
+      for (let i = 0; i < d.data.length; i += 4) { d.data[i] = lut[d.data[i]]; d.data[i + 1] = lut[d.data[i + 1]]; d.data[i + 2] = lut[d.data[i + 2]]; }
+      tx.putImageData(d, 0, 0); ctx.filter = cssFilters(); ctx.drawImage(t, 0, 0);
+    } else { ctx.filter = cssFilters(); ctx.drawImage(bmp, 0, 0); }
+    const label = adjSliders().filter((s) => +s.value !== neutralOf(s)).map((s) => `${s.closest('label').querySelector('span').textContent.toLowerCase()} ${s.value}`).join(', ');
     const key = await storeImage(b, 'covers', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
     await addVersion(b, { raw: v.raw, cover: key, prompt: v.prompt, aspect: v.aspect, w: bmp.width, h: bmp.height, lookId: v.lookId, edit: `adjust: ${label}` });
     resetAdjust(); imStatus('Adjusted ✓ — saved as a new version', 'ok');
