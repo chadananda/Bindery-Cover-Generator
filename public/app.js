@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=17';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=18';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -556,12 +556,24 @@ async function addVersion(book, v) {
   return row;
 }
 
+/** A finished cover (site import or upload) has no raw. To edit it, put it back on the key colour with a margin — the
+ *  framing the edit prompt and the keyer expect — and store that as a raw. */
+async function rawFromCover(book, v) {
+  const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
+  const c = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * 1.24), height: Math.round(bmp.height * 1.16) });
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = keyColor(project).hex; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(bmp, Math.round((c.width - bmp.width) / 2), Math.round((c.height - bmp.height) / 2));
+  return storeImage(book, 'raw', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
+}
+
 /** Generate (or img2img-edit) one cover, key it, store it, record a version stamped with its look. */
 async function produce(book, { removeBg = true, change = '', lookId = null } = {}) {
   const from = change ? currentVersion(book) : null;
-  if (change && !from?.raw) throw new Error('No raw image to edit — Generate one first');
+  if (change && !from?.raw && !from?.cover) throw new Error('No cover to edit — Generate one first');
+  const inputKey = change ? from.raw || await rawFromCover(book, from) : undefined;
   const prompt = change ? composeEditPrompt(project, change) : composePrompt(project, book);
-  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey: from?.raw }) });
+  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
@@ -590,7 +602,7 @@ async function generate(books) {
 let im = null; // { bookId }
 const imBook = () => project.books.find((b) => b.id === im?.bookId);
 const imStatus = (msg, kind = '') => { $('im-status').textContent = msg; $('im-status').className = `status ${kind}`; };
-const imBusy = (on, label = 'Working…') => { $('im-spin').hidden = !on; $('im-spin-lab').textContent = label; document.querySelectorAll('#imgmgr [data-act]').forEach((b) => (b.disabled = on)); };
+const imBusy = (on, label = 'Working…') => { $('im-spin').hidden = !on; $('im-spin-lab').textContent = label; document.querySelectorAll('#imgmgr [data-act]').forEach((b) => (b.disabled = on)); if (!on) renderManager(); };
 // Preview backdrop: animated sweep dark → colour → light, or fixed, to judge the transparency.
 const BACKDROPS = ['sweep', 'dark', 'light', 'checker'];
 const backdropBar = () => `<div class="backdrops" role="group" aria-label="Preview backdrop">${BACKDROPS.map((b) => `<button type="button" class="bd ${b}" data-bd="${b}" aria-pressed="${store.get('backdrop', 'sweep') === b}" title="${b}">${b}</button>`).join('')}</div>`;
@@ -618,6 +630,8 @@ function renderManager() {
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
   $('im-preview').innerHTML =  (v ? pic(v.cover || v.raw, `${b.title} cover`, '(max-width: 900px) 90vw, 440px', [480, 640, 960, 1280], true, v) : '<span class="hint">The cover appears here</span>') + backdropBar();
+  const rk = document.querySelector('#imgmgr [data-act="rekey"]');
+  rk.disabled = !v?.raw; rk.title = v?.raw ? 'Cut the background away again (no new generation)' : 'This is a finished cover (from the site or an upload) — there is no magenta original to re-key. Use Edit current or Generate.';
   $('im-aspect').hidden = !(v?.aspect && !aspectOk(v.aspect));
   $('im-aspect').textContent = v?.aspect ? `proportions ${v.aspect.toFixed(2)} — check framing` : '';
   const vers = b.versions || [];
