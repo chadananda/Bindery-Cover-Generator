@@ -64,6 +64,33 @@ describe('composePrompt', () => {
   });
 });
 
+describe('book metadata feeds the prompt', () => {
+  const withMeta = { ...book, content: '', description: 'The fourth gospel, beginning "In the beginning was the Word", the most theological of the four.' };
+
+  it('passes the description as context for choosing imagery', () => {
+    expect(composePrompt(project, withMeta)).toContain('In the beginning was the Word');
+  });
+
+  it('forbids printing that context on the cover', () => {
+    expect(composePrompt(project, withMeta)).toMatch(/do NOT print/i);
+  });
+
+  it('asks the model to choose an illustration from the description when no content prompt is set', () => {
+    expect(composePrompt(project, withMeta)).toMatch(/choose a centre illustration/i);
+  });
+
+  it('an explicit content prompt still decides the illustration', () => {
+    const p = composePrompt(project, { ...withMeta, content: 'an eagle in flight' });
+    expect(p).toContain('The embossed centre illustration shows an eagle in flight');
+    expect(p).not.toMatch(/choose a centre illustration/i);
+  });
+
+  it('caps a long description so it cannot swamp the style', () => {
+    const p = composePrompt(project, { ...book, description: 'x '.repeat(2000) });
+    expect(p.length).toBeLessThan(composePrompt(project, book).length + 900);
+  });
+});
+
 describe('effectiveStyles', () => {
   it('lists the layers that apply to a book, for display in the editor', () => {
     expect(effectiveStyles(project, book).map((l) => l.level)).toEqual(['application', 'bookshelf', 'collection']);

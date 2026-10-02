@@ -56,8 +56,17 @@ export function composePrompt(project, book) {
   if (title) out.push(`The title "${title}" is stamped on the cover${book?.subtitle ? `, with the subtitle "${book.subtitle}" smaller beneath it` : ''}.`);
   const author = (book?.author || '').trim();
   if (author) out.push(`The line "${author}" is stamped smaller at the bottom of the cover.`);
+  // Book metadata as CONTEXT: it informs the imagery, never the printed text. Capped so a long blurb
+  // cannot outweigh the style layers.
+  const about = (book?.description || '').replace(/\s+/g, ' ').trim();
+  const shelfName = find(project?.shelves, book?.shelfId)?.name;
+  if (about) {
+    const clipped = about.length > 700 ? about.slice(0, 700).replace(/\s+\S*$/, '') + '…' : about;
+    out.push(`ABOUT THIS BOOK${shelfName ? ` (${shelfName})` : ''} — context for choosing fitting imagery and symbolism only; do NOT print any of this text on the cover: ${clipped}`);
+  }
   const content = (book?.content || '').trim();
   if (content) out.push(`The embossed centre illustration shows ${content}.`);
+  else if (about) out.push('Choose a centre illustration that evokes this book\'s subject and spirit, drawn from the context above.');
   out.push(
     'Flat, even studio lighting — NO shadows of any kind, NO drop shadows, NO ambient occlusion.',
     '',

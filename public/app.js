@@ -1,7 +1,7 @@
 // Cover Generator UI. All cover logic comes from ./core (prompt layers, CSV, the chroma keyer); this file
 // is state, rendering and plumbing. Keying runs HERE, in the browser, on the raw generation the Worker
 // stored — so re-keying never costs a regeneration.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=2';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -198,21 +198,28 @@ const visibleBooks = () => project.books.filter((b) => !filterShelf || b.shelfId
 function renderGrid() {
   const books = visibleBooks();
   $('empty').hidden = project.books.length > 0;
-  $('grid').innerHTML = books.map((b) => {
+  $('grid').innerHTML = books.map((b, i) => {
     const v = currentVersion(b);
     const st = status.get(b.id);
     const shelf = shelfById(b.shelfId), coll = collById(b.collectionId);
-    const badge = st?.state === 'busy' ? `<span class="state">${esc(st.msg || 'Generating…')}</span>`
+    const badge = st?.state === 'busy' ? `<span class="state busy">${esc(st.msg || 'Generating…')}</span>`
       : st?.state === 'err' ? `<span class="state err" title="${esc(st.msg)}">Failed</span>`
-      : v && v.aspect && !aspectOk(v.aspect) ? '<span class="state warn" title="Proportions look off — consider regenerating">Check framing</span>' : '';
-    return `<article class="card ${selected.has(b.id) ? 'sel' : ''}" data-book="${b.id}">
+      : v && v.aspect && !aspectOk(v.aspect) ? '<span class="state warn" title="Proportions look off — consider regenerating">Check framing</span>'
+      : '';
+    return `<article class="card ${selected.has(b.id) ? 'sel' : ''}" data-book="${b.id}" style="--i:${i}">
       <input type="checkbox" class="pick" ${selected.has(b.id) ? 'checked' : ''} aria-label="Select ${esc(b.title)}" />
       ${badge}
-      <div class="thumb checker" data-open title="Open the Image Manager">${v?.cover ? `<img src="${img(v.cover)}" alt="" loading="lazy" />` : v?.raw ? `<img src="${img(v.raw)}" alt="" loading="lazy" />` : '<span class="none">No cover yet</span>'}</div>
+      <div class="thumb" data-open title="Open the Image Manager">${v?.cover ? `<img src="${img(v.cover)}" alt="${esc(b.title)}" loading="lazy" />` : v?.raw ? `<img src="${img(v.raw)}" alt="${esc(b.title)}" loading="lazy" />` : `<span class="none">${esc(b.title)}</span>`}</div>
       <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
         <span class="tags">${[shelf?.name, coll?.name].filter(Boolean).map(esc).join(' · ')}</span></div>
     </article>`;
   }).join('');
+  // Masthead numbers: the whole library, not just the filtered shelf.
+  $('hero-name').textContent = project.app.name || 'Library';
+  $('stat-books').textContent = project.books.length.toLocaleString();
+  $('stat-shelves').textContent = project.shelves.length;
+  $('stat-covers').textContent = project.books.filter((b) => currentVersion(b)).length.toLocaleString();
+  $('stat-new').textContent = project.books.filter((b) => b.versions?.some((v) => v.raw)).length.toLocaleString();
   const n = selected.size;
   $('sel-count').textContent = n ? `${n} selected` : '';
   $('gen-selected').disabled = $('dl-selected').disabled = $('del-selected').disabled = !n;
@@ -335,7 +342,10 @@ const imBusy = (on, label = 'Working…') => { $('im-spin').hidden = !on; $('im-
 function openManager(bookId) {
   im = { bookId };
   const b = imBook();
-  $('im-title').textContent = `✦ ${b.title}`;
+  $('im-title').textContent = b.title;
+  // The book's metadata (description) is shown, and composePrompt feeds it to the model as context.
+  $('im-about-wrap').hidden = !b.description;
+  $('im-about').textContent = b.description || '';
   $('im-content').value = b.content || '';
   $('im-style').value = b.style || '';
   $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
@@ -354,7 +364,7 @@ function renderManager() {
   $('im-aspect').textContent = v?.aspect ? `proportions ${v.aspect.toFixed(2)} — check framing` : '';
   const vers = b.versions || [];
   $('im-versions').hidden = !vers.length;
-  $('im-strip').innerHTML = vers.map((x) => `<div class="ver checker ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : new Date(x.at).toLocaleString())}">
+  $('im-strip').innerHTML = vers.map((x) => `<div class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : new Date(x.at).toLocaleString())}">
       <img src="${img(x.cover || x.raw)}" alt="" loading="lazy" />${x.cover ? '' : '<span class="raw">raw</span>'}
       <button type="button" class="del" data-delver="${x.id}" aria-label="Delete version">&times;</button></div>`).join('');
 }
@@ -365,7 +375,7 @@ for (const [id, field] of Object.entries(imFields)) {
     const b = imBook(); if (!b) return;
     b[field] = e.target.value;
     $('im-prompt').textContent = composePrompt(project, b);
-    if (field === 'title') $('im-title').textContent = `✦ ${b.title}`;
+    if (field === 'title') $('im-title').textContent = b.title;
     save(); renderGrid();
   });
 }

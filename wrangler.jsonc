@@ -4,8 +4,9 @@
   "account_id": "b750d0f7242bbc76f115f72840453083",
   "main": "src/worker.js",
   "compatibility_date": "2026-09-01",
-  // Copies core/ into public/core/ so the browser and the Worker run the SAME keyer/prompt code.
-  "build": { "command": "node scripts/copy-core.mjs" },
+  // public/core/ is a generated copy of core/ (scripts/copy-core.mjs). It is made by `npm run dev` /
+  // `npm run deploy`, NOT a wrangler build hook: the hook ran after the asset manifest was taken, so a
+  // core change shipped stale. Always deploy through `npm run deploy`.
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

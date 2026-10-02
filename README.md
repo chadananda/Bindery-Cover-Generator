@@ -10,7 +10,7 @@ alongside the exact prompt that made it, so any single cover can be regenerated 
 **Live demo: [cover-generator.chadananda.workers.dev](https://cover-generator.chadananda.workers.dev)**
 *(protected by a passcode, because every generation spends Gemini credit; ask Chad for it)*
 
-![The app: styles on the left, books on the right](docs/3-app.jpg)
+![The Bindery: house style and bookshelf styles on the left, the library on walnut shelves](docs/3-app.jpg)
 
 > Proof of concept. It runs today and produces usable covers; the roadmap below lists what a
 > production version would add.
@@ -45,7 +45,13 @@ A collection also tells the model that its volumes must match one another in lea
 typography and layout, and differ only in title and centre illustration. That's how a multi-volume
 set stays a set.
 
-### 2. Generate on a key colour
+### 2. Book metadata guides the imagery
+
+Each book's description and bookshelf go into the prompt as **context**: they guide the choice of
+imagery and symbolism, and the prompt forbids printing them on the cover. If no centre illustration is
+specified, the model chooses one that evokes the book's subject. Type one in the Image Manager to override that.
+
+### 3. Generate on a key colour
 
 The prompt asks for the book photographed from above on **solid magenta** (`#FF00FF`), with a
 visible margin, no shadow and no vignette. Those requirements are stated at the start of the prompt
@@ -53,7 +59,7 @@ and repeated as a numbered list at the end, because the model drifts without the
 
 <p align="center"><img src="docs/1-raw.jpg" width="320" alt="Raw generation on magenta"></p>
 
-### 3. Key out the background
+### 4. Key out the background
 
 Background removal is solved **at generation time**, not afterwards. Generic background removers
 fail on leather: the worn edges fade gradually into the background, so there's no clean line to cut.
@@ -80,9 +86,12 @@ Keying runs in your browser on the raw image saved in R2. Re-keying is free: it 
 generation. If a cover's proportions look wrong (cropped or mis-framed art), it's flagged so you can
 regenerate it rather than fiddle with the cutout.
 
-### 4. Refine one cover
+### 5. Refine one cover
 
 Click any cover to open the **Image Manager** (modelled on NovelArabic's image editor):
+
+![The Image Manager](docs/4-manager.jpg)
+
 
 - **Content prompt**: what the centre illustration shows ("a winged lion on an open scroll").
 - **Inherited style**: the application, bookshelf and collection layers that apply, shown for reference.
@@ -93,7 +102,7 @@ Click any cover to open the **Image Manager** (modelled on NovelArabic's image e
 - **🖿 Browse…**: use an image from your computer.
 - **Versions**: every render is kept. Click one to roll back, or ✕ to delete it.
 
-### 5. Download
+### 6. Download
 
 Select covers and click **Download selected** to get a zip containing:
 
@@ -107,8 +116,17 @@ manifest.csv               file, title, author, bookshelf, collection
 
 ## Using the demo
 
+The demo holds two libraries, each seeded with its **published** books (those live on the site today).
+Every book that had a cover on the live site carries that cover as **version 1**, so you can compare the
+current cover with a new one side by side.
+
+| Library | Books | Bookshelves |
+|---|---:|---|
+| **OceanLibrary** | 457 | 10 traditions (Bahá'í, Islam, Christian, Hindu, Buddhist, …), each with its own leather and motifs |
+| **WholeReader** | 586 | 9 genres (Short Stories, Novels, Children, Drama, …) in Victorian cloth bindings |
+
 1. Open the [demo](https://cover-generator.chadananda.workers.dev) and enter the passcode.
-2. Choose an **app set** (one per application, e.g. *Ocean*, *WholeReader*) or create a new one.
+2. Choose a library (one per application) or create a new one.
 3. Add books:
    - **Paste CSV**: headers in any order or case. `title, author, bookshelf, collection` works, and so do
      common alternatives (`name`, `category`, `series`…). The Ocean library export
@@ -116,7 +134,8 @@ manifest.csv               file, title, author, bookshelf, collection
      "Unknown" authors are dropped from the cover.
    - **Add one**: title, author, bookshelf, collection.
 4. Write the **application style**, then give each bookshelf and collection its sub-style.
-5. Select books → **✦ Generate selected** (two at a time, ~20 seconds each).
+5. Open a book and **✦ Generate**. Tune the styles on single covers first; once the prompts are right,
+   select many and **✦ Generate selected** (two at a time, ~20 seconds each).
 6. Open any cover to refine it, then select and **Download**.
 
 ---
@@ -139,13 +158,14 @@ has a Node example.
 
 ```sh
 npm install
-npm test                          # 33 tests: keyer, prompt layering, CSV, Gemini client
+npm test                          # 38 tests: keyer, prompt layering + metadata, CSV, Gemini client
 cp .dev.vars.example .dev.vars    # add GEMINI_API_KEY and a PASSCODE
 npm run dev                       # http://localhost:8787 (local R2)
 ```
 
-`npm run build` copies `core/` into `public/core/` so the browser runs the same files. Wrangler runs
-it automatically on `dev` and `deploy`. Always edit `core/`, never `public/core/`.
+`npm run dev` and `npm run deploy` first copy `core/` into `public/core/`, so the browser runs the same
+files as the Worker and the tests. Always edit `core/`, never `public/core/`, and always deploy with
+`npm run deploy` (a bare `wrangler deploy` would ship whatever stale copy is there).
 
 ## Deployment
 
@@ -165,7 +185,7 @@ npx wrangler secret put PASSCODE
 
 1. Cloudflare dashboard → **Workers & Pages** → `cover-generator` → **Settings** → **Builds** → **Connect**.
 2. Choose GitHub repo `chadananda/cover-generator`, branch `main`.
-3. Leave the deploy command as `npx wrangler deploy`; the build step in `wrangler.jsonc` copies `core/`.
+3. Set the deploy command to `npm run deploy`, which copies `core/` into `public/core/` before deploying.
 
 From then on, every commit to `main` deploys the demo. The secrets and the R2 bucket carry over,
 because they belong to the Worker, not the build.

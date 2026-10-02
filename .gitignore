@@ -3,3 +3,4 @@ node_modules/
 .dev.vars
 public/core/
 .DS_Store
+scripts/tmp/

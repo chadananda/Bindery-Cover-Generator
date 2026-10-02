@@ -6,8 +6,8 @@
   "description": "Proof-of-concept book-cover generator: Gemini art, chroma-key cutout, layered styles, Cloudflare Worker + R2.",
   "scripts": {
     "build": "node scripts/copy-core.mjs",
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "node scripts/copy-core.mjs && wrangler dev",
+    "deploy": "node scripts/copy-core.mjs && wrangler deploy",
     "test": "vitest run"
   },
   "devDependencies": {
