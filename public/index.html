@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20" />
+  <link rel="stylesheet" href="/styles.css?v=22" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -162,9 +162,15 @@
         <h3>History <small>· every version is kept · click one to use it</small></h3>
         <div id="im-strip" class="strip"></div>
       </div>
+      <div class="edit-box" data-write>
+        <label for="im-change">Change the current cover <small>· Gemini edits this picture in place; the result is saved as a new version</small></label>
+        <div class="edit-row">
+          <textarea id="im-change" rows="2" placeholder="e.g. make the leather a deeper green · add an ornate silver clasp · remove the sunburst"></textarea>
+          <button type="button" class="btn" data-act="edit">✎ Edit current</button>
+        </div>
+      </div>
       <div class="row wrap actions" data-write>
-        <button type="button" class="btn gold" data-act="generate">✦ Generate</button>
-        <button type="button" class="btn" data-act="edit" title="Edit the CURRENT cover: describe the change in the illustration box">✎ Edit current</button>
+        <button type="button" class="btn gold" data-act="generate" title="A new cover from the prompt (the styles + the centre illustration below)">✦ Generate new</button>
         <button type="button" class="btn ghost" data-act="rekey" title="Cut the background away again (no new generation)">⟳ Re-key</button>
         <button type="button" class="btn ghost" data-act="browse">Upload…</button>
         <input type="file" id="im-file" accept="image/*" hidden />
@@ -175,7 +181,7 @@
         <summary>About this book <small>· guides the imagery, never printed</small></summary>
         <p id="im-about"></p>
       </details>
-      <label class="field"><span>Centre illustration <small>· blank = chosen from the description</small></span>
+      <label class="field"><span>Centre illustration <small>· for ✦ Generate new · blank = chosen from the description</small></span>
         <textarea id="im-content" rows="3" placeholder="e.g. a winged lion standing on an open scroll"></textarea></label>
       <details class="inherit"><summary>Inherited style</summary><div id="im-layers"></div></details>
       <label class="field"><span>This book only <small>· optional, applied last</small></span>
@@ -218,6 +224,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=20"></script>
+  <script type="module" src="/app.js?v=22"></script>
 </body>
 </html>

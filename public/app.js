@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=20';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=22';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -613,7 +613,7 @@ function openManager(bookId) {
   $('im-title').textContent = b.title;
   $('im-about-wrap').hidden = !b.description;
   $('im-about').textContent = b.description || '';
-  $('im-content').value = b.content || '';
+  $('im-content').value = b.content || ''; $('im-change').value = '';
   $('im-style').value = b.style || '';
   $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
   $('im-sample').checked = !!b.sample;
@@ -681,10 +681,10 @@ $('imgmgr').addEventListener('click', async (e) => {
       const { id: lookId } = await ensureLook();
       await produce(b, { removeBg, lookId }); imStatus('Generated ✓', 'ok');
     } else if (act === 'edit') {
-      const change = $('im-content').value.trim();
-      if (!change) return imStatus('Describe the change in the illustration box, then Edit.', 'err');
+      const change = $('im-change').value.trim();
+      if (!change) { $('im-change').focus(); return imStatus('Describe the change you want, then Edit current.', 'err'); }
       imBusy(true, 'Editing…'); imStatus('Editing the current cover…');
-      await produce(b, { removeBg, change }); imStatus('Edited ✓', 'ok');
+      await produce(b, { removeBg, change }); imStatus('Edited ✓ — saved as a new version', 'ok'); $('im-change').value = '';
     } else if (act === 'rekey') {
       const v = currentVersion(b);
       if (!v?.raw) return imStatus('This version has no raw image to key.', 'err');
@@ -719,7 +719,7 @@ $('im-file').addEventListener('change', async (e) => {
 // Messages go to the Worker (Gemini + cover vision); replies may carry a PLAN, applied only on the user's click.
 const chat = { messages: [], focus: null, busy: false };
 const STAGES = ['Reading the shelves…', 'Looking at the cover…', 'Putting the style into words…'];
-const EXAMPLES = ['The style on The Masnavi is just what I want — use it for the rest of the Islam shelf', 'Give every book by Rumi the same treatment as The Masnavi', 'Make the Bahá’í shelf a lighter blue with silver tooling'];
+const EXAMPLES = ['The style on The Masnavi is just what I want — use it for the rest of the Islam shelf', 'Make the leather on this cover a deeper green and the lettering properly stamped gold', 'Make the Bahá’í shelf a lighter blue with silver tooling'];
 // ---- workspace dock: cover editor and chat as side panes (non-modal). body classes size the shelves around them.
 const chatOpen = () => !$('chat').hidden;
 function layoutDock(last) {
@@ -775,7 +775,9 @@ const planHtml = (m, i) => {
   const p = m.plan, gen = planSamples(p);
   return `<div class="plan" data-plan="${i}">${p.changes.map((c) => `<div class="change"><span class="scope">${SCOPE[c.scope]}</span> <b>${esc(c.name)}</b>
       <p class="after">${esc(c.style)}</p>${c.before ? `<details><summary>Current style</summary><p class="before">${esc(c.before)}</p></details>` : ''}</div>`).join('')}
-    ${m.applied ? `<p class="applied">Applied ✓${m.applied === 'gen' ? ` · generating ${gen.length}` : ''}</p>` : `<div class="plan-actions">
+    ${(p.edits || []).map((e) => `<div class="change"><span class="scope">Edit cover</span> <b>${esc(e.title)}</b><p class="after">${esc(e.change)}</p></div>`).join('')}
+    ${m.applied ? `<p class="applied">Applied ✓${m.applied === 'gen' ? ` · generating ${gen.length}` : m.applied === 'edit' ? ` · editing ${p.edits.length}` : ''}</p>` : `<div class="plan-actions">
+      ${p.edits?.length ? `<button type="button" class="btn small gold" data-apply-edits>✎ Edit ${p.edits.length > 1 ? `${p.edits.length} covers` : 'this cover'}</button>` : ''}
       ${p.changes.length ? '<button type="button" class="btn small" data-apply>Apply</button>' : ''}
       ${gen.length ? `<button type="button" class="btn small gold" data-apply-gen>${p.changes.length ? 'Apply &amp; ' : ''}generate ${gen.length} ${p.generateBookIds.length ? 'cover' : '★ sample'}${gen.length > 1 ? 's' : ''}</button>` : ''}
       <button type="button" class="btn small ghost" data-dismiss>Not now</button></div>`}</div>`;
@@ -838,6 +840,24 @@ $('chat-body').addEventListener('click', (e) => {
   const m = chat.messages[+card.dataset.plan];
   if (e.target.closest('[data-dismiss]')) { m.plan = null; m.text += '\n(Not applied.)'; renderChat(); return; }
   if (e.target.closest('[data-apply]')) { applyPlan(m.plan); m.applied = 'yes'; renderChat(); return; }
+  if (e.target.closest('[data-apply-edits]')) {
+    // In-place edits of each book's current cover; each saves a new version and shows up here as it finishes.
+    const edits = m.plan.edits.filter((x) => project.books.some((b) => b.id === x.bookId));
+    if (edits.length > 3 && !confirm(`Edit ${edits.length} covers? Each one is a paid Gemini image call.`)) return;
+    applyPlan(m.plan); m.applied = 'edit';
+    chat.messages.push({ role: 'assistant', text: `Editing ${edits.length > 1 ? `${edits.length} covers` : 'the cover'}. The result appears here and in its History; open it to compare or delete it.`, books: edits.map((x) => x.bookId) });
+    renderChat();
+    (async () => {
+      for (const x of edits) {
+        const b = project.books.find((y) => y.id === x.bookId);
+        status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat();
+        try { await produce(b, { removeBg: true, change: x.change }); status.delete(b.id); }
+        catch (err) { status.set(b.id, { state: 'err', msg: err.message }); chat.messages.push({ role: 'assistant', text: `Couldn't edit ${b.title}: ${err.message}`, error: true }); }
+        renderCard(b.id); renderChat(); if (im?.bookId === b.id) renderManager();
+      }
+    })();
+    return;
+  }
   if (e.target.closest('[data-apply-gen]')) {
     const books = planSamples(m.plan); applyPlan(m.plan); m.applied = 'gen';
     chat.messages.push({ role: 'assistant', text: `Generating ${books.length} cover${books.length > 1 ? 's' : ''} with the new style. They'll appear here as they finish; open any one to refine it.`, books: books.map((b) => b.id) });

@@ -24,7 +24,11 @@ Choose the narrowest layer that covers exactly the books the user means:
 Write style text as concrete visual instructions for an image model, never the book's title or its specific centre
 illustration (those come from each book). Keep the existing layer text when the user asks to "add" or "also".
 Use show_books to put thumbnails of the books you are talking about in front of the user (examples, matches, the
-books a change will affect — up to 12); they can open any of them. Finish with propose_plan when changes are wanted. Only include generateBookIds when the user asks to generate or regenerate covers.
+books a change will affect — up to 12); they can open any of them. Finish with propose_plan when changes are wanted.
+When the user wants a specific cover's PICTURE changed ("darker leather", "add a clasp", "fix the lettering", "less shiny"),
+propose an edit of that cover (edits: bookId + one precise visual instruction) — not a style change — unless they say it
+should apply to a whole shelf/collection/author, which is a style change. Attached covers and the cover open in the
+editor are the ones they mean. Rewrite vague requests into concrete visual terms (material, colour, finish, placement). Only include generateBookIds when the user asks to generate or regenerate covers.
 Resolve books, shelves, collections and authors from the catalogue by id; if a reference is ambiguous, ask instead.
 Reply briefly in plain English (no markdown headings).`;
 
@@ -40,7 +44,10 @@ export const TOOLS = [{ functionDeclarations: [
         targetId: { type: 'string', description: 'shelf or collection id' },
         bookIds: { type: 'array', items: { type: 'string' } },
         style: { type: 'string', description: 'the complete new style text for that layer' } }, required: ['scope', 'style'] } },
-      generateBookIds: { type: 'array', items: { type: 'string' } } }, required: ['changes'] } },
+      generateBookIds: { type: 'array', items: { type: 'string' } },
+      edits: { type: 'array', description: "In-place edits of a book's current cover image", items: { type: 'object', properties: {
+        bookId: { type: 'string' }, change: { type: 'string', description: 'one precise visual instruction, e.g. "make the leather a deeper forest green; keep everything else"' } }, required: ['bookId', 'change'] } } },
+      required: ['changes'] } },
 ] }];
 
 /** Validate a model-proposed plan against the library; attach names and current text for the review card. */
@@ -61,7 +68,12 @@ export function sanitizePlan(p, plan) {
     return [];
   });
   const generateBookIds = (plan?.generateBookIds || []).filter((id) => books.has(id));
-  return changes.length || generateBookIds.length ? { changes, generateBookIds } : null;
+  // In-place edits of a book's CURRENT cover (needs a cover to edit).
+  const edits = (plan?.edits || []).flatMap((e) => {
+    const b = p.books.find((x) => x.id === e.bookId), change = String(e.change || '').trim().slice(0, 1000);
+    return b && change && b.versions?.length ? [{ bookId: b.id, title: b.title, change }] : [];
+  });
+  return changes.length || generateBookIds.length || edits.length ? { changes, generateBookIds, edits } : null;
 }
 
 /** One chat turn. messages: [{role:'user'|'assistant', text}]. callModel(contents) → parts. */

@@ -41,7 +41,13 @@ describe('sanitizePlan', () => {
       { scope: 'library', targetId: null, name: 'Ocean', before: 'leather', style: 'cloth' },
     ]);
     expect(plan.generateBookIds).toEqual(['b2']);
+    expect(plan.edits).toEqual([]);
   });
+  it('keeps cover edits for books that have a cover; drops the rest', () => {
+    const plan = sanitizePlan(project, { changes: [], edits: [{ bookId: 'b1', change: ' darker leather ' }, { bookId: 'b2', change: 'x' }, { bookId: 'zzz', change: 'x' }, { bookId: 'b1', change: '' }] });
+    expect(plan).toEqual({ changes: [], generateBookIds: [], edits: [{ bookId: 'b1', title: 'The Masnavi', change: 'darker leather' }] });
+  });
+
   it('returns null for an empty plan', () => {
     expect(sanitizePlan(project, { changes: [], generateBookIds: [] })).toBeNull();
   });

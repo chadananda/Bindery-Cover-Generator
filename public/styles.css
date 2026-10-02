@@ -1,3 +1,5 @@
+/* Every <img> carries width/height attributes (layout before load). Pictures therefore sit in FIXED boxes with
+   object-fit: contain — a max-width/max-height pair alone lets the attribute height win and stretches the image. */
 /* The Bindery — lamplit workshop (dark) or reading room (light). Covers stand on wooden shelves.
    Contrast floor: body text ≥ 7:1, secondary ≥ 4.5:1, nothing under 12px; Cormorant only at ≥ 18px. */
 :root, :root[data-theme="dark"] {
@@ -232,7 +234,7 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 .looks .look-notes { margin: .3rem 0; font-size: 14px; }
 .looks td { vertical-align: bottom; }
 .look-cell { border: 0; padding: .3rem; background: var(--wall); border-radius: 4px; cursor: pointer; width: 130px; height: 170px; display: grid; place-items: end center; }
-.look-cell img { max-width: 100%; max-height: 100%; filter: drop-shadow(0 4px 4px var(--shadow)); }
+.look-cell img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; filter: drop-shadow(0 4px 4px var(--shadow)); }
 
 /* ---------------------------------------------------------------- Image Manager */
 
@@ -241,7 +243,7 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 .actions { margin: .9rem 0 .8rem; }
 .im-preview-wrap { position: relative; }
 .im-preview { position: relative; aspect-ratio: 3 / 4; display: grid; place-items: center; border-radius: 4px; border: 1px solid var(--line-2); overflow: hidden; }
-.im-preview img { max-width: 82%; max-height: 84%; filter: drop-shadow(0 18px 18px rgba(0, 0, 0, .45)); }
+.im-preview img { position: absolute; inset: 6% 9% 12%; width: 82%; height: 82%; object-fit: contain; filter: drop-shadow(0 18px 18px rgba(0, 0, 0, .45)); }
 .im-preview .hint { font-size: 16px; }
 /* Backdrops to judge the cut-out: an animated sweep through dark, colour and light, or a fixed one. */
 .bd-sweep { background: linear-gradient(120deg, #0b0906, #3a1d4a, #1d4a6b, #e9e2d3, #ffffff, #c96b2c, #0b0906); background-size: 600% 600%; animation: sweep 14s ease-in-out infinite; }
@@ -263,7 +265,7 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 .badge { font-size: 12px; font-weight: 600; padding: .15rem .5rem; border-radius: 20px; border: 1px solid var(--warn); color: var(--warn); }
 .strip { display: flex; gap: .6rem; overflow-x: auto; padding: .4rem .2rem .6rem; }
 .ver { flex: 0 0 92px; display: grid; grid-template-rows: 110px auto auto; justify-items: center; gap: .1rem; padding: .3rem; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; background: var(--wall); color: var(--ink); }
-.ver img { max-width: 100%; max-height: 110px; align-self: end; filter: drop-shadow(0 3px 3px var(--shadow)); }
+.ver img { width: 100%; height: 110px; object-fit: contain; object-position: center bottom; align-self: end; filter: drop-shadow(0 3px 3px var(--shadow)); }
 .ver.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .ver-lab { font-size: 12px; font-weight: 600; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ver-date { font-size: 12px; color: var(--ink-3); }
@@ -369,7 +371,7 @@ body.has-selbar .fab { bottom: 5rem; }
   background: linear-gradient(180deg, #efe6d4, #e4d7bd); cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; }
 .chat-thumb:hover { transform: translateY(-2px); border-color: #c8a24b; box-shadow: 0 8px 18px -10px rgb(90 60 20 / .5); }
 .ct-img { height: 118px; display: flex; align-items: flex-end; justify-content: center; }
-.ct-img img { display: block; max-width: 92px; max-height: 118px; filter: drop-shadow(0 4px 4px rgb(60 40 10 / .35)); }
+.ct-img img { display: block; width: 92px; height: 118px; object-fit: contain; object-position: center bottom; filter: drop-shadow(0 4px 4px rgb(60 40 10 / .35)); }
 .ct-img .none { width: 80px; height: 108px; display: grid; place-items: center; text-align: center; font-size: 11px; color: #6b6150; border: 1.5px dashed #b9a98a; border-radius: 3px; padding: .3rem; overflow: hidden; }
 .ct-cap { font: 600 12px/1.25 var(--sans); color: #2a2620; text-align: center; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .ct-busy { position: absolute; top: .4rem; left: 50%; transform: translateX(-50%); font: 600 11px var(--sans); white-space: nowrap; color: #2a1d08; background: #f6e3ad; border-radius: 999px; padding: .1rem .45rem; animation: pulse 1.2s infinite; }
@@ -412,12 +414,12 @@ main.shelves, .empty { margin-right: var(--dock-w); transition: margin-right .3s
 .refs { display: flex; flex-wrap: wrap; gap: .4rem; }
 .ref { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .25rem .2rem .2rem; border: 1px solid rgb(200 162 75 / .6); border-radius: 10px; background: #fffaf0; max-width: 220px; animation: arrive .25s; }
 .ref-img { width: 30px; height: 40px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
-.ref-img img { max-width: 30px; max-height: 40px; display: block; }
+.ref-img img { width: 30px; height: 40px; object-fit: contain; display: block; }
 .ref-t { font: 600 12.5px var(--sans); color: #2a2620; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ref-x { border: 0; background: none; color: #8f8470; font-size: 16px; cursor: pointer; padding: 0 .25rem; }
 .ref-x:hover { color: #8a2a1a; }
 .user-wrap { justify-items: end; }
-.user-wrap .chat-thumb { width: 84px; } .user-wrap .ct-img { height: 92px; } .user-wrap .ct-img img { max-height: 92px; max-width: 72px; }
+.user-wrap .chat-thumb { width: 84px; } .user-wrap .ct-img { height: 92px; } .user-wrap .ct-img img { width: 72px; height: 92px; }
 body.dock-chat .card .book { cursor: copy; }
 :root[data-theme="dark"] .ref { background: #1b212a; border-color: #3a4556; } :root[data-theme="dark"] .ref-t { color: #e9e6dd; }
 
@@ -453,3 +455,10 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .ver:hover .ver-del, .ver-del:focus-visible { opacity: 1; }
 .ver-del:hover { color: var(--err); border-color: var(--err); }
 @media (hover: none) { .ver-del { opacity: 1; } }
+
+/* "Change the current cover": its own box beside Edit current (edits used to hide in "Centre illustration"). */
+.edit-box { margin: .9rem 0 .2rem; padding: .7rem .8rem .8rem; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.edit-box > label { display: block; margin-bottom: .45rem; font: 600 14px var(--sans); color: var(--ink); }
+.edit-box > label small { display: block; margin-top: .1rem; font-weight: 400; }
+.edit-row { display: flex; gap: .55rem; align-items: flex-end; }
+.edit-row textarea { flex: 1; }
