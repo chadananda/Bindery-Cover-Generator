@@ -1,13 +1,19 @@
 // Bindery Worker. Public read, passcode (cookie) for writes, Gemini proxy (key never leaves the server), D1 for data + prompts
 // (src/store.js), R2 for images only. Static UI is served from public/; this handles /api/* and /img/*.
-// R2 layout: sets/<lib>/raw/<book>/<ts>.png · sets/<lib>/covers/<book>/<ts>.png. Nothing is ever deleted from R2.
+// R2 layout: sets/<lib>/raw/<book>/<ts>.png · sets/<lib>/covers/<book>/<ts>.png · fx/v<N>/<key>/<recipe> (resized
+// renditions, generate-once). Nothing is ever deleted from R2.
 import { generateImage } from '../core/gemini.js';
 import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows } from './store.js';
+import { parseTr, resolveFormat, recipeKey } from './image.js';
+import { renderImage, initCodecs } from './render.js';
+import webpEncWasm from '@jsquash/webp/codec/enc/webp_enc_simd.wasm';
 
 const COOKIE = 'cg_auth';
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const KEY = /^sets\/[a-z0-9-]+\/(raw|covers)\/[A-Za-z0-9_-]+\/\d+\.png$/;
+const FX_VERSION = 1; // bump to re-render every cached rendition
+const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -34,7 +40,7 @@ async function authed(req, env) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname;
     const body = () => req.json().catch(() => ({}));
@@ -53,14 +59,34 @@ export default {
     if (path === '/api/me') return json({ ok: true, authed: isAuthed });
     if (req.method !== 'GET' && !isAuthed) return fail(401, 'Passcode required');
 
-    // GET /img/<r2 key> — raw generations and keyed covers.
+    // GET /img/<r2 key>[?tr=w-320,...] — originals, or a resized rendition (ImageKit grammar, see src/image.js).
+    // Rendition lookup: edge cache (per colo) → stored R2 rendition → render from the original and store both.
     if (path.startsWith('/img/') && req.method === 'GET') {
       const key = decodeURIComponent(path.slice(5));
       if (!KEY.test(key)) return fail(400, 'Bad image key');
+      const spec = parseTr(url.searchParams.get('tr'));
+      if (!spec) {
+        const obj = await env.COVERS.get(key);
+        if (!obj) return fail(404, 'Not found');
+        // Serve the stored type: Gemini returns JPEG raws even though every key ends in .png.
+        return new Response(obj.body, { headers: { 'content-type': obj.httpMetadata?.contentType || 'image/png', 'cache-control': IMMUTABLE } });
+      }
+      const format = resolveFormat(spec, req.headers.get('accept'));
+      const recipe = recipeKey(spec, format);
+      const type = { webp: 'image/webp', png: 'image/png', jpeg: 'image/jpeg' }[format];
+      const respond = (body, src) => new Response(body, { headers: { 'content-type': type, 'cache-control': IMMUTABLE, vary: 'Accept', 'x-img-cache': src } });
+      const cacheKey = new Request(`${url.origin}/img/${key}?r=${recipe}&v=${FX_VERSION}`);
+      const edge = await caches.default.match(cacheKey);
+      if (edge) return new Response(edge.body, edge);
+      const fxKey = `fx/v${FX_VERSION}/${key}/${recipe}`;
+      const stored = await env.COVERS.get(fxKey);
+      if (stored) { const bytes = await stored.arrayBuffer(); ctx.waitUntil(caches.default.put(cacheKey, respond(bytes, 'edge'))); return respond(bytes, 'r2'); }
       const obj = await env.COVERS.get(key);
       if (!obj) return fail(404, 'Not found');
-      // Serve the stored type: Gemini returns JPEG raws even though every key ends in .png.
-      return new Response(obj.body, { headers: { 'content-type': obj.httpMetadata?.contentType || 'image/png', 'cache-control': 'public, max-age=31536000, immutable' } });
+      await initCodecs(webpEncWasm);
+      const out = await renderImage(new Uint8Array(await obj.arrayBuffer()), spec, format);
+      ctx.waitUntil(Promise.all([env.COVERS.put(fxKey, out, { httpMetadata: { contentType: type } }), caches.default.put(cacheKey, respond(out, 'edge'))]));
+      return respond(out, 'miss');
     }
 
     try {

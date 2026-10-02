@@ -1,13 +1,16 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=4';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=5';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const rid = () => Math.random().toString(36).slice(2, 10);
 const slug = (s) => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'cover';
-const img = (key) => `/img/${key}`;
+const img = (key) => `/img/${key}`; // the full-size original: keying and downloads only
+// Displayed images always go through the resize worker: srcset of allowed widths, the browser picks by size × DPR.
+const pic = (key, alt, sizes, widths) => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w} ${w}w`).join(', ')}" sizes="${sizes}" alt="${esc(alt)}" loading="lazy" decoding="async" />`;
+const THUMB = ['160', '240', '320', '480'].map(Number);
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 const CONCURRENCY = 2;
 
@@ -168,7 +171,7 @@ const cardHtml = (b) => {
     <input type="checkbox" class="pick" ${selected.has(b.id) ? 'checked' : ''} aria-label="Select ${esc(b.title)}" />
     <button type="button" class="star ${b.sample ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${b.sample}" title="${b.sample ? 'Sample book — included in ✦ Try look' : 'Make this a sample book'}">★</button>
     ${badge}
-    <div class="thumb" data-open title="Open the Image Manager">${src ? `<img src="${img(src)}" alt="${esc(b.title)}" loading="lazy" />` : `<span class="none">${esc(b.title)}</span>`}</div>
+    <div class="thumb" data-open title="Open the Image Manager">${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB) : `<span class="none">${esc(b.title)}</span>`}</div>
     <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
       <span class="tags">${[coll?.name, b.versions.length > 1 ? `${b.versions.length} versions` : ''].filter(Boolean).map(esc).join(' · ')}</span></div>
   </article>`;
@@ -381,7 +384,7 @@ function renderLooks() {
   if (!project.looks.length) { $('looks-body').innerHTML = '<p class="hint">No looks yet. Star (★) a few books on each shelf, set the styles, then ✦ Try look.</p>'; return; }
   const cur = project.looks.find((l) => sameStyles(l.styles, snapshotStyles(project)));
   $('looks-body').innerHTML = `<table><thead><tr><th>Look</th>${books.map((b) => `<th title="${esc(b.title)}">${esc(b.title)}</th>`).join('')}</tr></thead><tbody>${project.looks.map((l) => {
-    const cells = books.map((b) => { const v = b.versions.findLast((x) => x.lookId === l.id); return `<td>${v ? `<button type="button" class="look-cell" data-open-book="${b.id}" data-ver="${v.id}"><img src="${img(v.cover || v.raw)}" alt="${esc(b.title)}, ${esc(l.name)}" loading="lazy" /></button>` : ''}</td>`; }).join('');
+    const cells = books.map((b) => { const v = b.versions.findLast((x) => x.lookId === l.id); return `<td>${v ? `<button type="button" class="look-cell" data-open-book="${b.id}" data-ver="${v.id}">${pic(v.cover || v.raw, `${b.title}, ${l.name}`, '120px', THUMB)}</button>` : ''}</td>`; }).join('');
     const shelfLines = Object.entries(l.styles.shelves || {}).filter(([, s]) => s).map(([id, s]) => `<p><b>${esc(shelfById(id)?.name || 'deleted shelf')}</b> ${esc(s)}</p>`).join('');
     return `<tr data-look="${l.id}"><th>
       <input class="look-name" value="${esc(l.name)}" aria-label="Look name" />
@@ -553,13 +556,13 @@ function renderManager() {
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
-  $('im-preview').innerHTML = (v ? `<img src="${img(v.cover || v.raw)}" alt="${esc(b.title)} cover" />` : '<span class="hint">The cover appears here</span>') + backdropBar();
+  $('im-preview').innerHTML =  (v ? pic(v.cover || v.raw, `${b.title} cover`, '(max-width: 860px) 80vw, 460px', [480, 640, 960, 1280]) : '<span class="hint">The cover appears here</span>') + backdropBar();
   $('im-aspect').hidden = !(v?.aspect && !aspectOk(v.aspect));
   $('im-aspect').textContent = v?.aspect ? `proportions ${v.aspect.toFixed(2)} — check framing` : '';
   const vers = b.versions || [];
   $('im-versions').hidden = !vers.length;
   $('im-strip').innerHTML = [...vers].reverse().map((x) => `<button type="button" class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : x.prompt.slice(0, 200))}">
-      <img src="${img(x.cover || x.raw)}" alt="" loading="lazy" />
+      ${pic(x.cover || x.raw, '', '84px', [160, 240])}
       <span class="ver-lab">${esc(x.lookId ? lookById(x.lookId)?.name || 'look' : x.edit && !x.raw ? x.edit : 'upload')}${x.cover ? '' : ' · raw'}</span>
       <span class="ver-date">${new Date(x.at).toLocaleDateString()}</span></button>`).join('');
 }
