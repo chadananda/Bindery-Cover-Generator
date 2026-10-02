@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=9';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=11';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -9,7 +9,9 @@ const rid = () => Math.random().toString(36).slice(2, 10);
 const slug = (s) => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'cover';
 const img = (key) => `/img/${key}`; // the full-size original: keying and downloads only
 // Displayed images always go through the resize worker: srcset of allowed widths, the browser picks by size × DPR.
-const pic = (key, alt, sizes, widths, eager = false) => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w} ${w}w`).join(', ')}" sizes="${sizes}" alt="${esc(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async" />`;
+// width/height = the image's pixel size (from D1): the browser reserves the box before loading — no layout shift, and
+// lazy loading works (zero-height images all count as on-screen, so every one would be fetched at once).
+const pic = (key, alt, sizes, widths, eager = false, v = null) => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w} ${w}w`).join(', ')}" sizes="${sizes}"${v?.w && v?.h ? ` width="${v.w}" height="${v.h}"` : ''} alt="${esc(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async" />`;
 const THUMB = ['160', '240', '320', '480'].map(Number);
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 const CONCURRENCY = 2;
@@ -172,7 +174,7 @@ const cardHtml = (b) => {
   return `<article class="card ${selected.has(b.id) ? 'sel' : ''}" data-book="${b.id}">
     ${badge}
     <div class="thumb"><div class="book" data-open title="Open the Image Manager">
-      ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB) : `<span class="none">${esc(b.title)}</span>`}
+      ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(b.title)}</span>`}
       <input type="checkbox" class="pick" ${selected.has(b.id) ? 'checked' : ''} aria-label="Select ${esc(b.title)}" />
       <button type="button" class="star ${b.sample ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${b.sample}" title="${b.sample ? 'Sample book — included in ✦ Try look' : 'Make this a sample book'}">★</button>
     </div></div>
@@ -388,7 +390,7 @@ function renderLooks() {
   if (!project.looks.length) { $('looks-body').innerHTML = '<p class="hint">No looks yet. Star (★) a few books on each shelf, set the styles, then ✦ Try look.</p>'; return; }
   const cur = project.looks.find((l) => sameStyles(l.styles, snapshotStyles(project)));
   $('looks-body').innerHTML = `<table><thead><tr><th>Look</th>${books.map((b) => `<th title="${esc(b.title)}">${esc(b.title)}</th>`).join('')}</tr></thead><tbody>${project.looks.map((l) => {
-    const cells = books.map((b) => { const v = b.versions.findLast((x) => x.lookId === l.id); return `<td>${v ? `<button type="button" class="look-cell" data-open-book="${b.id}" data-ver="${v.id}">${pic(v.cover || v.raw, `${b.title}, ${l.name}`, '120px', THUMB)}</button>` : ''}</td>`; }).join('');
+    const cells = books.map((b) => { const v = b.versions.findLast((x) => x.lookId === l.id); return `<td>${v ? `<button type="button" class="look-cell" data-open-book="${b.id}" data-ver="${v.id}">${pic(v.cover || v.raw, `${b.title}, ${l.name}`, '120px', THUMB, false, v)}</button>` : ''}</td>`; }).join('');
     const shelfLines = Object.entries(l.styles.shelves || {}).filter(([, s]) => s).map(([id, s]) => `<p><b>${esc(shelfById(id)?.name || 'deleted shelf')}</b> ${esc(s)}</p>`).join('');
     return `<tr data-look="${l.id}"><th>
       <input class="look-name" value="${esc(l.name)}" aria-label="Look name" />
@@ -488,12 +490,12 @@ async function keyRaw(rawKey) {
   const oc = Object.assign(document.createElement('canvas'), { width: out.width, height: out.height });
   oc.getContext('2d').putImageData(new ImageData(out.data, out.width, out.height), 0, 0);
   const blob = await new Promise((res) => oc.toBlob(res, 'image/png'));
-  return { base64: await toB64(blob), aspect: out.aspect };
+  return { base64: await toB64(blob), aspect: out.aspect, w: out.width, h: out.height };
 }
 const storeImage = async (book, kind, base64) => (await api(`${base()}/store`, { method: 'POST', body: JSON.stringify({ bookId: book.id, kind, base64 }) })).key;
 // A new version row (append-only) that becomes the book's current cover.
 async function addVersion(book, v) {
-  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', aspect: null, edit: null, lookId: null, ...v };
+  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', aspect: null, edit: null, lookId: null, w: null, h: null, ...v };
   await insert('versions', [{ ...row, bookId: book.id }]);
   book.versions.push(row); book.selected = row.id;
   patch('books', book.id, { selected: row.id });
@@ -506,9 +508,10 @@ async function produce(book, { removeBg = true, change = '', lookId = null } = {
   if (change && !from?.raw) throw new Error('No raw image to edit — Generate one first');
   const prompt = change ? composeEditPrompt(project, change) : composePrompt(project, book);
   const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey: from?.raw }) });
-  let cover = null, aspect = null;
-  if (removeBg) { const k = await keyRaw(rawKey); aspect = k.aspect; cover = await storeImage(book, 'covers', k.base64); }
-  return addVersion(book, { raw: rawKey, cover, prompt, aspect, edit: change || null, lookId: change ? from.lookId : lookId });
+  let cover = null, aspect = null, w = null, h = null;
+  if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
+  else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
+  return addVersion(book, { raw: rawKey, cover, prompt, aspect, w, h, edit: change || null, lookId: change ? from.lookId : lookId });
 }
 
 async function generate(books) {
@@ -560,13 +563,13 @@ function renderManager() {
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
-  $('im-preview').innerHTML =  (v ? pic(v.cover || v.raw, `${b.title} cover`, '(max-width: 900px) 90vw, 440px', [480, 640, 960, 1280], true) : '<span class="hint">The cover appears here</span>') + backdropBar();
+  $('im-preview').innerHTML =  (v ? pic(v.cover || v.raw, `${b.title} cover`, '(max-width: 900px) 90vw, 440px', [480, 640, 960, 1280], true, v) : '<span class="hint">The cover appears here</span>') + backdropBar();
   $('im-aspect').hidden = !(v?.aspect && !aspectOk(v.aspect));
   $('im-aspect').textContent = v?.aspect ? `proportions ${v.aspect.toFixed(2)} — check framing` : '';
   const vers = b.versions || [];
   $('im-versions').hidden = !vers.length;
   $('im-strip').innerHTML = [...vers].reverse().map((x) => `<button type="button" class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : x.prompt.slice(0, 200))}">
-      ${pic(x.cover || x.raw, '', '84px', [160, 240])}
+      ${pic(x.cover || x.raw, '', '84px', [160, 240], false, x)}
       <span class="ver-lab">${esc(x.lookId ? lookById(x.lookId)?.name || 'look' : x.edit && !x.raw ? x.edit : 'upload')}${x.cover ? '' : ' · raw'}</span>
       <span class="ver-date">${new Date(x.at).toLocaleDateString()}</span></button>`).join('');
 }
@@ -605,7 +608,7 @@ $('imgmgr').addEventListener('click', async (e) => {
       if (!v?.raw) return imStatus('This version has no raw image to key.', 'err');
       imBusy(true, 'Keying…');
       const k = await keyRaw(v.raw);
-      await addVersion(b, { raw: v.raw, cover: await storeImage(b, 'covers', k.base64), prompt: v.prompt, aspect: k.aspect, edit: v.edit, lookId: v.lookId });
+      await addVersion(b, { raw: v.raw, cover: await storeImage(b, 'covers', k.base64), prompt: v.prompt, aspect: k.aspect, w: k.w, h: k.h, edit: v.edit, lookId: v.lookId });
       imStatus('Re-keyed ✓', 'ok');
     } else if (act === 'browse') { $('im-file').click(); return; }
     else if (act === 'chat') { addRef(b.id); openChat(b.id, $('chat-input').value.trim() ? '' : 'The style on this cover is what I’m after. Apply it to '); return; }
@@ -623,8 +626,8 @@ $('im-file').addEventListener('change', async (e) => {
     if ($('im-removebg').checked) {
       const rawKey = await storeImage(b, 'raw', base64);
       const k = await keyRaw(rawKey);
-      await addVersion(b, { raw: rawKey, cover: await storeImage(b, 'covers', k.base64), prompt, aspect: k.aspect, edit: 'upload' });
-    } else await addVersion(b, { cover: await storeImage(b, 'covers', base64), prompt, edit: 'upload' });
+      await addVersion(b, { raw: rawKey, cover: await storeImage(b, 'covers', k.base64), prompt, aspect: k.aspect, w: k.w, h: k.h, edit: 'upload' });
+    } else { const bm = await createImageBitmap(png); await addVersion(b, { cover: await storeImage(b, 'covers', base64), prompt, edit: 'upload', w: bm.width, h: bm.height }); }
     imStatus('Uploaded ✓', 'ok');
   } catch (err) { imStatus(err.message, 'err'); }
   finally { imBusy(false); renderManager(); renderCard(b.id); }
@@ -668,7 +671,7 @@ function renderRefs() {
   $('chat-refs').innerHTML = chat.refs.map((id) => {
     const b = project.books.find((x) => x.id === id); if (!b) return '';
     const v = currentVersion(b);
-    return `<span class="ref"><button type="button" class="ref-img" data-open-book="${id}" title="Open ${esc(b.title)} in the editor">${v ? pic(v.cover || v.raw, b.title, '40px', [160]) : '▢'}</button>
+    return `<span class="ref"><button type="button" class="ref-img" data-open-book="${id}" title="Open ${esc(b.title)} in the editor">${v ? pic(v.cover || v.raw, b.title, '40px', [160], false, v) : '▢'}</button>
       <span class="ref-t">${esc(b.title)}</span><button type="button" class="ref-x" data-unref="${id}" aria-label="Remove ${esc(b.title)}">×</button></span>`;
   }).join('');
 }
@@ -700,7 +703,7 @@ const thumbsHtml = (ids = []) => !ids.length ? '' : `<div class="chat-thumbs">${
   const b = project.books.find((x) => x.id === id); if (!b) return '';
   const v = currentVersion(b), st = status.get(id);
   return `<button type="button" class="chat-thumb ${st?.state === 'busy' ? 'busy' : ''}" data-open-book="${id}" title="Open ${esc(b.title)}">
-    <span class="ct-img">${v ? pic(v.cover || v.raw, b.title, '104px', [160, 240]) : `<span class="none">${esc(b.title)}</span>`}</span>
+    <span class="ct-img">${v ? pic(v.cover || v.raw, b.title, '104px', [160, 240], false, v) : `<span class="none">${esc(b.title)}</span>`}</span>
     <span class="ct-cap">${esc(b.title)}</span>${st?.state === 'busy' ? '<span class="ct-busy">Generating…</span>' : ''}</button>`;
 }).join('')}</div>`;
 function renderChat() {

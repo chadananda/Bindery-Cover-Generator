@@ -56,7 +56,16 @@ describe('store', () => {
   it('never deletes versions or looks', async () => {
     await expect(deleteRows(db, 'ocean', 'versions', ['v1'])).rejects.toThrow();
     await expect(deleteRows(db, 'ocean', 'looks', ['L1'])).rejects.toThrow();
-    await expect(patchRow(db, 'ocean', 'versions', 'v1', { cover: 'x' })).rejects.toThrow();
+    await insertRows(db, 'ocean', 'versions', [{ id: 'v1', bookId: 'b1', cover: 'k', at: 1 }]);
+    expect(await patchRow(db, 'ocean', 'versions', 'v1', { cover: 'x' })).toBe(0); // history: image keys never change
+  });
+
+  it('records and patches a version\'s pixel size (metadata, not history)', async () => {
+    await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'A' }]);
+    await insertRows(db, 'ocean', 'versions', [{ id: 'v1', bookId: 'b1', cover: 'k', at: 1, w: 304, h: 400 }]);
+    expect((await loadLibrary(db, 'ocean')).books[0].versions[0]).toMatchObject({ w: 304, h: 400 });
+    expect(await patchRow(db, 'ocean', 'versions', 'v1', { w: 300, h: 410 })).toBe(1);
+    expect((await loadLibrary(db, 'ocean')).books[0].versions[0]).toMatchObject({ w: 300, h: 410, cover: 'k' });
   });
 
   it('deleting a shelf unassigns its books and collections', async () => {

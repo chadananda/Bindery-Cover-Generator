@@ -69,9 +69,10 @@ describe('renderImage', () => {
     expect(a.some((v) => v === 255)).toBe(true);
   });
 
-  it('never upscales a single-dimension request beyond the source', async () => {
+  it('returns EXACTLY the requested width, even past the source — srcset widths must be true', async () => {
+    // A 304px original served as "480w" at 304px made the browser draw it at 304/480 of its slot.
     const img = await decode(await renderImage(src(), parseTr('w-1280'), 'webp'));
-    expect(img.width).toBe(W);
+    expect([img.width, img.height]).toEqual([1280, Math.round(1280 * H / W)]);
   });
 
   it('cover-crops to an exact box', async () => {

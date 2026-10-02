@@ -143,32 +143,25 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 .shelf-count { color: var(--ink-3); font-size: 13px; }
 .shelf-style-line { flex-basis: 100%; min-width: 0; margin: 0; color: var(--ink-3); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* The grid: fixed row height so a shelf board sits under every row. Covers stand ON the board: the board stripe
-   starts exactly where each row's thumb area ends (no top padding to offset it). */
+/* The grid: flat, no shelving. Fixed cover slot (covers bottom-aligned per row), title beneath. Fixed column width:
+   a wider window shows MORE covers, never bigger ones. */
 .grid {
-  /* Fixed cover size: a wider window shows MORE covers, never bigger ones. */
-  --row: 330px; --board: 240px; --col: 150px;
-  display: grid; grid-template-columns: repeat(auto-fill, var(--col)); grid-auto-rows: var(--row);
-  column-gap: 1.25rem; padding: 0 1rem;
-  background:
-    repeating-linear-gradient(180deg, transparent 0 var(--board),
-      var(--wood-hi) var(--board), var(--wood) calc(var(--board) + 3px), var(--wood) calc(var(--board) + 8px), var(--wood-lo) calc(var(--board) + 14px),
-      var(--shadow) calc(var(--board) + 14px), transparent calc(var(--board) + 34px), transparent var(--row)),
-    var(--wall);
+  --col: 150px; --cover-h: 210px;
+  display: grid; grid-template-columns: repeat(auto-fill, var(--col)); gap: 1.7rem 1.4rem; padding: 1.3rem 1.2rem 1.8rem;
 }
-@media (max-width: 600px) { .grid { --row: 270px; --board: 190px; --col: 112px; column-gap: .8rem; padding: 0 .6rem; } }
-.card { position: relative; display: grid; grid-template-rows: var(--board) 1fr; min-width: 0; }
-.card .thumb { display: flex; align-items: flex-end; justify-content: center; padding: 1.6rem .3rem 0; min-height: 0; }
+@media (max-width: 600px) { .grid { --col: 112px; --cover-h: 158px; gap: 1.3rem .9rem; padding: 1rem .7rem 1.4rem; } }
+.card { position: relative; display: grid; grid-template-rows: var(--cover-h) auto; min-width: 0; }
+.card .thumb { display: flex; align-items: flex-end; justify-content: center; min-height: 0; }
 /* .book hugs the cover, so the checkbox and star sit on ITS corners, whatever the cover's height. */
-.card .book { position: relative; display: flex; max-width: 100%; max-height: 100%; cursor: pointer; transform-origin: 50% 100%; transition: transform .3s cubic-bezier(.2, .8, .2, 1); }
-.card .book:hover { transform: translateY(-5px); }
-.card .book img { display: block; max-width: 100%; max-height: calc(var(--board) - 1.6rem); width: auto; height: auto; object-fit: contain; filter: drop-shadow(0 7px 6px var(--shadow)); }
+.card .book { position: relative; display: flex; max-width: 100%; max-height: 100%; cursor: pointer; transition: transform .25s cubic-bezier(.2, .8, .2, 1); }
+.card .book:hover { transform: translateY(-4px); }
+.card .book img { display: block; max-width: 100%; max-height: var(--cover-h); width: auto; height: auto; object-fit: contain; filter: drop-shadow(0 6px 12px rgb(0 0 0 / .22)) drop-shadow(0 1px 2px rgb(0 0 0 / .25)); }
 .card .book .none {
-  width: calc(var(--col) * .74); aspect-ratio: 3 / 4.2; border: 2px dashed var(--edge); border-radius: 2px 4px 4px 2px;
+  width: calc(var(--col) * .8); aspect-ratio: 3 / 4; border: 2px dashed var(--edge); border-radius: 3px;
   display: grid; place-items: center; color: var(--ink-2); font-size: 13px; text-align: center; padding: .5rem; overflow: hidden;
   background: color-mix(in srgb, var(--panel) 85%, transparent);
 }
-.card .meta { padding: .8rem .1rem 0; display: grid; gap: .1rem; align-content: start; text-align: center; overflow: hidden; }
+.card .meta { padding: .7rem .1rem 0; display: grid; gap: .1rem; align-content: start; text-align: center; overflow: hidden; }
 .card .t { font: 600 14px/1.25 var(--sans); color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card .a { font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .tags { font-size: 12px; color: var(--ink-3); }

@@ -21,9 +21,10 @@ export async function renderImage(srcBytes, spec, format) {
       swap(resize(img, g.scaledW, g.scaledH, SamplingFilter.Lanczos3));
       swap(crop(img, g.x, g.y, g.x + tw, g.y + th));
     } else if (tw || th) {
-      // Fit inside the box, never upscaling: a cover is never served softer than its original.
-      const s = Math.min(1, tw ? tw / sw : Infinity, th ? th / sh : Infinity);
-      if (s < 1) swap(resize(img, Math.max(1, Math.round(sw * s)), Math.max(1, Math.round(sh * s)), SamplingFilter.Lanczos3));
+      // Fit to the box at EXACTLY the requested size, upscaling small originals: srcset declares "320w", and the
+      // browser lays the image out from that number — a smaller file would be drawn smaller than its slot.
+      const s = Math.min(tw ? tw / sw : Infinity, th ? th / sh : Infinity);
+      if (s !== 1) swap(resize(img, Math.max(1, Math.round(sw * s)), Math.max(1, Math.round(sh * s)), SamplingFilter.Lanczos3));
     }
     if (format === 'png') return new Uint8Array(img.get_bytes());
     if (format === 'jpeg') return new Uint8Array(img.get_bytes_jpeg(spec.quality));

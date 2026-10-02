@@ -1,15 +1,16 @@
 // D1 data layer. Rows ↔ the client's project object ({app, shelves, collections, books[+versions], looks}).
 // Column whitelists per table guard every write; every query is scoped by lib. Order = insertion (rowid).
-// History is append-only: versions and looks can't be patched or deleted, and deleting a book keeps its versions.
+// History is append-only: versions and looks can't be deleted and their content can't change (a version's pixel
+// size w/h is patchable metadata); deleting a book keeps its versions.
 const COLS = {
   libraries: ['name', 'style', 'keyColor', 'lookId'],
   shelves: ['id', 'name', 'style'],
   collections: ['id', 'shelfId', 'name', 'style'],
   books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample'],
-  versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'aspect', 'edit', 'lookId', 'at'],
+  versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'aspect', 'edit', 'lookId', 'at', 'w', 'h'],
   looks: ['id', 'name', 'styles', 'notes', 'at'],
 };
-const PATCHABLE = { libraries: COLS.libraries, shelves: ['name', 'style'], collections: ['shelfId', 'name', 'style'], books: COLS.books.slice(1), looks: ['name', 'notes'] };
+const PATCHABLE = { libraries: COLS.libraries, shelves: ['name', 'style'], collections: ['shelfId', 'name', 'style'], books: COLS.books.slice(1), looks: ['name', 'notes'], versions: ['w', 'h'] };
 const DELETABLE = new Set(['shelves', 'collections', 'books']);
 const cols = (table, map = COLS) => map[table] || (() => { throw new Error(`Unknown table: ${table}`); })();
 // JS → SQL values: booleans as 0/1, objects as JSON, undefined dropped by the caller.

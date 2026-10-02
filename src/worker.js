@@ -13,7 +13,7 @@ const COOKIE = 'cg_auth';
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const KEY = /^sets\/[a-z0-9-]+\/(raw|covers)\/[A-Za-z0-9_-]+\/\d+\.png$/;
-const FX_VERSION = 1; // bump to re-render every cached rendition
+const FX_VERSION = 2; // bump to re-render every cached rendition (2: exact widths, upscaling small originals)
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 const json = (data, status = 200, headers = {}) =>
