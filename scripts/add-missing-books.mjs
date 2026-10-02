@@ -2,7 +2,7 @@
 // JPS and Deuterocanonical volume). One per sitemap book page not already a book's source: title/author/cover from the
 // page, id/description/shelf from library_summary.csv (matched on title + category), current cover as version 1.
 // Re-runnable. Usage: node scripts/add-missing-books.mjs <lib> <library_summary.csv> <localPasscode> [--write]  (npm run dev)
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parseCsv } from '../core/csv.js';
 const [LIB, CSV, PASS, ...flags] = process.argv.slice(2);
 const WRITE = flags.includes('--write');
@@ -34,31 +34,47 @@ const shelfByCat = (cat) => project.shelves.find((s) => norm(s.name) === norm(ca
 const xml = await (await fetch(`https://${SITE}/server/sitemap/sitemap.xml`)).text();
 const urls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]).filter((u) => { const p = slugOf(u).split('/'); return p.length === 1 && p[0] && !SKIP.test(p[0]) && !have.has(p[0]); });
 console.log(`${LIB}: ${urls.length} sitemap book pages not in Bindery`);
-const add = []; let i = 0;
+// Scraped page metadata is cached (tmp/scrape-<lib>.json): a full site read takes ~10 minutes.
+const CACHE = `tmp/scrape-${LIB}.json`;
+const pages = existsSync(CACHE) ? JSON.parse(readFileSync(CACHE, 'utf8')) : {};
+let i = 0;
 await Promise.all(Array.from({ length: 4 }, async () => {
   while (i < urls.length) {
     const url = urls[i++];
+    if (pages[url]) continue;
     try {
       const html = await (await fetch(url)).text();
       const meta = (p) => unent(html.match(new RegExp(`property="${p}" content="([^"]*)"`))?.[1]);
       const ld = html.match(/"@type":"Book"[^<]{0,4000}/)?.[0] || '';
-      const title = unent(ld.match(/"name":"([^"]+)"/)?.[1]);
-      const cover = meta('og:image'), cat = html.match(/\/category\/([a-z-]+)/)?.[1] || '';
-      if (!title || !/\/server\/files\//.test(cover || '')) continue;
-      const cands = csvBy.get(norm(title)) || [];
-      const row = cands.find((r) => norm(r.category) === norm(cat)) || (cands.length === 1 ? cands[0] : null);
-      const author = row?.author && !/^unknown$/i.test(row.author) ? row.author : (meta('og:title').split(', ').length > 1 ? meta('og:title').split(', ')[0] : '');
-      const shelf = shelfByCat(row?.category || cat);
-      add.push({ url, cover, book: { id: row?.id && /^[A-Za-z0-9_-]+$/.test(row.id) && !ids.has(row.id) ? row.id : rid(), title, author, type: row?.type || 'Book', description: row?.description || '', shelfId: shelf?.id || '', source: url } });
+      pages[url] = { title: unent(ld.match(/"name":"([^"]+)"/)?.[1]), cover: meta('og:image'), cat: html.match(/\/category\/([a-z-]+)/)?.[1] || '', ogTitle: meta('og:title') };
     } catch {}
     await sleep(100);
   }
 }));
-const byShelf = Object.groupBy(add, (a) => project.shelves.find((s) => s.id === a.book.shelfId)?.name || '(no shelf)');
+writeFileSync(CACHE, JSON.stringify(pages));
+// Site categories with no shelf of that name get a new shelf (named from the category) on --write.
+const newShelves = new Map();
+const shelfFor = (cat) => shelfByCat(cat) || (cat && (newShelves.get(cat) || newShelves.set(cat, { id: rid(), name: cat.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), style: '' }).get(cat)));
+const add = [];
+for (const url of urls) {
+    const pg = pages[url]; if (!pg) continue;
+    try {
+      const { title, cover, cat } = pg, meta = () => pg.ogTitle || '';
+      if (!title || !/\/server\/files\//.test(cover || '')) continue;
+      const cands = csvBy.get(norm(title)) || [];
+      const row = cands.find((r) => norm(r.category) === norm(cat)) || (cands.length === 1 ? cands[0] : null);
+      const author = row?.author && !/^unknown$/i.test(row.author) ? row.author : (meta().split(', ').length > 1 ? meta().split(', ')[0] : '');
+      const shelf = shelfByCat(row?.category) || shelfFor(cat);
+      add.push({ url, cover, book: { id: row?.id && /^[A-Za-z0-9_-]+$/.test(row.id) && !ids.has(row.id) ? row.id : rid(), title, author, type: row?.type || 'Book', description: row?.description || '', shelfId: shelf?.id || '', source: url } });
+    } catch {}
+}
+if (newShelves.size) console.log('new shelves from site categories:', [...newShelves.values()].map((s) => s.name).join(', '));
+const byShelf = Object.groupBy(add, (a) => [...project.shelves, ...newShelves.values()].find((s) => s.id === a.book.shelfId)?.name || '(no shelf)');
 console.log(`${add.length} with a real cover to add:`, Object.entries(byShelf).map(([k, v]) => `${k} ${v.length}`).join(', '));
 console.log('  e.g.', add.slice(0, 6).map((a) => `${a.book.title} — ${a.book.author}`).join(' | '));
 if (WRITE) {
   let n = 0;
+  if (newShelves.size) await api(`/api/libraries/${LIB}/shelves`, { rows: [...newShelves.values()] });
   for (const { cover, book } of add) {
     await api(`/api/libraries/${LIB}/books`, { rows: [book] });
     const bytes = Buffer.from(await (await fetch(cover)).arrayBuffer());
