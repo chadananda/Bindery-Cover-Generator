@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=18';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=19';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -621,6 +621,8 @@ function openManager(bookId) {
   renderManager();
   openPane('imgmgr');
 }
+// What a version is, for the History strip: site cover, upload, edit (of what), or the look that generated it.
+const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit ? 'edit' : x.lookId ? lookById(x.lookId)?.name || 'look' : 'generated';
 function renderManager() {
   const b = imBook(); if (!b) return;
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')
@@ -638,7 +640,7 @@ function renderManager() {
   $('im-versions').hidden = !vers.length;
   $('im-strip').innerHTML = [...vers].reverse().map((x) => `<button type="button" class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : x.prompt.slice(0, 200))}">
       ${pic(x.cover || x.raw, '', '84px', [160, 240], false, x)}
-      <span class="ver-lab">${esc(x.lookId ? lookById(x.lookId)?.name || 'look' : x.edit && !x.raw ? x.edit : 'upload')}${x.cover ? '' : ' · raw'}</span>
+      <span class="ver-lab">${esc(verLabel(x))}${x.cover ? '' : ' · raw'}</span>
       <span class="ver-date">${new Date(x.at).toLocaleDateString()}</span></button>`).join('');
 }
 // Field edits persist as you type (they live on the book).

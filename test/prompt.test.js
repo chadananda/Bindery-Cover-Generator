@@ -95,4 +95,14 @@ describe('effectiveStyles', () => {
   it('lists the layers that apply to a book, for display in the editor', () => {
     expect(effectiveStyles(project, book).map((l) => l.level)).toEqual(['application', 'bookshelf', 'collection']);
   });
+
+  it('the edit prompt asks for the SAME photograph changed in place, not a re-shoot', async () => {
+    const { composeEditPrompt } = await import('../core/prompt.js');
+    const p = composeEditPrompt({ app: { keyColor: 'magenta' } }, 'add a silver clasp');
+    expect(p).toContain('add a silver clasp');
+    expect(p).toMatch(/same photograph/i);
+    expect(p).toMatch(/do not re-?(shoot|photograph|frame|crop)/i);
+    expect(p).toMatch(/lettering/i);
+    expect(p).toContain('#FF00FF');
+  });
 });

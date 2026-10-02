@@ -36,6 +36,12 @@ describe('generateImage', () => {
     expect(parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'SU1H' } }, { text: 'make it red' }]);
   });
 
+  it('an edit keeps the input image\'s shape: no forced aspect ratio (3:4 made the model re-frame the cover)', async () => {
+    const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
+    await generateImage({ apiKey: 'k', prompt: 'add a clasp', inputImage: 'SU1H', fetch });
+    expect(JSON.parse(fetch.mock.calls[0][1].body).generationConfig).toEqual({ responseModalities: ['TEXT', 'IMAGE'] });
+  });
+
   it('throws WITH the model text when it returns 200 but no image (a refusal)', async () => {
     const fetch = vi.fn(async () => ok([{ text: 'I cannot create that image.' }]));
     await expect(generateImage({ apiKey: 'k', prompt: 'p', fetch })).rejects.toThrow(/no image.*I cannot create that image/i);

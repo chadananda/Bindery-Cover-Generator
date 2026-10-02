@@ -24,7 +24,8 @@ export async function generateImage({
     headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
       contents: [{ parts }],
-      generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio } },
+      // An edit returns the input's own shape: forcing 3:4 on it makes the model re-frame (re-compose) the cover.
+      generationConfig: inputImage ? { responseModalities: ['TEXT', 'IMAGE'] } : { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio } },
     }),
   };
 

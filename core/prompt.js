@@ -82,7 +82,11 @@ export function composePrompt(project, book) {
 /** Instruction wrapper for an img2img edit of an existing cover. */
 export function composeEditPrompt(project, change) {
   const k = keyColor(project);
-  return `Edit this book-cover photograph: ${change.trim()}\n\nKeep everything else the same — the same book, ` +
-    `leather, border, lettering and framing. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with ` +
-    `NO shadow, and keep a visible ${k.name.toLowerCase()} margin around all edges of the book.`;
+  // In-place edit, not a re-shoot: the model drifts to a fresh photograph (new light, crop, lettering) unless told hard.
+  return `Edit this exact photograph. Make ONLY this change: ${change.trim()}\n\n` +
+    `Return the SAME photograph with that one change applied in place. Everything not named in the change must stay ` +
+    `pixel-for-pixel as it is: the same book, the same leather colour and texture, the same wear, border, illustration, ` +
+    `lettering, typeface and spacing, the same lighting, camera angle, scale and position in the frame. Do not re-shoot, ` +
+    `re-photograph, re-light, re-frame, crop, zoom or redraw anything. Keep the background SOLID PURE ${k.name} (${k.hex}), ` +
+    `uniform, with NO shadow, and keep the same ${k.name.toLowerCase()} margin around all edges of the book.`;
 }
