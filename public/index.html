@@ -6,121 +6,134 @@
   <title>Bindery Cover Generator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=3" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css?v=4" />
 </head>
 <body>
-  <header class="top">
-    <div class="mark" aria-hidden="true">❦</div>
-    <div class="brand"><span class="brand-name">The Bindery</span><span class="brand-sub">Cover Generator</span></div>
-    <label class="set-pick"><span>Library</span>
-      <select id="set-select" aria-label="App set"></select>
-    </label>
-    <button type="button" id="new-set" class="btn ghost small">+ New library</button>
+  <!-- Library bar: sticky. Library-wide style, looks and book import live in dialogs opened from here. -->
+  <header class="libbar" id="libbar">
+    <div class="brand"><span class="mark" aria-hidden="true">❦</span><span class="brand-name">Bindery</span></div>
+    <select id="lib-select" class="lib-select" aria-label="Library"></select>
+    <span id="lib-stats" class="lib-stats"></span>
+    <span id="look-state" class="look-state"></span>
     <span class="spacer"></span>
+    <nav class="lib-actions" aria-label="Library">
+      <button type="button" class="btn small" id="open-libstyle">Library style</button>
+      <button type="button" class="btn small" id="open-looks">Looks</button>
+      <button type="button" class="btn small gold" id="try-look" data-write title="Generate a cover for every sample book (★) in the library, using the current styles">✦ Try look</button>
+      <select id="shelf-jump" class="shelf-jump" aria-label="Show bookshelf"></select>
+      <button type="button" class="btn small ghost" id="open-add" data-write>+ Books</button>
+      <button type="button" class="btn small ghost" id="theme-btn" title="Switch light / dark: covers must read on both">◐</button>
+      <button type="button" class="btn small gold" id="login-btn" data-read>Log in to edit</button>
+      <details class="more">
+        <summary class="btn small ghost" aria-label="More">⋯</summary>
+        <div class="more-menu">
+          <button type="button" class="btn small ghost" id="new-lib" data-write>+ New library</button>
+          <button type="button" class="btn small ghost" id="logout" data-write>Log out</button>
+        </div>
+      </details>
+    </nav>
     <span id="save-state" class="save-state" aria-live="polite"></span>
-    <button type="button" id="logout" class="btn ghost small">Log out</button>
   </header>
 
-  <div class="layout" id="app" hidden>
-    <aside class="styles" aria-label="Styles">
-      <section class="panel">
-        <h2><span class="rule"></span>The House Style<span class="rule"></span></h2>
-        <p class="panel-sub">Applies to every cover in this library</p>
-        <label class="field"><span>Library name</span><input id="app-name" /></label>
-        <label class="field"><span>Style</span><textarea id="app-style" rows="8"></textarea></label>
-        <div class="row">
-          <label class="field inline"><span>Key colour</span>
-            <select id="app-key"><option value="magenta">Magenta</option><option value="green">Green</option></select>
-          </label>
-          <button type="button" id="app-style-reset" class="btn small ghost" title="Restore the default leather style">↺ Default</button>
-        </div>
-        <p class="hint">The cover is photographed on this colour, then it is cut away. Choose one that never appears in the art.</p>
-      </section>
+  <main id="app" class="shelves" hidden></main>
+  <p id="empty" class="empty" hidden>This library is empty. Use <b>+ Books</b> to paste a CSV or add one.</p>
 
-      <section class="panel">
-        <h2><span class="rule"></span>Bookshelves<span class="rule"></span></h2>
-        <p class="panel-sub">A sub-style for each shelf</p>
-        <div id="shelves"></div>
-        <button type="button" id="add-shelf" class="btn small ghost">+ Bookshelf</button>
-      </section>
-
-      <section class="panel">
-        <h2><span class="rule"></span>Collections<span class="rule"></span></h2>
-        <p class="panel-sub">Volumes that must match</p>
-        <div id="collections"></div>
-        <button type="button" id="add-collection" class="btn small ghost">+ Collection</button>
-      </section>
-    </aside>
-
-    <main class="work">
-      <section class="hero">
-        <p class="eyebrow">Now binding</p>
-        <h1 id="hero-name">Library</h1>
-        <dl class="stats">
-          <div><dt>Books</dt><dd id="stat-books">0</dd></div>
-          <div><dt>Shelves</dt><dd id="stat-shelves">0</dd></div>
-          <div><dt>Covers</dt><dd id="stat-covers">0</dd></div>
-          <div><dt>New</dt><dd id="stat-new">0</dd></div>
-        </dl>
-      </section>
-
-      <section class="panel add">
-        <div class="tabs" role="tablist">
-          <button type="button" role="tab" class="tab on" data-tab="csv" aria-selected="true">Paste CSV</button>
-          <button type="button" role="tab" class="tab" data-tab="one" aria-selected="false">Add one book</button>
-        </div>
-        <div class="tab-body" data-body="csv">
-          <textarea id="csv-in" rows="3" placeholder="title,author,bookshelf,collection&#10;Gospel of John,John,Bible,Gospels&#10;(Library exports work as-is: author,category,name,type)"></textarea>
-          <div class="row"><button type="button" id="csv-import" class="btn">Import</button><span id="csv-note" class="hint"></span></div>
-        </div>
-        <div class="tab-body" data-body="one" hidden>
-          <div class="one-grid">
-            <input id="one-title" placeholder="Title" />
-            <input id="one-author" placeholder="Author (optional)" />
-            <select id="one-shelf" aria-label="Bookshelf"></select>
-            <select id="one-collection" aria-label="Collection"></select>
-            <button type="button" id="one-add" class="btn">Add</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="toolbar" aria-label="Batch actions">
-        <label class="check"><input type="checkbox" id="select-all" /> All</label>
-        <select id="filter-shelf" aria-label="Filter by bookshelf"></select>
-        <button type="button" id="select-missing" class="btn small ghost">Select missing</button>
-        <span class="spacer"></span>
-        <span id="sel-count" class="hint"></span>
-        <button type="button" id="gen-selected" class="btn gold">✦ Generate selected</button>
-        <button type="button" id="dl-selected" class="btn">⇩ Download</button>
-        <button type="button" id="del-selected" class="btn ghost danger">Delete</button>
-      </section>
-
-      <section id="grid" class="grid" aria-label="Books"></section>
-      <p id="empty" class="empty">The shelves are empty. Paste a CSV or add a book above.</p>
-    </main>
+  <!-- Selection bar: appears at the bottom once anything is selected. -->
+  <div class="selbar" id="selbar" hidden role="region" aria-label="Selected books">
+    <span id="sel-count" class="sel-count"></span>
+    <button type="button" class="btn small gold" id="sel-generate" data-write>✦ Generate</button>
+    <button type="button" class="btn small" id="sel-sample" data-write title="Toggle sample (★): samples are what ✦ Try look generates">★ Sample</button>
+    <button type="button" class="btn small" id="sel-download">⇩ Download</button>
+    <select id="sel-move" data-write aria-label="Move to bookshelf"></select>
+    <button type="button" class="btn small ghost danger" id="sel-delete" data-write>Remove</button>
+    <button type="button" class="btn small ghost" id="sel-clear">Clear</button>
   </div>
 
-  <!-- IMAGE MANAGER — modelled on NovelArabic's: content + style prompts, Generate / Edit (img2img of the
-       current cover) / Browse, every render kept as a version for rollback. -->
-  <dialog id="imgmgr" class="imgmgr" aria-label="Image Manager">
-    <header class="im-head">
-      <span class="mark small" aria-hidden="true">❦</span>
-      <span id="im-title" class="im-title">Image Manager</span>
-      <button type="button" class="x" data-close aria-label="Close">&times;</button>
-    </header>
+  <!-- Library style -->
+  <dialog id="dlg-lib" class="dlg">
+    <header class="dlg-head"><h2>Library style</h2><button type="button" class="x" data-close aria-label="Close">&times;</button></header>
+    <div class="dlg-body">
+      <label class="field"><span>Library name</span><input id="lib-name" /></label>
+      <label class="field"><span>Style for every cover</span><textarea id="lib-style" rows="9"></textarea></label>
+      <div class="row wrap">
+        <label class="field inline"><span>Key colour</span>
+          <select id="lib-key"><option value="magenta">Magenta</option><option value="green">Green</option></select></label>
+        <button type="button" id="lib-style-reset" data-write class="btn small ghost">↺ Default leather style</button>
+      </div>
+      <p class="hint">Covers are photographed on the key colour, which is then cut away. Pick one that never appears in the art.</p>
+      <h3>Bookshelves</h3>
+      <p class="hint">Each shelf's own style opens from its header.</p>
+      <div id="lib-shelves" class="name-list"></div>
+      <button type="button" id="add-shelf" data-write class="btn small ghost">+ Bookshelf</button>
+      <h3>Collections on no shelf</h3>
+      <div id="lib-colls"></div>
+      <button type="button" class="btn small ghost" data-add-coll="" data-write>+ Collection</button>
+    </div>
+  </dialog>
+
+  <!-- One bookshelf's style -->
+  <dialog id="dlg-shelf" class="dlg">
+    <header class="dlg-head"><h2 id="shelf-title">Bookshelf</h2><button type="button" class="x" data-close aria-label="Close">&times;</button></header>
+    <div class="dlg-body">
+      <label class="field"><span>Name</span><input id="shelf-name" /></label>
+      <label class="field"><span>How covers on this shelf differ</span><textarea id="shelf-style" rows="6" placeholder="Leather colour, motifs, border…"></textarea></label>
+      <details class="inherit"><summary>Library style it builds on</summary><p id="shelf-inherit"></p></details>
+      <h3>Collections on this shelf</h3>
+      <p class="hint">Volumes that must match one another, such as the four Gospels.</p>
+      <div id="shelf-colls"></div>
+      <div class="row wrap">
+        <button type="button" class="btn small ghost" id="shelf-add-coll" data-write>+ Collection</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn small ghost danger" id="shelf-delete" data-write>Delete bookshelf</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Looks: every style snapshot that produced covers, side by side. -->
+  <dialog id="dlg-looks" class="dlg wide">
+    <header class="dlg-head"><h2>Looks</h2><button type="button" class="x" data-close aria-label="Close">&times;</button></header>
+    <div class="dlg-body">
+      <p class="hint">A look is saved automatically the first time you generate with new styles. Rows are looks, newest first; columns are the books generated under them. <b>Restore</b> puts a look's styles back.</p>
+      <div id="looks-body" class="looks"></div>
+    </div>
+  </dialog>
+
+  <!-- Add books -->
+  <dialog id="dlg-add" class="dlg">
+    <header class="dlg-head"><h2>Add books</h2><button type="button" class="x" data-close aria-label="Close">&times;</button></header>
+    <div class="dlg-body">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab on" data-tab="csv" aria-selected="true">Paste CSV</button>
+        <button type="button" role="tab" class="tab" data-tab="one" aria-selected="false">One book</button>
+      </div>
+      <div class="tab-body" data-body="csv">
+        <textarea id="csv-in" rows="7" placeholder="title,author,bookshelf,collection&#10;Gospel of John,John,Bible,Gospels&#10;(Library exports work as-is: author,category,name,type)"></textarea>
+        <div class="row"><button type="button" id="csv-import" class="btn">Import</button><span id="csv-note" class="hint"></span></div>
+      </div>
+      <div class="tab-body" data-body="one" hidden>
+        <label class="field"><span>Title</span><input id="one-title" /></label>
+        <label class="field"><span>Author</span><input id="one-author" /></label>
+        <label class="field"><span>Bookshelf</span><select id="one-shelf"></select></label>
+        <label class="field"><span>Collection</span><select id="one-collection"></select></label>
+        <button type="button" id="one-add" class="btn">Add</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- IMAGE MANAGER — content + style prompts, Generate / Edit (img2img of the current cover) / Browse.
+       Every render is kept as a version, labelled with the look that made it. Nothing is deleted. -->
+  <dialog id="imgmgr" class="dlg imgmgr" aria-label="Image Manager">
+    <header class="dlg-head"><h2 id="im-title">Image Manager</h2><button type="button" class="x" data-close aria-label="Close">&times;</button></header>
     <div class="im-body">
       <div class="im-col">
-        <details class="about" id="im-about-wrap" hidden>
-          <summary>About this book <small>· informs the imagery, never printed</small></summary>
+        <details class="inherit" id="im-about-wrap" hidden>
+          <summary>About this book <small>· guides the imagery, never printed</small></summary>
           <p id="im-about"></p>
         </details>
-        <label class="field"><span>Centre illustration <small>· leave blank to let the description decide</small></span>
+        <label class="field"><span>Centre illustration <small>· blank = chosen from the description</small></span>
           <textarea id="im-content" rows="3" placeholder="e.g. a winged lion standing on an open scroll"></textarea></label>
-        <details class="layers" open>
-          <summary>Inherited style</summary>
-          <div id="im-layers"></div>
-        </details>
+        <details class="inherit" open><summary>Inherited style</summary><div id="im-layers"></div></details>
         <label class="field"><span>This book only <small>· optional, applied last</small></span>
           <textarea id="im-style" rows="2" placeholder="e.g. add an ornate silver clasp"></textarea></label>
         <div class="cover-grid">
@@ -128,41 +141,41 @@
           <label class="field"><span>Subtitle</span><input id="im-sub" /></label>
           <label class="field"><span>Byline</span><input id="im-by" /></label>
         </div>
-        <label class="check"><input type="checkbox" id="im-removebg" checked /> Cut away the background <small>· transparent PNG</small></label>
-        <div class="row wrap actions">
-          <button type="button" class="btn gold" data-act="generate" title="Generate a new cover from the prompt">✦ Generate</button>
+        <label class="check" data-write><input type="checkbox" id="im-sample" /> ★ Sample book <small>· included in ✦ Try look</small></label>
+        <label class="check" data-write><input type="checkbox" id="im-removebg" checked /> Cut away the background <small>· transparent PNG</small></label>
+        <div class="row wrap actions" data-write>
+          <button type="button" class="btn gold" data-act="generate">✦ Generate</button>
           <button type="button" class="btn" data-act="edit" title="Edit the CURRENT cover: describe the change in the illustration box">✎ Edit current</button>
           <button type="button" class="btn ghost" data-act="rekey" title="Cut the background away again (no new generation)">⟳ Re-key</button>
-          <button type="button" class="btn ghost" data-act="browse" title="Use an image file from your computer">🖿 Browse…</button>
+          <button type="button" class="btn ghost" data-act="browse">Upload…</button>
           <input type="file" id="im-file" accept="image/*" hidden />
         </div>
-        <details class="prompt-peek"><summary>The full prompt</summary><pre id="im-prompt"></pre></details>
+        <details class="inherit"><summary>The full prompt</summary><pre id="im-prompt"></pre></details>
       </div>
-      <div class="im-col right">
+      <div class="im-col">
         <div class="im-preview-wrap">
           <div id="im-preview" class="stage im-preview"><span class="hint">The cover appears here</span></div>
           <div id="im-spin" class="im-spin" hidden><span class="spinner"></span><span id="im-spin-lab">Working…</span></div>
         </div>
         <div class="im-status-row"><span id="im-status" class="status"></span><span id="im-aspect" class="badge" hidden></span></div>
-        <div id="im-versions" class="versions" hidden>
-          <div class="versions-lab">Versions <small>· click to select · ✕ to discard</small></div>
+        <div id="im-versions" hidden>
+          <h3>History <small>· every version is kept · click one to use it</small></h3>
           <div id="im-strip" class="strip"></div>
         </div>
       </div>
     </div>
   </dialog>
 
-  <dialog id="login" class="login">
+  <dialog id="login" class="dlg login">
     <form method="dialog" id="login-form">
       <div class="mark big" aria-hidden="true">❦</div>
       <h2>The Bindery</h2>
-      <p class="login-sub">Cover Generator</p>
       <label class="field"><span>Passcode</span><input id="login-pass" type="password" autocomplete="current-password" required /></label>
       <p id="login-err" class="status err"></p>
       <button class="btn gold wide" type="submit">Enter</button>
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=3"></script>
+  <script type="module" src="/app.js?v=4"></script>
 </body>
 </html>

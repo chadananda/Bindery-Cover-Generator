@@ -9,6 +9,7 @@ Copy this folder to use the generator without the app.
 | `keyer.js` | `keyOut({data,width,height}, {key, tolerance, pad})` → transparent RGBA + `aspect`; `aspectOk` |
 | `gemini.js` | `generateImage({apiKey, prompt, inputImage?})` → `{base64, mimeType, text}` |
 | `csv.js` | `parseCsv(text)`, `csvToBooks(text)` |
+| `looks.js` | `snapshotStyles(project)`, `sameStyles`, `applyStyles(project, look)`, `nextLookName` |
 
 `project` is `{ app: {name, style, keyColor}, shelves: [{id,name,style}], collections: [{id,name,shelfId,style}] }`;
 a `book` is `{ title, author?, subtitle?, shelfId?, collectionId?, content?, style? }`.

@@ -1,23 +1,24 @@
-// Cover Generator UI. All cover logic comes from ./core (prompt layers, CSV, the chroma keyer); this file
-// is state, rendering and plumbing. Keying runs HERE, in the browser, on the raw generation the Worker
-// stored — so re-keying never costs a regeneration.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=2';
+// Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
+// plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
+// Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=4';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const rid = () => Math.random().toString(36).slice(2, 10);
 const slug = (s) => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'cover';
 const img = (key) => `/img/${key}`;
+const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 const CONCURRENCY = 2;
 
-let sets = [];
-let setId = null;
-let project = null;
+let libs = [], lib = null, project = null;
+let authed = false; // anonymous visitors browse read-only; every write needs the passcode
 const selected = new Set();
 const status = new Map(); // bookId → {state:'busy'|'err', msg}
-let filterShelf = '';
+let focusShelf = '';      // '' = all shelves
+const collapsed = new Set(store.get('collapsed', []));
 
-// ---------------------------------------------------------------- API
+// ---------------------------------------------------------------- API + persistence
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { 'content-type': 'application/json', ...(opts.headers || {}) } });
   if (res.status === 401) { showLogin(); throw new Error('Passcode required'); }
@@ -25,253 +26,239 @@ async function api(path, opts = {}) {
   if (!res.ok || body.ok === false) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
 }
-let saveT;
-function save() {
-  $('save-state').textContent = 'Saving…';
-  clearTimeout(saveT);
-  saveT = setTimeout(async () => {
-    try { await api(`/api/sets/${setId}`, { method: 'PUT', body: JSON.stringify(project) }); $('save-state').textContent = 'Saved'; }
-    catch (e) { $('save-state').textContent = `Save failed — ${e.message}`; }
-  }, 600);
+const base = () => `/api/libraries/${lib}`;
+let inflight = 0;
+const saveState = (msg) => { $('save-state').textContent = msg; };
+async function persist(fn) {
+  inflight++; saveState('Saving…');
+  try { const r = await fn(); if (!--inflight) saveState('Saved'); return r; }
+  catch (e) { inflight--; saveState(`Save failed — ${e.message}`); throw e; }
 }
+// Field edits: merged per row and sent after a pause in typing.
+const pending = new Map();
+function patch(table, id, fields) {
+  const k = `${table}/${id}`;
+  const p = pending.get(k) || { fields: {} };
+  Object.assign(p.fields, fields); clearTimeout(p.t);
+  p.t = setTimeout(() => { pending.delete(k); persist(() => api(table === 'libraries' ? base() : `${base()}/${table}/${id}`, { method: 'PATCH', body: JSON.stringify(p.fields) })).catch(() => {}); }, 500);
+  pending.set(k, p); saveState('Editing…');
+}
+const insert = (table, rows) => persist(() => api(`${base()}/${table}`, { method: 'POST', body: JSON.stringify({ rows }) }));
+const remove = (table, ids) => persist(() => api(`${base()}/${table}`, { method: 'DELETE', body: JSON.stringify({ ids }) }));
 
-// ---------------------------------------------------------------- login / sets
-function showLogin() { $('app').hidden = true; if (!$('login').open) $('login').showModal(); $('login-pass').focus(); }
+// ---------------------------------------------------------------- theme (covers must read on dark AND light)
+const setTheme = (t) => { document.documentElement.dataset.theme = t; store.set('theme', t); };
+setTheme(store.get('theme', 'dark'));
+$('theme-btn').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+
+// ---------------------------------------------------------------- login / libraries
+function showLogin() { if (!$('login').open) $('login').showModal(); $('login-pass').focus(); }
 $('login-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  $('login-err').textContent = '';
-  try {
-    await api('/api/login', { method: 'POST', body: JSON.stringify({ passcode: $('login-pass').value }) });
-    $('login').close(); $('login-pass').value = '';
-    boot();
-  } catch (err) { $('login-err').textContent = err.message; }
+  e.preventDefault(); $('login-err').textContent = '';
+  try { await api('/api/login', { method: 'POST', body: JSON.stringify({ passcode: $('login-pass').value }) }); $('login').close(); $('login-pass').value = ''; setAuthed(true); renderAll(); }
+  catch (err) { $('login-err').textContent = err.message; }
 });
 $('logout').addEventListener('click', async () => { await fetch('/api/logout'); location.reload(); });
 
-const newProject = (name) => ({
-  app: { name, style: DEFAULT_APP_STYLE, keyColor: 'magenta' },
-  shelves: [], collections: [], books: [],
-});
-
+// Read-only mode: [data-write] controls hidden by CSS, dialog fields locked.
+function setAuthed(on) {
+  authed = on;
+  document.body.classList.toggle('ro', !on);
+  document.querySelectorAll('dialog.dlg:not(.login) :is(input:not([type=checkbox]), textarea)').forEach((el) => { el.readOnly = !on; });
+  document.querySelectorAll('dialog.dlg:not(.login) :is(select, input[type=checkbox])').forEach((el) => { el.disabled = !on; });
+}
+$('login-btn').addEventListener('click', showLogin);
 async function boot() {
-  ({ sets } = await api('/api/sets'));
-  if (!sets.length) {
-    await api('/api/sets/ocean', { method: 'PUT', body: JSON.stringify(newProject('Ocean')) });
-    ({ sets } = await api('/api/sets'));
-  }
-  const wanted = new URLSearchParams(location.search).get('set');
-  await openSet(sets.find((s) => s.id === wanted)?.id || sets[0].id);
+  setAuthed((await api('/api/me')).authed);
+  ({ libraries: libs } = await api('/api/libraries'));
+  if (!libs.length && authed) { await api('/api/libraries', { method: 'POST', body: JSON.stringify({ id: 'library', name: 'Library', style: DEFAULT_APP_STYLE }) }); ({ libraries: libs } = await api('/api/libraries')); }
+  await route();
 }
-function renderSetPicker() {
-  $('set-select').innerHTML = sets.map((s) => `<option value="${s.id}" ${s.id === setId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+// Clean paths: /<library>[/<shelf-slug>]. Unknown library → last used (or first).
+const shelfSlug = (g) => (g.shelf ? slug(g.shelf.name) : 'no-shelf');
+const pathFor = () => `/${lib}${focusShelf ? `/${shelfSlug(groups().find((g) => (g.shelf?.id || '-') === focusShelf) || {})}` : ''}`;
+const go = () => { if (location.pathname !== pathFor()) history.pushState(null, '', pathFor()); };
+async function route() {
+  const [want, shelf] = location.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+  const id = libs.find((l) => l.id === want)?.id || store.get('lib', libs[0].id);
+  if (id !== lib) await openLib(id, false);
+  const g = shelf && groups().find((x) => shelfSlug(x) === shelf);
+  focusShelf = g ? g.shelf?.id || '-' : '';
+  renderAll();
+  history.replaceState(null, '', pathFor());
 }
-async function openSet(id) {
-  setId = id;
-  ({ project } = await api(`/api/sets/${id}`));
-  project.shelves ||= []; project.collections ||= []; project.books ||= [];
-  selected.clear(); status.clear(); filterShelf = '';
-  history.replaceState(null, '', `?set=${id}`);
-  renderSetPicker(); renderAll();
+addEventListener('popstate', () => route());
+async function openLib(id, push = true) {
+  if (!libs.some((l) => l.id === id)) id = libs[0].id;
+  lib = id; store.set('lib', id);
+  ({ project } = await api(base()));
+  selected.clear(); status.clear(); focusShelf = '';
+  if (push) go();
+  $('lib-select').innerHTML = libs.map((l) => `<option value="${l.id}" ${l.id === lib ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
+  renderAll();
   $('app').hidden = false;
 }
-$('set-select').addEventListener('change', (e) => openSet(e.target.value));
-$('new-set').addEventListener('click', async () => {
-  const name = (prompt('Name of the new app set (e.g. WholeReader):') || '').trim();
+$('lib-select').addEventListener('change', (e) => openLib(e.target.value));
+$('new-lib').addEventListener('click', async () => {
+  const name = (prompt('Name of the new library (e.g. WholeReader):') || '').trim();
   if (!name) return;
   let id = slug(name);
-  if (sets.some((s) => s.id === id)) id = `${id}-${rid().slice(0, 4)}`;
-  await api(`/api/sets/${id}`, { method: 'PUT', body: JSON.stringify(newProject(name)) });
-  sets.push({ id, name, books: 0 });
-  await openSet(id);
+  if (libs.some((l) => l.id === id)) id = `${id}-${rid().slice(0, 4)}`;
+  await api('/api/libraries', { method: 'POST', body: JSON.stringify({ id, name, style: DEFAULT_APP_STYLE }) });
+  libs.push({ id, name, books: 0 });
+  await openLib(id);
 });
 
-// ---------------------------------------------------------------- styles panel
+// ---------------------------------------------------------------- helpers over the project
 const shelfById = (id) => project.shelves.find((s) => s.id === id);
 const collById = (id) => project.collections.find((c) => c.id === id);
-
-function renderStyles() {
-  $('app-name').value = project.app.name || '';
-  $('app-style').value = project.app.style || '';
-  $('app-key').value = project.app.keyColor || 'magenta';
-  const countBy = (field, id) => project.books.filter((b) => b[field] === id).length;
-  $('shelves').innerHTML = project.shelves.map((s) => `
-    <div class="layer-card" data-shelf="${s.id}">
-      <div class="row"><input class="name" value="${esc(s.name)}" aria-label="Bookshelf name" data-f="name" />
-        <span class="count">${countBy('shelfId', s.id)} books</span>
-        <button type="button" class="x" data-del title="Delete bookshelf">&times;</button></div>
-      <textarea rows="3" data-f="style" placeholder="How covers on this shelf differ — leather colour, motifs, border…">${esc(s.style)}</textarea>
-    </div>`).join('') || '<p class="hint">No bookshelves yet. A CSV category column creates them.</p>';
-  $('collections').innerHTML = project.collections.map((c) => `
-    <div class="layer-card" data-coll="${c.id}">
-      <div class="row"><input class="name" value="${esc(c.name)}" aria-label="Collection name" data-f="name" />
-        <span class="count">${countBy('collectionId', c.id)} books</span>
-        <button type="button" class="x" data-del title="Delete collection">&times;</button></div>
-      <div class="row"><select data-f="shelfId" aria-label="Bookshelf">${shelfOptions(c.shelfId, '(any shelf)')}</select></div>
-      <textarea rows="3" data-f="style" placeholder="What every volume shares — e.g. identical border, numbered spine label…">${esc(c.style)}</textarea>
-    </div>`).join('') || '<p class="hint">Group volumes that must look alike (e.g. the books of the Bible).</p>';
-}
-const shelfOptions = (cur, none = '(no shelf)') =>
-  `<option value="">${none}</option>` + project.shelves.map((s) => `<option value="${s.id}" ${s.id === cur ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
-const collOptions = (cur, shelfId) =>
-  '<option value="">(no collection)</option>' + project.collections.filter((c) => !shelfId || !c.shelfId || c.shelfId === shelfId)
-    .map((c) => `<option value="${c.id}" ${c.id === cur ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
-
-$('app-name').addEventListener('input', (e) => { project.app.name = e.target.value; const s = sets.find((x) => x.id === setId); if (s) s.name = e.target.value; renderSetPicker(); save(); });
-$('app-style').addEventListener('input', (e) => { project.app.style = e.target.value; save(); });
-$('app-key').addEventListener('change', (e) => { project.app.keyColor = e.target.value; save(); });
-$('app-style-reset').addEventListener('click', () => { project.app.style = DEFAULT_APP_STYLE; $('app-style').value = DEFAULT_APP_STYLE; save(); });
-
-function bindLayerList(containerId, list, attr) {
-  const box = $(containerId);
-  box.addEventListener('input', (e) => {
-    const card = e.target.closest(`[data-${attr}]`); if (!card) return;
-    const item = list().find((x) => x.id === card.dataset[attr]); if (!item) return;
-    item[e.target.dataset.f] = e.target.value;
-    if (e.target.dataset.f === 'name') renderGrid();
-    save();
-  });
-  box.addEventListener('click', (e) => {
-    if (!e.target.matches('[data-del]')) return;
-    const id = e.target.closest(`[data-${attr}]`).dataset[attr];
-    const field = attr === 'shelf' ? 'shelfId' : 'collectionId';
-    const used = project.books.filter((b) => b[field] === id).length;
-    if (used && !confirm(`${used} books use this. Remove it from them and delete?`)) return;
-    project.books.forEach((b) => { if (b[field] === id) b[field] = ''; });
-    if (attr === 'shelf') { project.shelves = project.shelves.filter((s) => s.id !== id); project.collections.forEach((c) => { if (c.shelfId === id) c.shelfId = ''; }); }
-    else project.collections = project.collections.filter((c) => c.id !== id);
-    renderAll(); save();
-  });
-}
-bindLayerList('shelves', () => project.shelves, 'shelf');
-bindLayerList('collections', () => project.collections, 'coll');
-$('add-shelf').addEventListener('click', () => { project.shelves.push({ id: rid(), name: 'New bookshelf', style: '' }); renderAll(); save(); });
-$('add-collection').addEventListener('click', () => { project.collections.push({ id: rid(), name: 'New collection', shelfId: '', style: '' }); renderAll(); save(); });
-
-// ---------------------------------------------------------------- adding books
-document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
-  document.querySelectorAll('.tab').forEach((x) => { x.classList.toggle('on', x === t); x.setAttribute('aria-selected', x === t); });
-  document.querySelectorAll('.tab-body').forEach((b) => { b.hidden = b.dataset.body !== t.dataset.tab; });
-}));
-
-function ensureShelf(name) {
-  if (!name) return '';
-  let s = project.shelves.find((x) => x.name.toLowerCase() === name.toLowerCase());
-  if (!s) { s = { id: rid(), name, style: '' }; project.shelves.push(s); }
-  return s.id;
-}
-function ensureCollection(name, shelfId) {
-  if (!name) return '';
-  let c = project.collections.find((x) => x.name.toLowerCase() === name.toLowerCase() && (x.shelfId || '') === (shelfId || ''));
-  if (!c) { c = { id: rid(), name, shelfId, style: '' }; project.collections.push(c); }
-  return c.id;
-}
-const bookKey = (title, author) => `${title.trim().toLowerCase()}\u0000${(author || '').trim().toLowerCase()}`;
-
-$('csv-import').addEventListener('click', () => {
-  const { books } = csvToBooks($('csv-in').value);
-  if (!books.length) { $('csv-note').textContent = 'No rows with a title found.'; return; }
-  const existing = new Set(project.books.map((b) => bookKey(b.title, b.author)));
-  let added = 0, dup = 0;
-  for (const b of books) {
-    if (existing.has(bookKey(b.title, b.author))) { dup++; continue; }
-    const shelfId = ensureShelf(b.shelf);
-    project.books.push({ id: rid(), title: b.title, author: b.author, type: b.type, shelfId, collectionId: ensureCollection(b.collection, shelfId), content: '', style: '', versions: [], selected: null });
-    existing.add(bookKey(b.title, b.author)); added++;
-  }
-  $('csv-note').textContent = `Added ${added} book${added === 1 ? '' : 's'}${dup ? `, skipped ${dup} already here` : ''}.`;
-  $('csv-in').value = '';
-  renderAll(); save();
-});
-$('one-shelf').addEventListener('change', () => { $('one-collection').innerHTML = collOptions('', $('one-shelf').value); });
-$('one-add').addEventListener('click', () => {
-  const title = $('one-title').value.trim();
-  if (!title) { $('one-title').focus(); return; }
-  project.books.push({ id: rid(), title, author: $('one-author').value.trim(), type: '', shelfId: $('one-shelf').value, collectionId: $('one-collection').value, content: '', style: '', versions: [], selected: null });
-  $('one-title').value = ''; $('one-author').value = '';
-  renderAll(); save();
-});
-
-// ---------------------------------------------------------------- grid + batch
 const currentVersion = (b) => b.versions?.find((v) => v.id === b.selected) || b.versions?.at(-1) || null;
-const visibleBooks = () => project.books.filter((b) => !filterShelf || b.shelfId === filterShelf);
+const lookById = (id) => project.looks.find((l) => l.id === id);
+const shelfOptions = (cur, none = '(no shelf)') => `<option value="">${none}</option>` + project.shelves.map((s) => `<option value="${s.id}" ${s.id === cur ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+const collOptions = (cur, shelfId) => '<option value="">(no collection)</option>' + project.collections.filter((c) => !shelfId || !c.shelfId || c.shelfId === shelfId)
+  .map((c) => `<option value="${c.id}" ${c.id === cur ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+// Shelf groups in display order; books on no (or a deleted) shelf collect at the end.
+const groups = () => {
+  const g = project.shelves.map((s) => ({ shelf: s, books: [] }));
+  const loose = { shelf: null, books: [] };
+  const byId = new Map(g.map((x) => [x.shelf.id, x]));
+  for (const b of project.books) (byId.get(b.shelfId) || loose).books.push(b);
+  return [...g, loose].filter((x) => x.shelf || x.books.length);
+};
 
-function renderGrid() {
-  const books = visibleBooks();
+// ---------------------------------------------------------------- looks
+// The look the next generation belongs to: an existing look with identical styles, else a new one.
+async function ensureLook() {
+  const snap = snapshotStyles(project);
+  let look = project.looks.find((l) => sameStyles(l.styles, snap));
+  if (!look) {
+    look = { id: rid(), name: nextLookName(project.looks), styles: snap, notes: '', at: Date.now() };
+    await insert('looks', [look]);
+    project.looks.unshift(look);
+  }
+  if (project.app.lookId !== look.id) { project.app.lookId = look.id; patch('libraries', lib, { lookId: look.id }); }
+  renderLookState();
+  return look;
+}
+function renderLookState() {
+  const snap = snapshotStyles(project);
+  const match = project.looks.find((l) => sameStyles(l.styles, snap));
+  $('look-state').innerHTML = match ? `Look: <b>${esc(match.name)}</b>` : project.looks.length ? `Look: <b>edited</b> <small>· next generation saves ${esc(nextLookName(project.looks))}</small>` : '';
+}
+
+// ---------------------------------------------------------------- rendering
+function renderAll() { renderBar(); renderShelves(); renderSelbar(); renderLookState(); }
+
+function renderBar() {
+  const covers = project.books.filter((b) => b.versions.length).length;
+  const samples = project.books.filter((b) => b.sample).length;
+  $('lib-stats').textContent = `${project.books.length.toLocaleString()} books · ${covers.toLocaleString()} with covers · ${samples} samples`;
+  $('try-look').disabled = !samples;
+  $('shelf-jump').innerHTML = `<option value="">All shelves</option>` + groups().map((g) => `<option value="${g.shelf?.id || '-'}" ${(g.shelf?.id || '-') === focusShelf ? 'selected' : ''}>${esc(g.shelf?.name || 'No shelf')} (${g.books.length})</option>`).join('');
   $('empty').hidden = project.books.length > 0;
-  $('grid').innerHTML = books.map((b, i) => {
-    const v = currentVersion(b);
-    const st = status.get(b.id);
-    const shelf = shelfById(b.shelfId), coll = collById(b.collectionId);
-    const badge = st?.state === 'busy' ? `<span class="state busy">${esc(st.msg || 'Generating…')}</span>`
-      : st?.state === 'err' ? `<span class="state err" title="${esc(st.msg)}">Failed</span>`
-      : v && v.aspect && !aspectOk(v.aspect) ? '<span class="state warn" title="Proportions look off — consider regenerating">Check framing</span>'
-      : '';
-    return `<article class="card ${selected.has(b.id) ? 'sel' : ''}" data-book="${b.id}" style="--i:${i}">
-      <input type="checkbox" class="pick" ${selected.has(b.id) ? 'checked' : ''} aria-label="Select ${esc(b.title)}" />
-      ${badge}
-      <div class="thumb" data-open title="Open the Image Manager">${v?.cover ? `<img src="${img(v.cover)}" alt="${esc(b.title)}" loading="lazy" />` : v?.raw ? `<img src="${img(v.raw)}" alt="${esc(b.title)}" loading="lazy" />` : `<span class="none">${esc(b.title)}</span>`}</div>
-      <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
-        <span class="tags">${[shelf?.name, coll?.name].filter(Boolean).map(esc).join(' · ')}</span></div>
-    </article>`;
+}
+
+const cardHtml = (b) => {
+  const v = currentVersion(b), st = status.get(b.id), coll = collById(b.collectionId);
+  const badge = st?.state === 'busy' ? `<span class="state busy">${esc(st.msg || 'Generating…')}</span>`
+    : st?.state === 'err' ? `<span class="state err" title="${esc(st.msg)}">Failed</span>`
+    : v?.aspect && !aspectOk(v.aspect) ? '<span class="state warn" title="Proportions look off — consider regenerating">Check framing</span>' : '';
+  const src = v?.cover || v?.raw;
+  return `<article class="card ${selected.has(b.id) ? 'sel' : ''}" data-book="${b.id}">
+    <input type="checkbox" class="pick" ${selected.has(b.id) ? 'checked' : ''} aria-label="Select ${esc(b.title)}" />
+    <button type="button" class="star ${b.sample ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${b.sample}" title="${b.sample ? 'Sample book — included in ✦ Try look' : 'Make this a sample book'}">★</button>
+    ${badge}
+    <div class="thumb" data-open title="Open the Image Manager">${src ? `<img src="${img(src)}" alt="${esc(b.title)}" loading="lazy" />` : `<span class="none">${esc(b.title)}</span>`}</div>
+    <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
+      <span class="tags">${[coll?.name, b.versions.length > 1 ? `${b.versions.length} versions` : ''].filter(Boolean).map(esc).join(' · ')}</span></div>
+  </article>`;
+};
+
+function renderShelves() {
+  $('app').innerHTML = groups().filter((g) => !focusShelf || (g.shelf?.id || '-') === focusShelf).map((g) => {
+    const id = g.shelf?.id || '-', open = !!focusShelf || !collapsed.has(id);
+    const covers = g.books.filter((b) => b.versions.length).length, samples = g.books.filter((b) => b.sample).length;
+    const allSel = g.books.length && g.books.every((b) => selected.has(b.id));
+    return `<section class="shelf" data-shelf="${id}">
+      <header class="shelf-head">
+        <input type="checkbox" class="pick-shelf" ${allSel ? 'checked' : ''} aria-label="Select every book on ${esc(g.shelf?.name || 'no shelf')}" />
+        <button type="button" class="shelf-toggle" data-toggle aria-expanded="${open}"><span class="chev" aria-hidden="true">▸</span><h2>${esc(g.shelf?.name || 'No shelf')}</h2></button>
+        <span class="shelf-count">${g.books.length} books · ${covers} covers${samples ? ` · ${samples} ★` : ''}</span>
+        <span class="spacer"></span>
+        ${g.shelf ? `<button type="button" class="btn small" data-shelf-style>Shelf style</button>` : ''}
+        <button type="button" class="btn small gold" data-write data-shelf-samples ${samples ? '' : 'disabled'} title="${samples ? 'Generate the ★ sample books on this shelf with the current styles' : 'Star (★) a few books on this shelf to try looks on them'}">✦ Samples</button>
+        ${g.shelf?.style ? `<p class="shelf-style-line">${esc(g.shelf.style)}</p>` : ''}
+      </header>
+      ${open ? `<div class="grid">${g.books.map(cardHtml).join('')}</div>` : ''}
+    </section>`;
   }).join('');
-  // Masthead numbers: the whole library, not just the filtered shelf.
-  $('hero-name').textContent = project.app.name || 'Library';
-  $('stat-books').textContent = project.books.length.toLocaleString();
-  $('stat-shelves').textContent = project.shelves.length;
-  $('stat-covers').textContent = project.books.filter((b) => currentVersion(b)).length.toLocaleString();
-  $('stat-new').textContent = project.books.filter((b) => b.versions?.some((v) => v.raw)).length.toLocaleString();
+}
+// Re-render one card in place (status changes, new versions) without rebuilding every shelf.
+function renderCard(bookId) {
+  const el = document.querySelector(`[data-book="${bookId}"]`);
+  const b = project.books.find((x) => x.id === bookId);
+  if (el && b) el.outerHTML = cardHtml(b);
+}
+
+function renderSelbar() {
   const n = selected.size;
-  $('sel-count').textContent = n ? `${n} selected` : '';
-  $('gen-selected').disabled = $('dl-selected').disabled = $('del-selected').disabled = !n;
-  $('select-all').checked = books.length > 0 && books.every((b) => selected.has(b.id));
+  $('selbar').hidden = !n;
+  $('sel-count').textContent = `${n} selected`;
+  $('sel-move').innerHTML = `<option value="" disabled selected>Move to shelf…</option>` + project.shelves.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  document.body.classList.toggle('has-selbar', !!n);
 }
-function renderFilters() {
-  $('filter-shelf').innerHTML = '<option value="">All bookshelves</option>' + project.shelves.map((s) => `<option value="${s.id}" ${s.id === filterShelf ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
-  $('one-shelf').innerHTML = shelfOptions($('one-shelf').value);
-  $('one-collection').innerHTML = collOptions($('one-collection').value, $('one-shelf').value);
-}
-function renderAll() { renderStyles(); renderFilters(); renderGrid(); }
 
-$('grid').addEventListener('click', (e) => {
-  const card = e.target.closest('[data-book]'); if (!card) return;
-  const id = card.dataset.book;
-  if (e.target.matches('.pick')) { e.target.checked ? selected.add(id) : selected.delete(id); renderGrid(); return; }
-  if (e.target.closest('[data-open]')) openManager(id);
+// ---------------------------------------------------------------- shelves: interaction
+$('app').addEventListener('click', (e) => {
+  const sec = e.target.closest('[data-shelf]'); if (!sec) return;
+  const shelfId = sec.dataset.shelf;
+  const card = e.target.closest('[data-book]');
+  if (card) {
+    const id = card.dataset.book, b = project.books.find((x) => x.id === id);
+    if (e.target.matches('.pick')) { e.target.checked ? selected.add(id) : selected.delete(id); card.classList.toggle('sel', e.target.checked); renderSelbar(); return; }
+    if (e.target.closest('[data-star]') && authed) { b.sample = !b.sample; patch('books', id, { sample: b.sample }); renderCard(id); renderBar(); return; }
+    if (e.target.closest('[data-open]')) openManager(id);
+    return;
+  }
+  const books = groups().find((g) => (g.shelf?.id || '-') === shelfId)?.books || [];
+  if (e.target.matches('.pick-shelf')) { books.forEach((b) => (e.target.checked ? selected.add(b.id) : selected.delete(b.id))); renderShelves(); renderSelbar(); return; }
+  if (e.target.closest('[data-toggle]')) { if (focusShelf) return; collapsed.has(shelfId) ? collapsed.delete(shelfId) : collapsed.add(shelfId); store.set('collapsed', [...collapsed]); renderShelves(); return; }
+  if (e.target.closest('[data-shelf-style]')) return openShelfDialog(shelfId);
+  if (e.target.closest('[data-shelf-samples]')) return generate(books.filter((b) => b.sample));
 });
-$('select-all').addEventListener('change', (e) => { visibleBooks().forEach((b) => (e.target.checked ? selected.add(b.id) : selected.delete(b.id))); renderGrid(); });
-$('select-missing').addEventListener('click', () => { selected.clear(); visibleBooks().filter((b) => !currentVersion(b)).forEach((b) => selected.add(b.id)); renderGrid(); });
-$('filter-shelf').addEventListener('change', (e) => { filterShelf = e.target.value; renderGrid(); });
-$('del-selected').addEventListener('click', async () => {
-  if (!confirm(`Delete ${selected.size} book(s) and all their covers?`)) return;
-  const doomed = project.books.filter((b) => selected.has(b.id));
-  const keys = doomed.flatMap((b) => b.versions.flatMap((v) => [v.raw, v.cover]).filter(Boolean));
+$('shelf-jump').addEventListener('change', (e) => { focusShelf = e.target.value; go(); renderShelves(); scrollTo({ top: 0 }); });
+$('try-look').addEventListener('click', () => generate(project.books.filter((b) => b.sample)));
+
+// Selection bar
+const selBooks = () => project.books.filter((b) => selected.has(b.id));
+$('sel-clear').addEventListener('click', () => { selected.clear(); renderShelves(); renderSelbar(); });
+$('sel-generate').addEventListener('click', () => generate(selBooks()));
+$('sel-sample').addEventListener('click', () => {
+  const books = selBooks(), on = !books.every((b) => b.sample);
+  books.forEach((b) => { b.sample = on; patch('books', b.id, { sample: on }); });
+  renderShelves(); renderBar();
+});
+$('sel-move').addEventListener('change', (e) => {
+  const shelfId = e.target.value;
+  selBooks().forEach((b) => { b.shelfId = shelfId; patch('books', b.id, { shelfId }); });
+  renderAll();
+});
+$('sel-delete').addEventListener('click', async () => {
+  if (!confirm(`Remove ${selected.size} book(s) from this library? Their cover history is kept.`)) return;
+  const ids = [...selected];
   project.books = project.books.filter((b) => !selected.has(b.id));
-  selected.clear(); renderAll(); save();
-  if (keys.length) api(`/api/sets/${setId}/delete`, { method: 'POST', body: JSON.stringify({ keys }) }).catch(() => {});
+  selected.clear(); renderAll();
+  await remove('books', ids);
 });
 
-$('gen-selected').addEventListener('click', async () => {
-  const queue = project.books.filter((b) => selected.has(b.id));
-  if (queue.length > 3 && !confirm(`Generate ${queue.length} covers? Each one is a paid Gemini image call.`)) return;
-  const worker = async () => {
-    for (let b; (b = queue.shift());) {
-      status.set(b.id, { state: 'busy', msg: 'Generating…' }); renderGrid();
-      try { await produce(b, { removeBg: true }); status.delete(b.id); }
-      catch (e) { status.set(b.id, { state: 'err', msg: e.message }); }
-      renderGrid();
-    }
-  };
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-});
-
-// Download the selected covers: a zip of <title>.png with the prompt that made it beside each (.txt).
-$('dl-selected').addEventListener('click', async () => {
-  const books = project.books.filter((b) => selected.has(b.id) && currentVersion(b));
+// Download: a zip of <title>.png with the prompt that made it beside each (.txt), plus manifest.csv.
+$('sel-download').addEventListener('click', async () => {
+  const books = selBooks().filter((b) => currentVersion(b));
   if (!books.length) { alert('None of the selected books has a cover yet.'); return; }
-  $('dl-selected').disabled = true; $('dl-selected').textContent = 'Zipping…';
+  const btn = $('sel-download'); btn.disabled = true; btn.textContent = 'Zipping…';
   try {
     const { zipSync, strToU8 } = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
-    const files = {}, used = new Set(), manifest = [['file', 'title', 'author', 'bookshelf', 'collection']];
+    const files = {}, used = new Set(), manifest = [['file', 'title', 'author', 'bookshelf', 'collection', 'look']];
     for (const b of books) {
       const v = currentVersion(b);
       let name = slug(b.author ? `${b.title}-${b.author}` : b.title);
@@ -279,20 +266,210 @@ $('dl-selected').addEventListener('click', async () => {
       used.add(name);
       files[`${name}.png`] = new Uint8Array(await (await fetch(img(v.cover || v.raw))).arrayBuffer());
       files[`${name}.txt`] = strToU8(v.prompt || '');
-      manifest.push([`${name}.png`, b.title, b.author, shelfById(b.shelfId)?.name || '', collById(b.collectionId)?.name || '']);
+      manifest.push([`${name}.png`, b.title, b.author, shelfById(b.shelfId)?.name || '', collById(b.collectionId)?.name || '', lookById(v.lookId)?.name || '']);
     }
     files['manifest.csv'] = strToU8(manifest.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'));
     const blob = new Blob([zipSync(files, { level: 0 })], { type: 'application/zip' });
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${setId}-covers-${books.length}.zip` });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${lib}-covers-${books.length}.zip` });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   } catch (e) { alert(`Download failed — ${e.message}`); }
-  finally { $('dl-selected').textContent = '⇩ Download selected'; renderGrid(); }
+  finally { btn.disabled = false; btn.textContent = '⇩ Download'; }
+});
+
+// ---------------------------------------------------------------- dialogs (shared close behaviour)
+document.querySelectorAll('dialog.dlg').forEach((d) => d.addEventListener('click', (e) => {
+  if (e.target.matches('[data-close]') || e.target === d) d.close();
+}));
+document.querySelectorAll('dialog.dlg').forEach((d) => d.addEventListener('close', () => { if (d.id !== 'login') renderAll(); }));
+
+// Library style
+const collCard = (c) => `<div class="layer-card" data-coll="${c.id}">
+    <div class="row"><input class="name" value="${esc(c.name)}" aria-label="Collection name" data-f="name" />
+      <span class="count">${project.books.filter((b) => b.collectionId === c.id).length} books</span>
+      <button type="button" class="x" data-del-coll aria-label="Delete collection">&times;</button></div>
+    <textarea rows="3" data-f="style" placeholder="What every volume shares — identical border, numbered spine label…">${esc(c.style)}</textarea>
+  </div>`;
+function renderLibDialog() {
+  queueMicrotask(() => setAuthed(authed));
+  $('lib-name').value = project.app.name || '';
+  $('lib-style').value = project.app.style || '';
+  $('lib-key').value = project.app.keyColor || 'magenta';
+  $('lib-shelves').innerHTML = project.shelves.map((s) => `<div class="row name-row" data-shelf-row="${s.id}">
+      <input value="${esc(s.name)}" aria-label="Bookshelf name" />
+      <span class="count">${project.books.filter((b) => b.shelfId === s.id).length}</span>
+      <button type="button" class="btn small ghost" data-edit-shelf>Style…</button></div>`).join('') || '<p class="hint">No bookshelves yet. A CSV category column creates them.</p>';
+  $('lib-colls').innerHTML = project.collections.filter((c) => !c.shelfId || !shelfById(c.shelfId)).map(collCard).join('') || '<p class="hint">None.</p>';
+}
+$('open-libstyle').addEventListener('click', () => { renderLibDialog(); $('dlg-lib').showModal(); });
+$('lib-name').addEventListener('input', (e) => {
+  project.app.name = e.target.value; patch('libraries', lib, { name: e.target.value });
+  const l = libs.find((x) => x.id === lib); if (l) l.name = e.target.value;
+  $('lib-select').querySelector(`option[value="${lib}"]`).textContent = e.target.value;
+});
+$('lib-style').addEventListener('input', (e) => { project.app.style = e.target.value; patch('libraries', lib, { style: e.target.value }); renderLookState(); });
+$('lib-key').addEventListener('change', (e) => { project.app.keyColor = e.target.value; patch('libraries', lib, { keyColor: e.target.value }); renderLookState(); });
+$('lib-style-reset').addEventListener('click', () => { project.app.style = DEFAULT_APP_STYLE; $('lib-style').value = DEFAULT_APP_STYLE; patch('libraries', lib, { style: DEFAULT_APP_STYLE }); renderLookState(); });
+$('lib-shelves').addEventListener('input', (e) => {
+  const id = e.target.closest('[data-shelf-row]')?.dataset.shelfRow; const s = shelfById(id); if (!s) return;
+  s.name = e.target.value; patch('shelves', id, { name: s.name });
+});
+$('lib-shelves').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-edit-shelf]')) return;
+  const id = e.target.closest('[data-shelf-row]').dataset.shelfRow;
+  $('dlg-lib').close(); openShelfDialog(id);
+});
+$('add-shelf').addEventListener('click', async () => {
+  const s = { id: rid(), name: 'New bookshelf', style: '' };
+  project.shelves.push(s); await insert('shelves', [s]); renderLibDialog();
+});
+
+// Collections (in either dialog): rename/restyle, delete, add.
+function bindCollections(box) {
+  box.addEventListener('input', (e) => {
+    const id = e.target.closest('[data-coll]')?.dataset.coll; const c = collById(id); if (!c || !e.target.dataset.f) return;
+    c[e.target.dataset.f] = e.target.value; patch('collections', id, { [e.target.dataset.f]: e.target.value }); renderLookState();
+  });
+  box.addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-del-coll]')) return;
+    const id = e.target.closest('[data-coll]').dataset.coll;
+    const used = project.books.filter((b) => b.collectionId === id).length;
+    if (used && !confirm(`${used} books are in this collection. Remove it from them and delete it?`)) return;
+    project.collections = project.collections.filter((c) => c.id !== id);
+    project.books.forEach((b) => { if (b.collectionId === id) b.collectionId = ''; });
+    e.target.closest('[data-coll]').remove();
+    await remove('collections', [id]);
+  });
+}
+bindCollections($('lib-colls')); bindCollections($('shelf-colls'));
+async function addCollection(shelfId, box) {
+  const c = { id: rid(), name: 'New collection', shelfId, style: '' };
+  project.collections.push(c); await insert('collections', [c]);
+  box.insertAdjacentHTML('beforeend', collCard(c));
+  if (box.firstElementChild?.matches('.hint')) box.firstElementChild.remove();
+}
+document.querySelector('[data-add-coll]').addEventListener('click', () => addCollection('', $('lib-colls')));
+
+// One shelf
+let dlgShelf = null;
+function openShelfDialog(id) {
+  const s = shelfById(id); if (!s) return;
+  dlgShelf = id;
+  $('shelf-title').textContent = s.name;
+  $('shelf-name').value = s.name;
+  $('shelf-style').value = s.style || '';
+  $('shelf-inherit').textContent = project.app.style || '(no library style)';
+  $('shelf-colls').innerHTML = project.collections.filter((c) => c.shelfId === id).map(collCard).join('') || '<p class="hint">None.</p>';
+  setAuthed(authed);
+  $('dlg-shelf').showModal();
+}
+$('shelf-name').addEventListener('input', (e) => { const s = shelfById(dlgShelf); s.name = e.target.value; $('shelf-title').textContent = s.name; patch('shelves', s.id, { name: s.name }); });
+$('shelf-style').addEventListener('input', (e) => { const s = shelfById(dlgShelf); s.style = e.target.value; patch('shelves', s.id, { style: s.style }); renderLookState(); });
+$('shelf-add-coll').addEventListener('click', () => addCollection(dlgShelf, $('shelf-colls')));
+$('shelf-delete').addEventListener('click', async () => {
+  const id = dlgShelf, used = project.books.filter((b) => b.shelfId === id).length;
+  if (!confirm(`Delete this bookshelf?${used ? ` Its ${used} books move to "No shelf".` : ''}`)) return;
+  project.shelves = project.shelves.filter((s) => s.id !== id);
+  project.books.forEach((b) => { if (b.shelfId === id) b.shelfId = ''; });
+  project.collections.forEach((c) => { if (c.shelfId === id) c.shelfId = ''; });
+  $('dlg-shelf').close();
+  await remove('shelves', [id]);
+});
+
+// Looks: rows = looks (newest first), columns = books generated under any look.
+function renderLooks() {
+  const books = project.books.filter((b) => b.versions.some((v) => v.lookId));
+  if (!project.looks.length) { $('looks-body').innerHTML = '<p class="hint">No looks yet. Star (★) a few books on each shelf, set the styles, then ✦ Try look.</p>'; return; }
+  const cur = project.looks.find((l) => sameStyles(l.styles, snapshotStyles(project)));
+  $('looks-body').innerHTML = `<table><thead><tr><th>Look</th>${books.map((b) => `<th title="${esc(b.title)}">${esc(b.title)}</th>`).join('')}</tr></thead><tbody>${project.looks.map((l) => {
+    const cells = books.map((b) => { const v = b.versions.findLast((x) => x.lookId === l.id); return `<td>${v ? `<button type="button" class="look-cell" data-open-book="${b.id}" data-ver="${v.id}"><img src="${img(v.cover || v.raw)}" alt="${esc(b.title)}, ${esc(l.name)}" loading="lazy" /></button>` : ''}</td>`; }).join('');
+    const shelfLines = Object.entries(l.styles.shelves || {}).filter(([, s]) => s).map(([id, s]) => `<p><b>${esc(shelfById(id)?.name || 'deleted shelf')}</b> ${esc(s)}</p>`).join('');
+    return `<tr data-look="${l.id}"><th>
+      <input class="look-name" value="${esc(l.name)}" aria-label="Look name" />
+      <span class="hint">${new Date(l.at).toLocaleString()}${l.id === cur?.id ? ' · <b>current</b>' : ''}</span>
+      <textarea class="look-notes" rows="2" placeholder="Notes: what changed, what worked…">${esc(l.notes)}</textarea>
+      <details class="inherit"><summary>Styles</summary><p><b>Library</b> ${esc(l.styles.app)}</p>${shelfLines}</details>
+      <button type="button" class="btn small" data-write data-restore ${l.id === cur?.id ? 'disabled' : ''}>Restore</button>
+    </th>${cells}</tr>`;
+  }).join('')}</tbody></table>`;
+}
+$('open-looks').addEventListener('click', () => { renderLooks(); setAuthed(authed); $('dlg-looks').showModal(); });
+$('looks-body').addEventListener('input', (e) => {
+  const id = e.target.closest('[data-look]')?.dataset.look; const l = lookById(id); if (!l) return;
+  const f = e.target.matches('.look-name') ? 'name' : 'notes';
+  l[f] = e.target.value; patch('looks', id, { [f]: e.target.value }); renderLookState();
+});
+$('looks-body').addEventListener('click', (e) => {
+  const cell = e.target.closest('[data-open-book]');
+  if (cell) { const b = project.books.find((x) => x.id === cell.dataset.openBook); if (authed) { b.selected = cell.dataset.ver; patch('books', b.id, { selected: b.selected }); } $('dlg-looks').close(); openManager(b.id); return; }
+  if (!e.target.closest('[data-restore]')) return;
+  const l = lookById(e.target.closest('[data-look]').dataset.look);
+  const changed = applyStyles(project, l.styles);
+  if (changed.app) patch('libraries', lib, { style: project.app.style, keyColor: project.app.keyColor });
+  changed.shelves.forEach((id) => patch('shelves', id, { style: shelfById(id).style }));
+  changed.collections.forEach((id) => patch('collections', id, { style: collById(id).style }));
+  project.app.lookId = l.id; patch('libraries', lib, { lookId: l.id });
+  renderLooks(); renderLookState();
+});
+
+// Add books
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach((x) => { x.classList.toggle('on', x === t); x.setAttribute('aria-selected', x === t); });
+  document.querySelectorAll('.tab-body').forEach((b) => { b.hidden = b.dataset.body !== t.dataset.tab; });
+}));
+$('open-add').addEventListener('click', () => {
+  $('one-shelf').innerHTML = shelfOptions(focusShelf !== '-' ? focusShelf : '');
+  $('one-collection').innerHTML = collOptions('', $('one-shelf').value);
+  $('dlg-add').showModal();
+});
+$('one-shelf').addEventListener('change', () => { $('one-collection').innerHTML = collOptions('', $('one-shelf').value); });
+const newBook = (f) => ({ id: rid(), title: '', author: '', subtitle: '', type: '', description: '', source: '', shelfId: '', collectionId: '', content: '', style: '', selected: null, sample: false, versions: [], ...f });
+$('csv-import').addEventListener('click', async () => {
+  const { books } = csvToBooks($('csv-in').value);
+  if (!books.length) { $('csv-note').textContent = 'No rows with a title found.'; return; }
+  const key = (t, a) => `${t.trim().toLowerCase()}\u0000${(a || '').trim().toLowerCase()}`;
+  const existing = new Set(project.books.map((b) => key(b.title, b.author)));
+  const newShelves = [], newColls = [], added = [];
+  const shelfFor = (name) => {
+    if (!name) return '';
+    let s = project.shelves.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (!s) { s = { id: rid(), name, style: '' }; project.shelves.push(s); newShelves.push(s); }
+    return s.id;
+  };
+  const collFor = (name, shelfId) => {
+    if (!name) return '';
+    let c = project.collections.find((x) => x.name.toLowerCase() === name.toLowerCase() && (x.shelfId || '') === shelfId);
+    if (!c) { c = { id: rid(), name, shelfId, style: '' }; project.collections.push(c); newColls.push(c); }
+    return c.id;
+  };
+  let dup = 0;
+  for (const b of books) {
+    if (existing.has(key(b.title, b.author))) { dup++; continue; }
+    const shelfId = shelfFor(b.shelf);
+    added.push(newBook({ title: b.title, author: b.author || '', type: b.type || '', shelfId, collectionId: collFor(b.collection, shelfId) }));
+    existing.add(key(b.title, b.author));
+  }
+  if (newShelves.length) await insert('shelves', newShelves);
+  if (newColls.length) await insert('collections', newColls);
+  if (added.length) await insert('books', added.map(({ versions, ...b }) => b));
+  project.books.push(...added);
+  $('csv-note').textContent = `Added ${added.length} book${added.length === 1 ? '' : 's'}${dup ? `, skipped ${dup} already here` : ''}.`;
+  $('csv-in').value = '';
+  renderAll();
+});
+$('one-add').addEventListener('click', async () => {
+  const title = $('one-title').value.trim();
+  if (!title) { $('one-title').focus(); return; }
+  const b = newBook({ title, author: $('one-author').value.trim(), shelfId: $('one-shelf').value, collectionId: $('one-collection').value });
+  await insert('books', [(({ versions, ...x }) => x)(b)]);
+  project.books.push(b);
+  $('one-title').value = ''; $('one-author').value = '';
+  renderAll();
 });
 
 // ---------------------------------------------------------------- the pipeline
 const toB64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
 
-/** Key a raw generation in the browser with core/keyer.js → { base64, aspect }. */
+/** Key a raw generation in the browser with core/keyer.js → { base64 (lossless PNG), aspect }. */
 async function keyRaw(rawKey) {
   const bmp = await createImageBitmap(await (await fetch(img(rawKey))).blob());
   const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
@@ -306,31 +483,43 @@ async function keyRaw(rawKey) {
   const blob = await new Promise((res) => oc.toBlob(res, 'image/png'));
   return { base64: await toB64(blob), aspect: out.aspect };
 }
-async function storeCover(book, base64, meta) {
-  const { key } = await api(`/api/sets/${setId}/store`, { method: 'POST', body: JSON.stringify({ bookId: book.id, kind: 'covers', base64, meta }) });
-  return key;
-}
-function addVersion(book, v) {
-  book.versions ||= [];
-  book.versions.push({ id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), ...v });
-  book.selected = book.versions.at(-1).id;
-  save();
-  return book.versions.at(-1);
+const storeImage = async (book, kind, base64) => (await api(`${base()}/store`, { method: 'POST', body: JSON.stringify({ bookId: book.id, kind, base64 }) })).key;
+// A new version row (append-only) that becomes the book's current cover.
+async function addVersion(book, v) {
+  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', aspect: null, edit: null, lookId: null, ...v };
+  await insert('versions', [{ ...row, bookId: book.id }]);
+  book.versions.push(row); book.selected = row.id;
+  patch('books', book.id, { selected: row.id });
+  return row;
 }
 
-/** Generate (or img2img-edit) one cover, key it, store it, record a version. */
-async function produce(book, { removeBg = true, change = '' } = {}) {
-  const base = change ? currentVersion(book) : null;
-  if (change && !base?.raw) throw new Error('No raw image to edit — Generate one first');
+/** Generate (or img2img-edit) one cover, key it, store it, record a version stamped with its look. */
+async function produce(book, { removeBg = true, change = '', lookId = null } = {}) {
+  const from = change ? currentVersion(book) : null;
+  if (change && !from?.raw) throw new Error('No raw image to edit — Generate one first');
   const prompt = change ? composeEditPrompt(project, change) : composePrompt(project, book);
-  const { rawKey } = await api(`/api/sets/${setId}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey: base?.raw }) });
+  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey: from?.raw }) });
   let cover = null, aspect = null;
-  if (removeBg) {
-    const k = await keyRaw(rawKey);
-    aspect = k.aspect;
-    cover = await storeCover(book, k.base64, { prompt, rawKey });
-  }
-  return addVersion(book, { raw: rawKey, cover, prompt, aspect, edit: change || undefined });
+  if (removeBg) { const k = await keyRaw(rawKey); aspect = k.aspect; cover = await storeImage(book, 'covers', k.base64); }
+  return addVersion(book, { raw: rawKey, cover, prompt, aspect, edit: change || null, lookId: change ? from.lookId : lookId });
+}
+
+async function generate(books) {
+  if (!books.length) return;
+  if (books.length > 3 && !confirm(`Generate ${books.length} covers? Each one is a paid Gemini image call.`)) return;
+  const { id: lookId } = await ensureLook();
+  const queue = [...books];
+  books.forEach((b) => { status.set(b.id, { state: 'busy', msg: 'Queued' }); renderCard(b.id); });
+  const worker = async () => {
+    for (let b; (b = queue.shift());) {
+      status.set(b.id, { state: 'busy', msg: 'Generating…' }); renderCard(b.id);
+      try { await produce(b, { lookId }); status.delete(b.id); }
+      catch (e) { status.set(b.id, { state: 'err', msg: e.message }); }
+      renderCard(b.id);
+    }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  renderBar();
 }
 
 // ---------------------------------------------------------------- Image Manager
@@ -338,17 +527,20 @@ let im = null; // { bookId }
 const imBook = () => project.books.find((b) => b.id === im?.bookId);
 const imStatus = (msg, kind = '') => { $('im-status').textContent = msg; $('im-status').className = `status ${kind}`; };
 const imBusy = (on, label = 'Working…') => { $('im-spin').hidden = !on; $('im-spin-lab').textContent = label; document.querySelectorAll('#imgmgr [data-act]').forEach((b) => (b.disabled = on)); };
+// Preview backdrop: animated sweep dark → colour → light, or fixed, to judge the transparency.
+const BACKDROPS = ['sweep', 'dark', 'light', 'checker'];
+const backdropBar = () => `<div class="backdrops" role="group" aria-label="Preview backdrop">${BACKDROPS.map((b) => `<button type="button" class="bd ${b}" data-bd="${b}" aria-pressed="${store.get('backdrop', 'sweep') === b}" title="${b}">${b}</button>`).join('')}</div>`;
 
 function openManager(bookId) {
   im = { bookId };
   const b = imBook();
   $('im-title').textContent = b.title;
-  // The book's metadata (description) is shown, and composePrompt feeds it to the model as context.
   $('im-about-wrap').hidden = !b.description;
   $('im-about').textContent = b.description || '';
   $('im-content').value = b.content || '';
   $('im-style').value = b.style || '';
   $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
+  $('im-sample').checked = !!b.sample;
   imStatus('');
   renderManager();
   $('imgmgr').showModal();
@@ -356,53 +548,49 @@ function openManager(bookId) {
 function renderManager() {
   const b = imBook(); if (!b) return;
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')
-    .map((l) => `<p class="layer-line"><b>${l.level}</b> — ${esc(l.name)}: ${esc(l.style || '(no style text — inherits only)')}</p>`).join('');
+    .map((l) => `<p class="layer-line"><b>${l.level}</b> ${esc(l.name)} — ${esc(l.style || '(no style text)')}</p>`).join('');
   $('im-prompt').textContent = composePrompt(project, b);
   const v = currentVersion(b);
-  $('im-preview').innerHTML = v ? `<img src="${img(v.cover || v.raw)}" alt="${esc(b.title)} cover" />` : '<span class="hint">The cover appears here</span>';
+  const bd = store.get('backdrop', 'sweep');
+  $('im-preview').className = `stage im-preview bd-${bd}`;
+  $('im-preview').innerHTML = (v ? `<img src="${img(v.cover || v.raw)}" alt="${esc(b.title)} cover" />` : '<span class="hint">The cover appears here</span>') + backdropBar();
   $('im-aspect').hidden = !(v?.aspect && !aspectOk(v.aspect));
   $('im-aspect').textContent = v?.aspect ? `proportions ${v.aspect.toFixed(2)} — check framing` : '';
   const vers = b.versions || [];
   $('im-versions').hidden = !vers.length;
-  $('im-strip').innerHTML = vers.map((x) => `<div class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : new Date(x.at).toLocaleString())}">
-      <img src="${img(x.cover || x.raw)}" alt="" loading="lazy" />${x.cover ? '' : '<span class="raw">raw</span>'}
-      <button type="button" class="del" data-delver="${x.id}" aria-label="Delete version">&times;</button></div>`).join('');
+  $('im-strip').innerHTML = [...vers].reverse().map((x) => `<button type="button" class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : x.prompt.slice(0, 200))}">
+      <img src="${img(x.cover || x.raw)}" alt="" loading="lazy" />
+      <span class="ver-lab">${esc(x.lookId ? lookById(x.lookId)?.name || 'look' : x.edit && !x.raw ? x.edit : 'upload')}${x.cover ? '' : ' · raw'}</span>
+      <span class="ver-date">${new Date(x.at).toLocaleDateString()}</span></button>`).join('');
 }
-// Field edits persist as you type (title/byline/content/style live on the book).
+// Field edits persist as you type (they live on the book).
 const imFields = { 'im-content': 'content', 'im-style': 'style', 'im-t': 'title', 'im-sub': 'subtitle', 'im-by': 'author' };
 for (const [id, field] of Object.entries(imFields)) {
   $(id).addEventListener('input', (e) => {
     const b = imBook(); if (!b) return;
-    b[field] = e.target.value;
+    b[field] = e.target.value; patch('books', b.id, { [field]: e.target.value });
     $('im-prompt').textContent = composePrompt(project, b);
     if (field === 'title') $('im-title').textContent = b.title;
-    save(); renderGrid();
   });
 }
+$('im-sample').addEventListener('change', (e) => { const b = imBook(); b.sample = e.target.checked; patch('books', b.id, { sample: b.sample }); });
 $('imgmgr').addEventListener('click', async (e) => {
-  if (e.target.matches('[data-close]') || e.target === $('imgmgr')) { $('imgmgr').close(); return; }
   const b = imBook(); if (!b) return;
-  const del = e.target.closest('[data-delver]');
-  if (del) {
-    const v = b.versions.find((x) => x.id === del.dataset.delver);
-    b.versions = b.versions.filter((x) => x !== v);
-    if (b.selected === v.id) b.selected = b.versions.at(-1)?.id || null;
-    save(); renderManager(); renderGrid();
-    api(`/api/sets/${setId}/delete`, { method: 'POST', body: JSON.stringify({ keys: [v.raw, v.cover].filter(Boolean) }) }).catch(() => {});
-    return;
-  }
+  const bd = e.target.closest('[data-bd]');
+  if (bd) { store.set('backdrop', bd.dataset.bd); renderManager(); return; }
   const ver = e.target.closest('[data-ver]');
-  if (ver) { b.selected = ver.dataset.ver; save(); renderManager(); renderGrid(); imStatus('Selected ✓', 'ok'); return; }
+  if (ver && authed) { b.selected = ver.dataset.ver; patch('books', b.id, { selected: b.selected }); renderManager(); renderCard(b.id); imStatus('Now the current cover ✓', 'ok'); return; }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (!act) return;
   const removeBg = $('im-removebg').checked;
   try {
     if (act === 'generate') {
       imBusy(true, 'Generating… (~20–40s)'); imStatus('Generating…');
-      await produce(b, { removeBg }); imStatus('Generated ✓', 'ok');
+      const { id: lookId } = await ensureLook();
+      await produce(b, { removeBg, lookId }); imStatus('Generated ✓', 'ok');
     } else if (act === 'edit') {
       const change = $('im-content').value.trim();
-      if (!change) return imStatus('Describe the change in the content prompt, then Edit.', 'err');
+      if (!change) return imStatus('Describe the change in the illustration box, then Edit.', 'err');
       imBusy(true, 'Editing…'); imStatus('Editing the current cover…');
       await produce(b, { removeBg, change }); imStatus('Edited ✓', 'ok');
     } else if (act === 'rekey') {
@@ -410,11 +598,11 @@ $('imgmgr').addEventListener('click', async (e) => {
       if (!v?.raw) return imStatus('This version has no raw image to key.', 'err');
       imBusy(true, 'Keying…');
       const k = await keyRaw(v.raw);
-      addVersion(b, { raw: v.raw, cover: await storeCover(b, k.base64, { prompt: v.prompt, rawKey: v.raw }), prompt: v.prompt, aspect: k.aspect });
+      await addVersion(b, { raw: v.raw, cover: await storeImage(b, 'covers', k.base64), prompt: v.prompt, aspect: k.aspect, edit: v.edit, lookId: v.lookId });
       imStatus('Re-keyed ✓', 'ok');
     } else if (act === 'browse') { $('im-file').click(); return; }
   } catch (err) { imStatus(err.message, 'err'); }
-  finally { imBusy(false); renderManager(); renderGrid(); }
+  finally { imBusy(false); renderManager(); renderCard(b.id); }
 });
 $('im-file').addEventListener('change', async (e) => {
   const f = e.target.files?.[0]; e.target.value = '';
@@ -423,17 +611,18 @@ $('im-file').addEventListener('change', async (e) => {
   try {
     const png = await new Promise((res) => { const i = new Image(); i.onload = () => { const c = Object.assign(document.createElement('canvas'), { width: i.naturalWidth, height: i.naturalHeight }); c.getContext('2d').drawImage(i, 0, 0); c.toBlob(res, 'image/png'); }; i.src = URL.createObjectURL(f); });
     const base64 = await toB64(png);
-    const meta = { prompt: `(uploaded: ${f.name})` };
+    const prompt = `(uploaded: ${f.name})`;
     if ($('im-removebg').checked) {
-      const { key: rawKey } = await api(`/api/sets/${setId}/store`, { method: 'POST', body: JSON.stringify({ bookId: b.id, kind: 'raw', base64, meta }) });
+      const rawKey = await storeImage(b, 'raw', base64);
       const k = await keyRaw(rawKey);
-      addVersion(b, { raw: rawKey, cover: await storeCover(b, k.base64, { ...meta, rawKey }), prompt: meta.prompt, aspect: k.aspect });
-    } else {
-      addVersion(b, { raw: null, cover: await storeCover(b, base64, meta), prompt: meta.prompt });
-    }
+      await addVersion(b, { raw: rawKey, cover: await storeImage(b, 'covers', k.base64), prompt, aspect: k.aspect, edit: 'upload' });
+    } else await addVersion(b, { cover: await storeImage(b, 'covers', base64), prompt, edit: 'upload' });
     imStatus('Uploaded ✓', 'ok');
   } catch (err) { imStatus(err.message, 'err'); }
-  finally { imBusy(false); renderManager(); renderGrid(); }
+  finally { imBusy(false); renderManager(); renderCard(b.id); }
 });
 
-boot().catch((e) => { if (!/Passcode/.test(e.message)) { document.body.insertAdjacentHTML('beforeend', `<p class="status err" style="padding:1rem">${esc(e.message)}</p>`); } });
+// Keep the shelf headers just under the library bar, whatever height it wraps to.
+new ResizeObserver(([e]) => document.documentElement.style.setProperty('--libbar-h', `${e.target.offsetHeight}px`)).observe($('libbar'));
+
+boot().catch((e) => { if (!/Passcode/.test(e.message)) document.body.insertAdjacentHTML('beforeend', `<p class="status err" style="padding:1rem">${esc(e.message)}</p>`); });

@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Bindery Cover Generator \u2014 book covers from layered styles: Gemini art, chroma-key cutout, Cloudflare Worker + R2.",
+  "description": "Bindery Cover Generator — book covers from layered styles: Gemini art, chroma-key cutout, Cloudflare Worker + R2.",
   "scripts": {
     "build": "node scripts/copy-core.mjs",
     "dev": "node scripts/copy-core.mjs && wrangler dev",
-    "deploy": "node scripts/copy-core.mjs && wrangler deploy",
+    "deploy": "node scripts/copy-core.mjs && wrangler d1 migrations apply bindery --remote && wrangler deploy",
     "test": "vitest run"
   },
   "devDependencies": {

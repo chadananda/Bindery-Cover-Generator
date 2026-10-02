@@ -8,7 +8,7 @@ each collection), and generate. Every cover comes back as a transparent PNG you 
 alongside the exact prompt that made it, so any single cover can be regenerated later.
 
 **Live demo: [bindery.lnker.com](https://bindery.lnker.com)**
-*(protected by a passcode, because every generation spends Gemini credit; ask Chad for it)*
+*(anyone can browse; adding, editing and generating need the passcode, because every generation spends Gemini credit; ask Chad for it)*
 
 ![The Bindery: house style and bookshelf styles on the left, the library on walnut shelves](docs/3-app.jpg)
 
@@ -23,9 +23,9 @@ alongside the exact prompt that made it, so any single cover can be regenerated 
 flowchart LR
   A[Book list<br/>CSV or one at a time] --> B[Compose prompt<br/>library → bookshelf → collection → book]
   B --> C[Gemini generates<br/>on solid magenta]
-  C --> D[(R2: raw image<br/>+ prompt)]
+  C --> D[(R2: raw image)]
   D --> E[Key out magenta<br/>in the browser]
-  E --> F[(R2: transparent cover<br/>+ prompt)]
+  E --> F[(R2: transparent PNG<br/>D1: prompt + look)]
   F --> G[Download zip<br/>PNGs + prompts + manifest]
 ```
 
@@ -99,17 +99,32 @@ Click any cover to open the **Image Manager** (modelled on NovelArabic's image e
 - **✦ Generate**: a new cover from the prompt.
 - **✎ Edit**: change the *current* cover ("add an ornate silver clasp") instead of starting over.
 - **⟳ Re-key**: run the background removal again on the saved raw image.
-- **🖿 Browse…**: use an image from your computer.
-- **Versions**: every render is kept. Click one to roll back, or ✕ to delete it.
+- **Upload…**: use an image from your computer.
+- **Backdrop**: the preview sweeps through dark, colour and light (or holds dark, light or a checkerboard), so a
+  bad cut-out shows at once. The whole app also has a light/dark switch (◐): covers must read on both.
+- **History**: every render is kept, labelled with the look that made it. Click one to make it the current
+  cover. Nothing is ever deleted.
 
-### 6. Download
+### 6. Iterate on a look
 
-Select covers and click **Download selected** to get a zip containing:
+A **look** is a snapshot of every style layer (library, each shelf, each collection). It's saved
+automatically the first time you generate with new styles, and every cover records the look that made it.
+
+1. Star (★) two or three representative books on each shelf. These are the **samples**.
+2. Edit the library style (from the top bar) or a shelf's style (from its header).
+3. **✦ Try look** generates every sample with the current styles; **✦ Samples** on a shelf header does one
+   shelf.
+4. **Looks** shows the results as a grid: one row per look, one column per book. Name the look, add notes
+   on what worked, or **Restore** an earlier look's styles.
+
+### 7. Download
+
+Select covers and click **⇩ Download** in the selection bar to get a zip containing:
 
 ```
 gospel-of-mark-john.png    transparent cover
 gospel-of-mark-john.txt    the exact prompt that made it
-manifest.csv               file, title, author, bookshelf, collection
+manifest.csv               file, title, author, bookshelf, collection, look
 ```
 
 ---
@@ -125,18 +140,20 @@ current cover with a new one side by side.
 | **OceanLibrary** | 457 | 10 traditions (Bahá'í, Islam, Christian, Hindu, Buddhist, …), each with its own leather and motifs |
 | **WholeReader** | 586 | 9 genres (Short Stories, Novels, Children, Drama, …) in Victorian cloth bindings |
 
-1. Open the [demo](https://bindery.lnker.com) and enter the passcode.
-2. Choose a library (one per application) or create a new one.
-3. Add books:
+1. Open the [demo](https://bindery.lnker.com). Browsing is open; **Log in to edit** asks for the passcode.
+2. Choose a library from the top bar. Each library has its own address (`/oceanlibrary`), and so does each
+   shelf (`/oceanlibrary/islam`) when you pick it from **All shelves** to focus on one.
+3. Add books with **+ Books**:
    - **Paste CSV**: headers in any order or case. `title, author, bookshelf, collection` works, and so do
      common alternatives (`name`, `category`, `series`…). The Ocean library export
      (`author,category,name,type`) imports as-is. A headerless `title,author` paste works too.
      "Unknown" authors are dropped from the cover.
    - **Add one**: title, author, bookshelf, collection.
-4. Write the **application style**, then give each bookshelf and collection its sub-style.
-5. Open a book and **✦ Generate**. Tune the styles on single covers first; once the prompts are right,
-   select many and **✦ Generate selected** (two at a time, ~20 seconds each).
-6. Open any cover to refine it, then select and **Download**.
+4. Write the **Library style**, then open each shelf's **Shelf style** from its sticky header. Collections
+   are edited in the shelf they belong to.
+5. Star sample books and **✦ Try look** (see *Iterate on a look*). Once the look is right, select many and
+   **✦ Generate** from the selection bar (two at a time, ~20 seconds each).
+6. Open any cover to refine it, then select and **⇩ Download**.
 
 ---
 
@@ -144,10 +161,13 @@ current cover with a new one side by side.
 
 | Part | What it does |
 |---|---|
-| [`core/`](core/) | **All the cover logic, with zero dependencies**: prompt layering, the keyer, CSV import, the Gemini call. It runs unchanged in the browser, the Worker and Node. |
-| [`src/worker.js`](src/worker.js) | Cloudflare Worker: passcode check, a Gemini proxy so the API key never reaches the browser, and R2 storage. |
+| [`core/`](core/) | **All the cover logic, with zero dependencies**: prompt layering, the keyer, CSV import, looks, the Gemini call. It runs unchanged in the browser, the Worker and Node. |
+| [`src/worker.js`](src/worker.js) | Cloudflare Worker: public reads, passcode for writes, a Gemini proxy so the API key never reaches the browser, image serving from R2. Also serves the page at clean paths (`/<library>/<shelf>`). |
+| [`src/store.js`](src/store.js) | The D1 data layer: libraries, shelves, collections, books, versions, looks. Versions and looks are append-only. |
+| [`migrations/`](migrations/) | D1 schema. `npm run deploy` applies new migrations before deploying. |
 | [`public/`](public/) | The page. Keying runs here, with the same `core/` code. |
-| R2 bucket `cover-generator` | `project.json` per set, raw generations, keyed covers, and a `.json` prompt file beside every image. |
+| D1 database `bindery` | All data and every prompt, including the look each cover was made under. |
+| R2 bucket `cover-generator` | Images only: raw generations and keyed PNG covers, under `sets/<library>/`. Nothing is deleted. |
 
 To reuse the generator without the app, copy [`core/`](core/). [`core/README.md`](core/README.md)
 has a Node example.
@@ -158,10 +178,15 @@ has a Node example.
 
 ```sh
 npm install
-npm test                          # 38 tests: keyer, prompt layering + metadata, CSV, Gemini client
+npm test                          # 51 tests: keyer, prompts, CSV, Gemini client, looks, D1 store
 cp .dev.vars.example .dev.vars    # add GEMINI_API_KEY and a PASSCODE
-npm run dev                       # http://localhost:8788 (pinned; local R2)
+npm run dev                       # http://localhost:8788 (pinned) on the LIVE D1 + R2
 ```
+
+**Local dev uses live data.** The D1 and R2 bindings are marked `"remote": true` in `wrangler.jsonc`, so
+`npm run dev` reads and writes the production database and bucket. What you change locally is what the site
+shows. The store tests run the real migrations on Node's built-in SQLite (`test/d1-shim.js`), so they
+don't touch live data.
 
 `npm run dev` and `npm run deploy` first copy `core/` into `public/core/`, so the browser runs the same
 files as the Worker and the tests. Always edit `core/`, never `public/core/`, and always deploy with
@@ -176,20 +201,22 @@ The demo runs on Chad's personal Cloudflare account (`account_id` in [`wrangler.
 
 ```sh
 npx wrangler r2 bucket create cover-generator
+npx wrangler d1 create bindery
 npx wrangler secret put GEMINI_API_KEY
 npx wrangler secret put PASSCODE
 ```
 
-**Today** it's deployed by hand with `npm run deploy`.
+`npm run deploy` copies `core/` into `public/core/`, applies any new D1 migrations, then deploys.
 
-**Next: deploy on every push.** Connect the repo with Cloudflare Workers Builds:
+**Deploy on every push** with Cloudflare Workers Builds (a one-time dashboard step, because it authorizes
+Cloudflare's GitHub app):
 
 1. Cloudflare dashboard → **Workers & Pages** → `cover-generator` (the Worker keeps its original name) → **Settings** → **Builds** → **Connect**.
 2. Choose GitHub repo `chadananda/Bindery-Cover-Generator`, branch `main`.
-3. Set the deploy command to `npm run deploy`, which copies `core/` into `public/core/` before deploying.
+3. Leave the build command empty. Set the deploy command to `npm run deploy`.
 
-From then on, every commit to `main` deploys the demo. The secrets and the R2 bucket carry over,
-because they belong to the Worker, not the build.
+From then on, every commit to `main` deploys the demo. The secrets, the R2 bucket and the D1 database
+carry over, because they belong to the Worker, not the build.
 
 Optional: set a `GEMINI_MODEL` variable to override the default `gemini-3-pro-image-preview`.
 
