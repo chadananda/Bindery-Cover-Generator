@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=16';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=17';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -69,6 +69,9 @@ $('logout').addEventListener('click', async () => { await fetch('/api/logout'); 
 // Read-only mode: [data-write] controls hidden by CSS, dialog fields locked.
 function setAuthed(on) {
   authed = on;
+  const u = document.querySelector('.user-btn');
+  u.title = on ? 'Logged in — editing enabled' : 'Not logged in — browsing only';
+  u.setAttribute('aria-label', on ? 'Account (logged in)' : 'Account (not logged in)');
   document.body.classList.toggle('ro', !on);
   document.querySelectorAll(':is(dialog.dlg:not(.login), .editor) :is(input:not([type=checkbox]), textarea)').forEach((el) => { el.readOnly = !on; });
   document.querySelectorAll(':is(dialog.dlg:not(.login), .editor) :is(select, input[type=checkbox])').forEach((el) => { el.disabled = !on; });
