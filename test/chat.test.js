@@ -66,9 +66,28 @@ describe('runChat', () => {
     expect(JSON.stringify(m.seen[1])).toContain('deep green gilt');
   });
 
+  it('returns the books to show: ones it described plus show_books, known ids only, in order', async () => {
+    const m = script([
+      [{ functionCall: { name: 'describe_cover_style', args: { bookId: 'b1' } } }, { functionCall: { name: 'show_books', args: { bookIds: ['b2', 'zzz', 'b1'] } } }],
+      [{ text: 'Here they are.' }],
+    ]);
+    const out = await runChat({ project, messages: [{ role: 'user', text: 'show me Rumi' }], callModel: m.call, describeCover: async () => 's' });
+    expect(out.books).toEqual(['b1', 'b2']);
+    expect(out.reply).toBe('Here they are.');
+  });
+
+  it('tells the model which covers the user attached to a message', async () => {
+    const m = script([[{ text: 'ok' }]]);
+    await runChat({ project, messages: [{ role: 'user', text: 'use this one', refs: ['b1', 'zzz'] }], callModel: m.call });
+    const last = m.seen[0].at(-1).parts[0].text;
+    expect(last).toContain('b1 “The Masnavi”');
+    expect(last).not.toContain('zzz');
+    expect(last).toContain('use this one');
+  });
+
   it('answers plain questions without a plan', async () => {
     const m = script([[{ text: 'There are 3 books.' }]]);
-    expect(await runChat({ project, messages: [{ role: 'user', text: 'how many?' }], callModel: m.call })).toEqual({ reply: 'There are 3 books.', plan: null });
+    expect(await runChat({ project, messages: [{ role: 'user', text: 'how many?' }], callModel: m.call })).toEqual({ reply: 'There are 3 books.', plan: null, books: [] });
   });
 
   it('reports an unknown book to the model instead of crashing', async () => {

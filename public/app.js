@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=7';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=9';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -9,7 +9,7 @@ const rid = () => Math.random().toString(36).slice(2, 10);
 const slug = (s) => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'cover';
 const img = (key) => `/img/${key}`; // the full-size original: keying and downloads only
 // Displayed images always go through the resize worker: srcset of allowed widths, the browser picks by size × DPR.
-const pic = (key, alt, sizes, widths) => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w} ${w}w`).join(', ')}" sizes="${sizes}" alt="${esc(alt)}" loading="lazy" decoding="async" />`;
+const pic = (key, alt, sizes, widths, eager = false) => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w} ${w}w`).join(', ')}" sizes="${sizes}" alt="${esc(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async" />`;
 const THUMB = ['160', '240', '320', '480'].map(Number);
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 const CONCURRENCY = 2;
@@ -68,8 +68,8 @@ $('logout').addEventListener('click', async () => { await fetch('/api/logout'); 
 function setAuthed(on) {
   authed = on;
   document.body.classList.toggle('ro', !on);
-  document.querySelectorAll('dialog.dlg:not(.login) :is(input:not([type=checkbox]), textarea)').forEach((el) => { el.readOnly = !on; });
-  document.querySelectorAll('dialog.dlg:not(.login) :is(select, input[type=checkbox])').forEach((el) => { el.disabled = !on; });
+  document.querySelectorAll(':is(dialog.dlg:not(.login), .editor) :is(input:not([type=checkbox]), textarea)').forEach((el) => { el.readOnly = !on; });
+  document.querySelectorAll(':is(dialog.dlg:not(.login), .editor) :is(select, input[type=checkbox])').forEach((el) => { el.disabled = !on; });
 }
 $('login-btn').addEventListener('click', showLogin);
 document.querySelector('.user-menu').addEventListener('click', (e) => { if (e.target.closest('.menu-item')) e.currentTarget.open = false; });
@@ -224,7 +224,7 @@ $('app').addEventListener('click', (e) => {
     const id = card.dataset.book, b = project.books.find((x) => x.id === id);
     if (e.target.matches('.pick')) { e.target.checked ? selected.add(id) : selected.delete(id); card.classList.toggle('sel', e.target.checked); renderSelbar(); return; }
     if (e.target.closest('[data-star]') && authed) { b.sample = !b.sample; patch('books', id, { sample: b.sample }); renderCard(id); renderBar(); return; }
-    if (e.target.closest('[data-open]')) openManager(id);
+    if (e.target.closest('[data-open]')) chatOpen() ? addRef(id) : openManager(id);
     return;
   }
   const books = groups().find((g) => (g.shelf?.id || '-') === shelfId)?.books || [];
@@ -287,7 +287,7 @@ $('sel-download').addEventListener('click', async () => {
 document.querySelectorAll('dialog.dlg').forEach((d) => d.addEventListener('click', (e) => {
   if (e.target.matches('[data-close]') || e.target === d) d.close();
 }));
-document.querySelectorAll('dialog.dlg').forEach((d) => d.addEventListener('close', () => { if (d.id !== 'login') renderAll(); }));
+document.querySelectorAll('dialog.dlg').forEach((d) => d.addEventListener('close', () => { if (d.id !== 'login') { renderAll(); if (!$('chat').hidden) renderChat(); } }));
 
 // Library style
 const collCard = (c) => `<div class="layer-card" data-coll="${c.id}">
@@ -519,10 +519,10 @@ async function generate(books) {
   books.forEach((b) => { status.set(b.id, { state: 'busy', msg: 'Queued' }); renderCard(b.id); });
   const worker = async () => {
     for (let b; (b = queue.shift());) {
-      status.set(b.id, { state: 'busy', msg: 'Generating…' }); renderCard(b.id);
+      status.set(b.id, { state: 'busy', msg: 'Generating…' }); renderCard(b.id); if (!$('chat').hidden) renderChat();
       try { await produce(b, { lookId }); status.delete(b.id); }
       catch (e) { status.set(b.id, { state: 'err', msg: e.message }); }
-      renderCard(b.id);
+      renderCard(b.id); if (!$('chat').hidden) renderChat();
     }
   };
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
@@ -550,7 +550,7 @@ function openManager(bookId) {
   $('im-sample').checked = !!b.sample;
   imStatus('');
   renderManager();
-  $('imgmgr').showModal();
+  openPane('imgmgr');
 }
 function renderManager() {
   const b = imBook(); if (!b) return;
@@ -560,7 +560,7 @@ function renderManager() {
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
-  $('im-preview').innerHTML =  (v ? pic(v.cover || v.raw, `${b.title} cover`, '(max-width: 860px) 80vw, 460px', [480, 640, 960, 1280]) : '<span class="hint">The cover appears here</span>') + backdropBar();
+  $('im-preview').innerHTML =  (v ? pic(v.cover || v.raw, `${b.title} cover`, '(max-width: 900px) 90vw, 440px', [480, 640, 960, 1280], true) : '<span class="hint">The cover appears here</span>') + backdropBar();
   $('im-aspect').hidden = !(v?.aspect && !aspectOk(v.aspect));
   $('im-aspect').textContent = v?.aspect ? `proportions ${v.aspect.toFixed(2)} — check framing` : '';
   const vers = b.versions || [];
@@ -608,7 +608,7 @@ $('imgmgr').addEventListener('click', async (e) => {
       await addVersion(b, { raw: v.raw, cover: await storeImage(b, 'covers', k.base64), prompt: v.prompt, aspect: k.aspect, edit: v.edit, lookId: v.lookId });
       imStatus('Re-keyed ✓', 'ok');
     } else if (act === 'browse') { $('im-file').click(); return; }
-    else if (act === 'chat') { $('imgmgr').close(); openChat(b.id, `The style on “${b.title}” is what I'm after. Apply it to `); return; }
+    else if (act === 'chat') { addRef(b.id); openChat(b.id, $('chat-input').value.trim() ? '' : 'The style on this cover is what I’m after. Apply it to '); return; }
   } catch (err) { imStatus(err.message, 'err'); }
   finally { imBusy(false); renderManager(); renderCard(b.id); }
 });
@@ -635,15 +635,47 @@ $('im-file').addEventListener('change', async (e) => {
 const chat = { messages: [], focus: null, busy: false };
 const STAGES = ['Reading the shelves…', 'Looking at the cover…', 'Putting the style into words…'];
 const EXAMPLES = ['The style on The Masnavi is just what I want — use it for the rest of the Islam shelf', 'Give every book by Rumi the same treatment as The Masnavi', 'Make the Bahá’í shelf a lighter blue with silver tooling'];
+// ---- workspace dock: cover editor and chat as side panes (non-modal). body classes size the shelves around them.
+const chatOpen = () => !$('chat').hidden;
+function layoutDock(last) {
+  document.body.classList.toggle('dock-editor', !$('imgmgr').hidden);
+  document.body.classList.toggle('dock-chat', chatOpen());
+  if (last) $('dock').dataset.last = last; // on phones only the last-opened pane shows
+  $('chat-fab').hidden = chatOpen();
+}
+function openPane(id) { $(id).hidden = false; layoutDock(id); }
+function closePane(id) {
+  $(id).hidden = true;
+  if (id === 'imgmgr') im = null;
+  layoutDock(!$('chat').hidden ? 'chat' : !$('imgmgr').hidden ? 'imgmgr' : '');
+  renderAll(); if (chatOpen()) renderChat();
+}
+$('im-close').addEventListener('click', () => closePane('imgmgr'));
 function openChat(focusBookId = null, draft = '') {
   if (!authed) return showLogin();
   if (focusBookId) chat.focus = focusBookId;
-  $('chat').hidden = $('chat-backdrop').hidden = false; $('chat-fab').hidden = true;
+  openPane('chat');
   if (draft) $('chat-input').value = draft;
-  renderChat();
-  setTimeout(() => { const i = $('chat-input'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350);
+  renderChat(); renderRefs(); requestAnimationFrame(autosize);
+  setTimeout(() => { const i = $('chat-input'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 200);
 }
-function closeChat() { $('chat').hidden = $('chat-backdrop').hidden = true; $('chat-fab').hidden = false; }
+const closeChat = () => closePane('chat');
+// Covers attached to the next message (click a cover while chatting, or "Chat" in the editor).
+chat.refs = [];
+function addRef(id) { if (!chat.refs.includes(id)) chat.refs.push(id); renderRefs(); $('chat-input').focus(); }
+function renderRefs() {
+  $('chat-refs').hidden = !chat.refs.length;
+  $('chat-refs').innerHTML = chat.refs.map((id) => {
+    const b = project.books.find((x) => x.id === id); if (!b) return '';
+    const v = currentVersion(b);
+    return `<span class="ref"><button type="button" class="ref-img" data-open-book="${id}" title="Open ${esc(b.title)} in the editor">${v ? pic(v.cover || v.raw, b.title, '40px', [160]) : '▢'}</button>
+      <span class="ref-t">${esc(b.title)}</span><button type="button" class="ref-x" data-unref="${id}" aria-label="Remove ${esc(b.title)}">×</button></span>`;
+  }).join('');
+}
+$('chat-refs').addEventListener('click', (e) => {
+  const x = e.target.closest('[data-unref]'); if (x) { chat.refs = chat.refs.filter((id) => id !== x.dataset.unref); renderRefs(); return; }
+  const o = e.target.closest('[data-open-book]'); if (o) openManager(o.dataset.openBook);
+});
 // Books whose ★ samples a plan touches: what "Apply & try" generates.
 function planSamples(plan) {
   const ids = new Set(plan.generateBookIds);
@@ -663,23 +695,32 @@ const planHtml = (m, i) => {
       ${gen.length ? `<button type="button" class="btn small gold" data-apply-gen>${p.changes.length ? 'Apply &amp; ' : ''}generate ${gen.length} ${p.generateBookIds.length ? 'cover' : '★ sample'}${gen.length > 1 ? 's' : ''}</button>` : ''}
       <button type="button" class="btn small ghost" data-dismiss>Not now</button></div>`}</div>`;
 };
+// Thumbnails the assistant put in front of the user; each opens the full Image Manager above the chat.
+const thumbsHtml = (ids = []) => !ids.length ? '' : `<div class="chat-thumbs">${ids.map((id) => {
+  const b = project.books.find((x) => x.id === id); if (!b) return '';
+  const v = currentVersion(b), st = status.get(id);
+  return `<button type="button" class="chat-thumb ${st?.state === 'busy' ? 'busy' : ''}" data-open-book="${id}" title="Open ${esc(b.title)}">
+    <span class="ct-img">${v ? pic(v.cover || v.raw, b.title, '104px', [160, 240]) : `<span class="none">${esc(b.title)}</span>`}</span>
+    <span class="ct-cap">${esc(b.title)}</span>${st?.state === 'busy' ? '<span class="ct-busy">Generating…</span>' : ''}</button>`;
+}).join('')}</div>`;
 function renderChat() {
   const body = $('chat-body');
   const welcome = `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble">Point me at a cover you like and tell me where its look should go: the rest of its shelf, a collection, every book by an author. I'll write the style and show you exactly what changes before anything is applied.
 <div class="chips">${EXAMPLES.map((x) => `<button type="button" class="chip" data-example>${esc(x)}</button>`).join('')}</div></div></div>`;
   body.innerHTML = welcome + chat.messages.map((m, i) => m.role === 'user'
-    ? `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`
-    : `<div class="msg assistant"><span class="avatar">❦</span><div class="bubblewrap"><div class="bubble ${m.error ? 'err' : ''}">${esc(m.text)}</div>${m.plan ? planHtml(m, i) : ''}</div></div>`).join('')
+    ? `<div class="msg user"><div class="bubblewrap user-wrap">${thumbsHtml(m.refs)}<div class="bubble">${esc(m.text)}</div></div></div>`
+    : `<div class="msg assistant"><span class="avatar">❦</span><div class="bubblewrap"><div class="bubble ${m.error ? 'err' : ''}">${esc(m.text)}</div>${thumbsHtml(m.books)}${m.plan ? planHtml(m, i) : ''}</div></div>`).join('')
     + (chat.busy ? `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble"><span class="stage" id="chat-stage">${STAGES[0]}</span></div></div>` : '');
   body.scrollTop = body.scrollHeight;
 }
 async function sendChat(text) {
-  if (!text.trim() || chat.busy) return;
-  chat.messages.push({ role: 'user', text: text.trim() }); chat.busy = true; renderChat();
+  if ((!text.trim() && !chat.refs.length) || chat.busy) return;
+  if (!text.trim()) text = 'Look at these covers.';
+  chat.messages.push({ role: 'user', text: text.trim(), refs: chat.refs }); chat.refs = []; renderRefs(); chat.busy = true; renderChat();
   let s = 0; const tick = setInterval(() => { const el = $('chat-stage'); if (el) el.textContent = STAGES[++s % STAGES.length]; }, 3500);
   try {
-    const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text }) => ({ role, text })), focusBookId: chat.focus }) });
-    chat.messages.push({ role: 'assistant', text: r.reply, plan: r.plan });
+    const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text, refs }) => ({ role, text, refs })), focusBookId: im?.bookId || chat.focus }) });
+    chat.messages.push({ role: 'assistant', text: r.reply, plan: r.plan, books: r.books || [] });
   } catch (e) { chat.messages.push({ role: 'assistant', text: `Something went wrong: ${e.message}`, error: true }); }
   finally { clearInterval(tick); chat.busy = false; renderChat(); }
 }
@@ -694,19 +735,29 @@ function applyPlan(plan) {
 }
 $('chat-fab').addEventListener('click', () => openChat());
 $('chat-close').addEventListener('click', closeChat);
-$('chat-backdrop').addEventListener('click', closeChat);
 $('chat-clear').addEventListener('click', () => { chat.messages = []; chat.focus = null; renderChat(); });
-$('chat-form').addEventListener('submit', (e) => { e.preventDefault(); const t = $('chat-input').value; $('chat-input').value = ''; $('chat-input').style.height = ''; sendChat(t); });
+$('chat-form').addEventListener('submit', (e) => { e.preventDefault(); const t = $('chat-input').value; $('chat-input').value = ''; autosize(); sendChat(t); });
 $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } });
-$('chat-input').addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`; });
-addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('chat').hidden && !document.querySelector('dialog[open]')) closeChat(); });
+// The composer grows with its text (typed, pasted or prefilled), up to about a third of the screen.
+function autosize() { const i = $('chat-input'); i.style.height = 'auto'; i.style.height = `${Math.min(i.scrollHeight + 2, innerHeight * 0.35)}px`; }
+$('chat-input').addEventListener('input', autosize);
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
+  if (!$('imgmgr').hidden) closePane('imgmgr'); else if (chatOpen()) closeChat();
+});
 $('chat-body').addEventListener('click', (e) => {
-  if (e.target.closest('[data-example]')) { $('chat-input').value = e.target.textContent; $('chat-input').focus(); return; }
+  if (e.target.closest('[data-example]')) { $('chat-input').value = e.target.textContent; autosize(); $('chat-input').focus(); return; }
+  const thumb = e.target.closest('[data-open-book]');
+  if (thumb) { openManager(thumb.dataset.openBook); return; }
   const card = e.target.closest('[data-plan]'); if (!card) return;
   const m = chat.messages[+card.dataset.plan];
   if (e.target.closest('[data-dismiss]')) { m.plan = null; m.text += '\n(Not applied.)'; renderChat(); return; }
   if (e.target.closest('[data-apply]')) { applyPlan(m.plan); m.applied = 'yes'; renderChat(); return; }
-  if (e.target.closest('[data-apply-gen]')) { const books = planSamples(m.plan); applyPlan(m.plan); m.applied = 'gen'; renderChat(); generate(books); }
+  if (e.target.closest('[data-apply-gen]')) {
+    const books = planSamples(m.plan); applyPlan(m.plan); m.applied = 'gen';
+    chat.messages.push({ role: 'assistant', text: `Generating ${books.length} cover${books.length > 1 ? 's' : ''} with the new style. They'll appear here as they finish; open any one to refine it.`, books: books.map((b) => b.id) });
+    renderChat(); generate(books);
+  }
 });
 
 // Keep the shelf headers just under the library bar, whatever height it wraps to.

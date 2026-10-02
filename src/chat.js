@@ -23,13 +23,16 @@ Choose the narrowest layer that covers exactly the books the user means:
 - an arbitrary set (same author, a list of titles) → scope "books" with their ids;  everything → the library style.
 Write style text as concrete visual instructions for an image model, never the book's title or its specific centre
 illustration (those come from each book). Keep the existing layer text when the user asks to "add" or "also".
-Finish with propose_plan. Only include generateBookIds when the user asks to generate or regenerate covers.
+Use show_books to put thumbnails of the books you are talking about in front of the user (examples, matches, the
+books a change will affect — up to 12); they can open any of them. Finish with propose_plan when changes are wanted. Only include generateBookIds when the user asks to generate or regenerate covers.
 Resolve books, shelves, collections and authors from the catalogue by id; if a reference is ambiguous, ask instead.
 Reply briefly in plain English (no markdown headings).`;
 
 export const TOOLS = [{ functionDeclarations: [
   { name: 'describe_cover_style', description: "Look at a book's current cover image and the prompt that made it; returns a reusable description of its visual style.",
     parameters: { type: 'object', properties: { bookId: { type: 'string' } }, required: ['bookId'] } },
+  { name: 'show_books', description: 'Show thumbnails of these books in the chat; the user can open each one in the full editor.',
+    parameters: { type: 'object', properties: { bookIds: { type: 'array', items: { type: 'string' } } }, required: ['bookIds'] } },
   { name: 'propose_plan', description: 'Propose style changes (and optionally covers to generate) for the user to approve.',
     parameters: { type: 'object', properties: {
       changes: { type: 'array', items: { type: 'object', properties: {
@@ -67,18 +70,29 @@ export async function runChat({ project, messages, focusBookId, callModel, descr
   const contents = [
     { role: 'user', parts: [{ text: `${catalogue(project)}${focus ? `\n\nThe user is looking at book ${focus.id} (${focus.title}).` : ''}` }] },
     { role: 'model', parts: [{ text: 'Understood.' }] },
-    ...messages.slice(-12).map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.text || '') }] })),
+    ...messages.slice(-12).map((m) => {
+      // Covers the user attached (clicked on the shelves) arrive as ids; name them for the model.
+      const refs = (m.refs || []).map((id) => project.books.find((b) => b.id === id)).filter(Boolean);
+      const att = refs.length ? `[Attached covers: ${refs.map((b) => `${b.id} “${b.title}”`).join(', ')}]\n` : '';
+      return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: att + String(m.text || '') }] };
+    }),
   ];
+  // Books to show as thumbnails: every cover the model looked at, plus what it asked to show. Known ids, in order.
+  const shown = [];
+  const show = (ids) => ids.forEach((id) => { if (!shown.includes(id) && project.books.some((b) => b.id === id)) shown.push(id); });
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const parts = await callModel(contents);
     const text = parts.filter((x) => x.text).map((x) => x.text).join('\n').trim();
     const calls = parts.filter((x) => x.functionCall).map((x) => x.functionCall);
+    calls.forEach((c) => show(c.name === 'show_books' ? c.args?.bookIds || [] : c.name === 'describe_cover_style' ? [c.args?.bookId] : []));
     const plan = calls.find((c) => c.name === 'propose_plan');
-    if (plan) return { reply: text || 'Here is what I would change.', plan: sanitizePlan(project, plan.args) };
-    if (!calls.length) return { reply: text, plan: null };
+    if (plan) return { reply: text || 'Here is what I would change.', plan: sanitizePlan(project, plan.args), books: shown.slice(0, 12) };
+    const tools = calls.filter((c) => c.name !== 'show_books');
+    if (!tools.length && (text || !calls.length)) return { reply: text, plan: null, books: shown.slice(0, 12) };
     contents.push({ role: 'model', parts });
     const responses = [];
     for (const c of calls) {
+      if (c.name === 'show_books') { responses.push({ functionResponse: { name: c.name, response: { shown: true } } }); continue; }
       const b = project.books.find((x) => x.id === c.args?.bookId);
       const v = b && (b.versions?.find((x) => x.id === b.selected) || b.versions?.at(-1));
       const result = !b ? { error: 'no such book id' } : !v?.cover && !v?.raw ? { error: 'that book has no cover yet' }
@@ -87,7 +101,7 @@ export async function runChat({ project, messages, focusBookId, callModel, descr
     }
     contents.push({ role: 'user', parts: responses });
   }
-  return { reply: "Sorry, I couldn't finish that — try asking more specifically.", plan: null };
+  return { reply: "Sorry, I couldn't finish that — try asking more specifically.", plan: null, books: shown.slice(0, 12) };
 }
 
 // ---- Gemini adapters (REST, no SDK) ----
