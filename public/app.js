@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=11';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=13';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -74,6 +74,7 @@ function setAuthed(on) {
   document.querySelectorAll(':is(dialog.dlg:not(.login), .editor) :is(select, input[type=checkbox])').forEach((el) => { el.disabled = !on; });
 }
 $('login-btn').addEventListener('click', showLogin);
+$('login-nav').addEventListener('click', showLogin);
 document.querySelector('.user-menu').addEventListener('click', (e) => { if (e.target.closest('.menu-item')) e.currentTarget.open = false; });
 async function boot() {
   setAuthed((await api('/api/me')).authed);
@@ -165,13 +166,13 @@ function renderBar() {
   $('empty').hidden = project.books.length > 0;
 }
 
-const cardHtml = (b) => {
-  const v = currentVersion(b), st = status.get(b.id), coll = collById(b.collectionId);
+const cardHtml = (b, head = null) => {
+  const v = currentVersion(b), st = status.get(b.id), coll = head ? null : collById(b.collectionId);
   const badge = st?.state === 'busy' ? `<span class="state busy">${esc(st.msg || 'Generating…')}</span>`
     : st?.state === 'err' ? `<span class="state err" title="${esc(st.msg)}">Failed</span>`
     : v?.aspect && !aspectOk(v.aspect) ? '<span class="state warn" title="Proportions look off — consider regenerating">Check framing</span>' : '';
   const src = v?.cover || v?.raw;
-  return `<article class="card ${selected.has(b.id) ? 'sel' : ''}" data-book="${b.id}">
+  return `<article class="card ${selected.has(b.id) ? 'sel' : ''} ${head ? `head ${head.open ? 'open' : ''}` : ''}" data-book="${b.id}"${head ? ` data-head="${b.collectionId}"` : ''}>
     ${badge}
     <div class="thumb"><div class="book" data-open title="Open the Image Manager">
       ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(b.title)}</span>`}
@@ -179,7 +180,9 @@ const cardHtml = (b) => {
       <button type="button" class="star ${b.sample ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${b.sample}" title="${b.sample ? 'Sample book — included in ✦ Try look' : 'Make this a sample book'}">★</button>
     </div></div>
     <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
-      <span class="tags">${[coll?.name, b.versions.length > 1 ? `${b.versions.length} versions` : ''].filter(Boolean).map(esc).join(' · ')}</span></div>
+      <span class="tags">${[coll?.name, b.versions.length > 1 ? `${b.versions.length} versions` : ''].filter(Boolean).map(esc).join(' · ')}</span>
+      ${head ? `<button type="button" class="vols" data-coll-toggle="${b.collectionId}" aria-expanded="${head.open}">${head.open ? '▴' : '▾'} ${head.vols} volumes</button>
+        <button type="button" class="head-edit" data-edit title="Open the collection cover in the editor">Edit cover</button>` : ''}</div>
   </article>`;
 };
 
@@ -198,15 +201,32 @@ function renderShelves() {
         <button type="button" class="btn small gold" data-write data-shelf-samples ${samples ? '' : 'disabled'} title="${samples ? 'Generate the ★ sample books on this shelf with the current styles' : 'Star (★) a few books on this shelf to try looks on them'}">✦ Samples</button>
         ${g.shelf?.style ? `<p class="shelf-style-line">${esc(g.shelf.style)}</p>` : ''}
       </header>
-      ${open ? `<div class="grid">${g.books.map(cardHtml).join('')}</div>` : ''}
+      ${open ? `<div class="grid">${shelfCards(g.books)}</div>` : ''}
     </section>`;
+  }).join('');
+}
+// A shelf: loose books first, then each collection as ONE tile at the end (its own cover, type Collection), with its
+// volumes in a collapsible tray beneath. Volumes whose collection has no head on this shelf stay loose.
+const openColls = new Set(store.get('openColls', []));
+const isHead = (b) => b.type === 'Collection' && b.collectionId;
+function shelfCards(books) {
+  const heads = books.filter(isHead);
+  const inTray = new Set(heads.map((h) => h.collectionId));
+  const loose = books.filter((b) => !isHead(b) && !inTray.has(b.collectionId));
+  return loose.map((b) => cardHtml(b)).join('') + heads.map((h) => {
+    const vols = books.filter((b) => b !== h && b.collectionId === h.collectionId), open = openColls.has(h.collectionId);
+    return cardHtml(h, { vols: vols.length, open }) + (open ? `<div class="tray" data-tray="${h.collectionId}">
+      <div class="tray-head"><b>${esc(h.title)}</b> · ${vols.length} volumes<button type="button" class="btn small ghost" data-coll-toggle="${h.collectionId}">Collapse ▴</button></div>
+      <div class="tray-grid">${vols.map((b) => cardHtml(b)).join('')}</div></div>` : '');
   }).join('');
 }
 // Re-render one card in place (status changes, new versions) without rebuilding every shelf.
 function renderCard(bookId) {
   const el = document.querySelector(`[data-book="${bookId}"]`);
   const b = project.books.find((x) => x.id === bookId);
-  if (el && b) el.outerHTML = cardHtml(b);
+  if (!el || !b) return;
+  if (el.dataset.head) { renderShelves(); return; }
+  el.outerHTML = cardHtml(b);
 }
 
 function renderSelbar() {
@@ -221,12 +241,19 @@ function renderSelbar() {
 $('app').addEventListener('click', (e) => {
   const sec = e.target.closest('[data-shelf]'); if (!sec) return;
   const shelfId = sec.dataset.shelf;
+  const tog = e.target.closest('[data-coll-toggle]');
+  if (tog) { const c = tog.dataset.collToggle; openColls.has(c) ? openColls.delete(c) : openColls.add(c); store.set('openColls', [...openColls]); renderShelves(); return; }
   const card = e.target.closest('[data-book]');
   if (card) {
     const id = card.dataset.book, b = project.books.find((x) => x.id === id);
     if (e.target.matches('.pick')) { e.target.checked ? selected.add(id) : selected.delete(id); card.classList.toggle('sel', e.target.checked); renderSelbar(); return; }
     if (e.target.closest('[data-star]') && authed) { b.sample = !b.sample; patch('books', id, { sample: b.sample }); renderCard(id); renderBar(); return; }
-    if (e.target.closest('[data-open]')) chatOpen() ? addRef(id) : openManager(id);
+    if (e.target.closest('[data-edit]')) { openManager(id); return; }
+    if (e.target.closest('[data-open]')) {
+      if (chatOpen()) addRef(id);
+      else if (card.dataset.head) { const c = card.dataset.head; openColls.has(c) ? openColls.delete(c) : openColls.add(c); store.set('openColls', [...openColls]); renderShelves(); }
+      else openManager(id);
+    }
     return;
   }
   const books = groups().find((g) => (g.shelf?.id || '-') === shelfId)?.books || [];
@@ -713,7 +740,7 @@ function renderChat() {
   body.innerHTML = welcome + chat.messages.map((m, i) => m.role === 'user'
     ? `<div class="msg user"><div class="bubblewrap user-wrap">${thumbsHtml(m.refs)}<div class="bubble">${esc(m.text)}</div></div></div>`
     : `<div class="msg assistant"><span class="avatar">❦</span><div class="bubblewrap"><div class="bubble ${m.error ? 'err' : ''}">${esc(m.text)}</div>${thumbsHtml(m.books)}${m.plan ? planHtml(m, i) : ''}</div></div>`).join('')
-    + (chat.busy ? `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble"><span class="stage" id="chat-stage">${STAGES[0]}</span></div></div>` : '');
+    + (chat.busy ? `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble"><span class="chat-stage" id="chat-stage">${STAGES[0]}</span></div></div>` : '');
   body.scrollTop = body.scrollHeight;
 }
 async function sendChat(text) {

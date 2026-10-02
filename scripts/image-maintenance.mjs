@@ -5,6 +5,9 @@
 //   npx wrangler d1 execute bindery --remote --file tmp/version-dims.sql
 import { writeFileSync } from 'node:fs';
 const BASE = 'https://bindery.lnker.com';
+// Retries: a long run over ~1,600 requests will meet the odd dropped connection.
+const _fetch = globalThis.fetch;
+globalThis.fetch = async (url, init, tries = 4) => { try { return await _fetch(url, init); } catch (e) { if (tries <= 1) throw e; await new Promise((r) => setTimeout(r, 1500)); return fetch(url, init, tries - 1); } };
 const step = process.argv[2];
 const libs = (await (await fetch(`${BASE}/api/libraries`)).json()).libraries.map((l) => l.id);
 const pool = async (items, n, fn) => { let i = 0; await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) await fn(items[i++]); })); };
