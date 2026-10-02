@@ -1,69 +1,190 @@
 # Cover Generator
 
-Proof-of-concept generator for skeuomorphic book covers. Paste a CSV of books (or add them one at a
-time), describe the look in three layers, generate covers with Gemini, and download any selection as a
-zip of transparent PNGs — each with the prompt that made it.
+Generate consistent, photorealistic book covers for a whole library, with backgrounds that come out
+cleanly transparent.
 
-Runs on Cloudflare: one Worker serves the page and proxies Gemini (the API key never reaches the
-browser); covers, raw generations and project data live in R2.
+Paste a list of books, describe the look once at three levels (the whole library, each bookshelf,
+each collection), and generate. Every cover comes back as a transparent PNG you can drop onto any page,
+alongside the exact prompt that made it, so any single cover can be regenerated later.
 
-## Style layers
+**Live demo: [cover-generator.chadananda.workers.dev](https://cover-generator.chadananda.workers.dev)**
+*(protected by a passcode, because every generation spends Gemini credit; ask Chad for it)*
+
+![The app: styles on the left, books on the right](docs/3-app.jpg)
+
+> Proof of concept. It runs today and produces usable covers; the roadmap below lists what a
+> production version would add.
+
+---
+
+## How a cover gets made
+
+```mermaid
+flowchart LR
+  A[Book list<br/>CSV or one at a time] --> B[Compose prompt<br/>library → bookshelf → collection → book]
+  B --> C[Gemini generates<br/>on solid magenta]
+  C --> D[(R2: raw image<br/>+ prompt)]
+  D --> E[Key out magenta<br/>in the browser]
+  E --> F[(R2: transparent cover<br/>+ prompt)]
+  F --> G[Download zip<br/>PNGs + prompts + manifest]
+```
+
+### 1. Describe the look in layers
+
+A library's covers should feel like one collection and still tell each book apart. Style is stacked
+from most general to most specific:
 
 | Layer | Applies to | Example |
 |---|---|---|
-| **Application** | every cover in the set | antique leather, gold tooling, embossed centre |
-| **Bookshelf** | one shelf (e.g. a tradition) | oxblood leather, Byzantine cross motifs |
-| **Collection** | volumes that must match (e.g. the Gospels) | identical border, numbered spine |
-| Book override | one cover, optional | add a silver clasp |
+| **Application** | every cover in the set | antique hand-tooled leather, gold-leaf border, embossed centre |
+| **Bookshelf** | one shelf, such as a tradition or genre | deep oxblood leather, Byzantine crosses in the corners |
+| **Collection** | volumes that must match, such as the four Gospels | identical border; a roundel carries each evangelist's symbol |
+| **Book** | one cover (optional) | add a silver clasp |
 
-Layers stack most-general first. A collection tells the model its volumes must match in leather,
-border, typography and layout, differing only in title and centre illustration.
+A collection also tells the model that its volumes must match one another in leather, border,
+typography and layout, and differ only in title and centre illustration. That's how a multi-volume
+set stays a set.
 
-## Transparency
+### 2. Generate on a key colour
 
-Covers are generated on a solid **magenta** (or green) background and keyed out — the method from the
-*Book Cover Generation* recipe: corner sampling, flood-fill from every border pixel, shadow cleanup to a
-fixpoint, opaque despill, trim, 12px transparent pad. Removing a background after the fact does not
-work on leather, so the cutout is solved at generation time. Raw generations are kept, so a cover can
-be re-keyed without paying for a new image.
+The prompt asks for the book photographed from above on **solid magenta** (`#FF00FF`), with a
+visible margin, no shadow and no vignette. Those requirements are stated at the start of the prompt
+and repeated as a numbered list at the end, because the model drifts without the repetition.
 
-## Using it
+<p align="center"><img src="docs/1-raw.jpg" width="320" alt="Raw generation on magenta"></p>
 
-1. Open the Worker URL and enter the passcode.
-2. Pick or create an **app set** (Ocean, WholeReader, …).
-3. Paste a CSV — `title,author,bookshelf,collection` (any order, any case; the Ocean export
-   `author,category,name,type` works as-is) — or add books one at a time.
-4. Set the application style; give bookshelves and collections their sub-styles.
-5. Select books → **Generate selected**. Click any cover to open the **Image Manager**: change the
-   content prompt, Generate again, Edit the current cover, Re-key, upload your own image, or roll back
-   to an earlier version.
-6. Select covers → **Download selected** → `<title>.png` + `<title>.txt` (prompt) + `manifest.csv`.
+### 3. Key out the background
 
-## Core logic
+Background removal is solved **at generation time**, not afterwards. Generic background removers
+fail on leather: the worn edges fade gradually into the background, so there's no clean line to cut.
+A colour that never appears in the art can be removed precisely. The keyer runs in four passes:
 
-[`core/`](core/) holds everything that makes a cover — prompt layering, the keyer, CSV import and the
-Gemini call — with zero dependencies. It runs unchanged in the browser, the Worker and Node; copy that
-folder to reuse the generator without this app. See [`core/README.md`](core/README.md).
+1. **Sample** the real background from the four corners. Don't assume pure `#FF00FF`, because the
+   model adds vignetting.
+2. **Flood-fill from every border pixel**, not just the corners, so magenta trapped in notches
+   along the edge is reached too.
+3. **Remove shadow**, repeating until nothing changes. A shadow on magenta keeps magenta's hue, so a
+   plain colour-distance test misses it.
+4. **Despill** the pink fringe, but keep those pixels **fully opaque**. Semi-transparent edges look
+   chewed.
+
+Then trim to the book and add a 12px transparent pad, so worn corners never touch the image edge.
+
+<p align="center"><img src="docs/2-keyed.jpg" width="640" alt="Keyed cover over a checkerboard and over black"></p>
+
+*The same cover after keying, over a checkerboard and over black. The torn edges and spine are kept,
+there's no pink fringe, and the lettering is solid.* On a real 896×1200 generation the keyer takes
+about **0.1 seconds**.
+
+Keying runs in your browser on the raw image saved in R2. Re-keying is free: it never pays for a new
+generation. If a cover's proportions look wrong (cropped or mis-framed art), it's flagged so you can
+regenerate it rather than fiddle with the cutout.
+
+### 4. Refine one cover
+
+Click any cover to open the **Image Manager** (modelled on NovelArabic's image editor):
+
+- **Content prompt**: what the centre illustration shows ("a winged lion on an open scroll").
+- **Inherited style**: the application, bookshelf and collection layers that apply, shown for reference.
+- **Style override**: anything specific to this one book.
+- **✦ Generate**: a new cover from the prompt.
+- **✎ Edit**: change the *current* cover ("add an ornate silver clasp") instead of starting over.
+- **⟳ Re-key**: run the background removal again on the saved raw image.
+- **🖿 Browse…**: use an image from your computer.
+- **Versions**: every render is kept. Click one to roll back, or ✕ to delete it.
+
+### 5. Download
+
+Select covers and click **Download selected** to get a zip containing:
+
+```
+gospel-of-mark-john.png    transparent cover
+gospel-of-mark-john.txt    the exact prompt that made it
+manifest.csv               file, title, author, bookshelf, collection
+```
+
+---
+
+## Using the demo
+
+1. Open the [demo](https://cover-generator.chadananda.workers.dev) and enter the passcode.
+2. Choose an **app set** (one per application, e.g. *Ocean*, *WholeReader*) or create a new one.
+3. Add books:
+   - **Paste CSV**: headers in any order or case. `title, author, bookshelf, collection` works, and so do
+     common alternatives (`name`, `category`, `series`…). The Ocean library export
+     (`author,category,name,type`) imports as-is. A headerless `title,author` paste works too.
+     "Unknown" authors are dropped from the cover.
+   - **Add one**: title, author, bookshelf, collection.
+4. Write the **application style**, then give each bookshelf and collection its sub-style.
+5. Select books → **✦ Generate selected** (two at a time, ~20 seconds each).
+6. Open any cover to refine it, then select and **Download**.
+
+---
+
+## Architecture
+
+| Part | What it does |
+|---|---|
+| [`core/`](core/) | **All the cover logic, with zero dependencies**: prompt layering, the keyer, CSV import, the Gemini call. It runs unchanged in the browser, the Worker and Node. |
+| [`src/worker.js`](src/worker.js) | Cloudflare Worker: passcode check, a Gemini proxy so the API key never reaches the browser, and R2 storage. |
+| [`public/`](public/) | The page. Keying runs here, with the same `core/` code. |
+| R2 bucket `cover-generator` | `project.json` per set, raw generations, keyed covers, and a `.json` prompt file beside every image. |
+
+To reuse the generator without the app, copy [`core/`](core/). [`core/README.md`](core/README.md)
+has a Node example.
+
+---
 
 ## Development
 
 ```sh
 npm install
-npm test                      # core: keyer, prompt layering, CSV, Gemini client
-cp .dev.vars.example .dev.vars   # add GEMINI_API_KEY and PASSCODE
-npm run dev                   # http://localhost:8787 (local R2)
+npm test                          # 33 tests: keyer, prompt layering, CSV, Gemini client
+cp .dev.vars.example .dev.vars    # add GEMINI_API_KEY and a PASSCODE
+npm run dev                       # http://localhost:8787 (local R2)
 ```
 
-Deploy (Cloudflare account set in `wrangler.jsonc`):
+`npm run build` copies `core/` into `public/core/` so the browser runs the same files. Wrangler runs
+it automatically on `dev` and `deploy`. Always edit `core/`, never `public/core/`.
+
+## Deployment
+
+The demo runs on Chad's personal Cloudflare account (`account_id` in [`wrangler.jsonc`](wrangler.jsonc)).
+
+**One-time setup** (already done for the demo):
 
 ```sh
 npx wrangler r2 bucket create cover-generator
 npx wrangler secret put GEMINI_API_KEY
 npx wrangler secret put PASSCODE
-npm run deploy
 ```
 
-Optional var `GEMINI_MODEL` overrides the default `gemini-3-pro-image-preview`.
+**Today** it's deployed by hand with `npm run deploy`.
+
+**Next: deploy on every push.** Connect the repo with Cloudflare Workers Builds:
+
+1. Cloudflare dashboard → **Workers & Pages** → `cover-generator` → **Settings** → **Builds** → **Connect**.
+2. Choose GitHub repo `chadananda/cover-generator`, branch `main`.
+3. Leave the deploy command as `npx wrangler deploy`; the build step in `wrangler.jsonc` copies `core/`.
+
+From then on, every commit to `main` deploys the demo. The secrets and the R2 bucket carry over,
+because they belong to the Worker, not the build.
+
+Optional: set a `GEMINI_MODEL` variable to override the default `gemini-3-pro-image-preview`.
+
+---
+
+## Roadmap
+
+- **Accounts instead of a shared passcode** (e.g. Cloudflare Access), with per-user spend limits.
+- **Batch jobs that run on the server**, so a 600-cover run doesn't need the browser tab open.
+- **Automatic re-roll** when a cover fails the proportion check.
+- **More style profiles**: WholeReader (Victorian cloth bindings, no tradition column) is next.
+
+## Credits
+
+The keying method is the *Book Cover Generation* recipe, proven first on CTAI.info. The Image
+Manager follows the one in NovelArabic.
 
 ## License
 
