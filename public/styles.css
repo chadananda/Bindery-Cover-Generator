@@ -285,10 +285,12 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---------------------------------------------------------------- launcher (after Jafar, CTAI.info) */
 .fab { position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 40; display: flex; align-items: center; gap: .85rem; cursor: pointer;
-  border-radius: 999px; border: 1px solid rgb(217 148 44 / .3); background: rgb(26 23 20 / .95); padding: .55rem 1.25rem .55rem .65rem;
-  box-shadow: 0 25px 50px -12px rgb(0 0 0 / .5); backdrop-filter: blur(8px); transition: border-color .15s, box-shadow .15s, transform .15s;
+  border-radius: 999px; border: 1.5px solid #f2dea8; background: rgb(26 23 20 / .97); padding: .55rem 1.25rem .55rem .65rem;
+  /* Light double ring: the pale-gold border plus an ivory halo keep it distinct over dark covers as well as the light page. */
+  box-shadow: 0 0 0 3px rgb(255 252 246 / .92), 0 0 0 4px rgb(160 120 50 / .35), 0 22px 44px -14px rgb(0 0 0 / .55);
+  backdrop-filter: blur(8px); transition: border-color .15s, box-shadow .15s, transform .15s;
   animation: fabRise .5s ease-out both; }
-.fab:hover { border-color: rgb(226 173 68 / .65); box-shadow: 0 25px 50px -12px rgb(108 58 30 / .55); transform: translateY(-1px); }
+.fab:hover { border-color: #f6e3ad; box-shadow: 0 0 0 3px rgb(255 252 246), 0 0 0 4px rgb(217 148 44 / .55), 0 24px 48px -14px rgb(108 58 30 / .6); transform: translateY(-1px); }
 body.has-selbar .fab { bottom: 5rem; }
 .fab-emblem { position: relative; display: grid; place-items: center; width: 46px; height: 46px; }
 .fab-emblem svg { position: relative; width: 40px; height: 40px; filter: drop-shadow(0 1px 3px rgb(0 0 0 / .4)); }
