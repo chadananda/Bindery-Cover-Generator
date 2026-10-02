@@ -1,0 +1,86 @@
+import { describe, it, expect } from 'vitest';
+import { catalogue, sanitizePlan, runChat } from '../src/chat.js';
+
+const project = {
+  app: { name: 'Ocean', style: 'leather' },
+  shelves: [{ id: 's1', name: 'Islam', style: 'green' }, { id: 's2', name: 'Bahá’í', style: 'blue' }],
+  collections: [{ id: 'c1', name: 'Sahih Muslim', shelfId: 's1', style: '' }],
+  books: [
+    { id: 'b1', title: 'The Masnavi', author: 'Rumi', shelfId: 's1', collectionId: '', versions: [{ id: 'v1', cover: 'k1', prompt: 'P1' }], selected: 'v1' },
+    { id: 'b2', title: 'Diwan', author: 'Rumi', shelfId: 's1', collectionId: '', versions: [] },
+    { id: 'b3', title: 'Sahih Muslim 1', author: 'Muslim', shelfId: 's1', collectionId: 'c1', versions: [] },
+  ],
+};
+
+describe('catalogue', () => {
+  it('lists shelves, collections and books with ids the model can cite', () => {
+    const c = catalogue(project);
+    expect(c).toContain('s1 | Islam');
+    expect(c).toContain('c1 | Sahih Muslim | shelf s1');
+    expect(c).toContain('b2 | Diwan | Rumi | s1 |  | no cover');
+    expect(c).toContain('b1 | The Masnavi | Rumi | s1 |  | cover');
+  });
+});
+
+describe('sanitizePlan', () => {
+  it('keeps valid changes, drops unknown targets and ids', () => {
+    const plan = sanitizePlan(project, {
+      changes: [
+        { scope: 'shelf', targetId: 's1', style: ' emerald ' },
+        { scope: 'shelf', targetId: 'nope', style: 'x' },
+        { scope: 'books', bookIds: ['b1', 'b2', 'zzz'], style: 'gilt' },
+        { scope: 'library', style: 'cloth' },
+        { scope: 'collection', targetId: 'c1', style: '' },
+        { scope: 'weird', style: 'x' },
+      ],
+      generateBookIds: ['b2', 'zzz'],
+    });
+    expect(plan.changes).toEqual([
+      { scope: 'shelf', targetId: 's1', name: 'Islam', before: 'green', style: 'emerald' },
+      { scope: 'books', bookIds: ['b1', 'b2'], name: '2 books', before: '', style: 'gilt' },
+      { scope: 'library', targetId: null, name: 'Ocean', before: 'leather', style: 'cloth' },
+    ]);
+    expect(plan.generateBookIds).toEqual(['b2']);
+  });
+  it('returns null for an empty plan', () => {
+    expect(sanitizePlan(project, { changes: [], generateBookIds: [] })).toBeNull();
+  });
+});
+
+describe('runChat', () => {
+  // A scripted model: first asks for the cover style, then proposes a plan.
+  const script = (turns) => { let i = 0; const seen = []; return { seen, call: async (contents) => { seen.push(contents); return turns[i++]; } }; };
+
+  it('runs tool calls and returns the reply and a sanitized plan', async () => {
+    const m = script([
+      [{ functionCall: { name: 'describe_cover_style', args: { bookId: 'b1' } } }],
+      [{ text: 'Applying the Masnavi look to Islam.' }, { functionCall: { name: 'propose_plan', args: { changes: [{ scope: 'shelf', targetId: 's1', style: 'deep green gilt' }], generateBookIds: ['b2'] } } }],
+    ]);
+    const described = [];
+    const out = await runChat({ project, messages: [{ role: 'user', text: 'Use the Masnavi style for all of Islam' }], callModel: m.call, describeCover: async (b) => { described.push(b.id); return 'deep green gilt'; } });
+    expect(described).toEqual(['b1']);
+    expect(out.reply).toBe('Applying the Masnavi look to Islam.');
+    expect(out.plan.changes[0]).toMatchObject({ scope: 'shelf', targetId: 's1', style: 'deep green gilt' });
+    expect(out.plan.generateBookIds).toEqual(['b2']);
+    // the tool result went back to the model
+    expect(JSON.stringify(m.seen[1])).toContain('deep green gilt');
+  });
+
+  it('answers plain questions without a plan', async () => {
+    const m = script([[{ text: 'There are 3 books.' }]]);
+    expect(await runChat({ project, messages: [{ role: 'user', text: 'how many?' }], callModel: m.call })).toEqual({ reply: 'There are 3 books.', plan: null });
+  });
+
+  it('reports an unknown book to the model instead of crashing', async () => {
+    const m = script([[{ functionCall: { name: 'describe_cover_style', args: { bookId: 'zzz' } } }], [{ text: 'Which book?' }]]);
+    const out = await runChat({ project, messages: [{ role: 'user', text: 'x' }], callModel: m.call, describeCover: async () => 'never' });
+    expect(out.reply).toBe('Which book?');
+    expect(JSON.stringify(m.seen[1])).toMatch(/no such book|no cover/i);
+  });
+
+  it('stops after a bounded number of tool rounds', async () => {
+    const loop = { call: async () => [{ functionCall: { name: 'describe_cover_style', args: { bookId: 'b1' } } }] };
+    const out = await runChat({ project, messages: [{ role: 'user', text: 'x' }], callModel: loop.call, describeCover: async () => 's' });
+    expect(out.reply).toMatch(/couldn.t finish/i);
+  });
+});

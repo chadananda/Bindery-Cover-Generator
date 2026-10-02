@@ -7,33 +7,37 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=6" />
+  <link rel="stylesheet" href="/styles.css?v=8" />
 </head>
 <body>
-  <!-- Library bar: sticky. Library-wide style, looks and book import live in dialogs opened from here. -->
-  <header class="libbar" id="libbar">
-    <div class="brand"><span class="mark" aria-hidden="true">❦</span><span class="brand-name">Bindery</span></div>
-    <select id="lib-select" class="lib-select" aria-label="Library"></select>
-    <span id="lib-stats" class="lib-stats"></span>
-    <span id="look-state" class="look-state"></span>
-    <span class="spacer"></span>
-    <nav class="lib-actions" aria-label="Library">
-      <button type="button" class="btn small" id="open-libstyle">Library style</button>
-      <button type="button" class="btn small" id="open-looks">Looks</button>
-      <button type="button" class="btn small gold" id="try-look" data-write title="Generate a cover for every sample book (★) in the library, using the current styles">✦ Try look</button>
-      <select id="shelf-jump" class="shelf-jump" aria-label="Show bookshelf"></select>
-      <button type="button" class="btn small ghost" id="open-add" data-write>+ Books</button>
-      <button type="button" class="btn small ghost" id="theme-btn" title="Switch light / dark: covers must read on both">◐</button>
-      <button type="button" class="btn small gold" id="login-btn" data-read>Log in to edit</button>
-      <details class="more">
-        <summary class="btn small ghost" aria-label="More">⋯</summary>
-        <div class="more-menu">
-          <button type="button" class="btn small ghost" id="new-lib" data-write>+ New library</button>
-          <button type="button" class="btn small ghost" id="logout" data-write>Log out</button>
+  <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
+  <header class="navbar" id="libbar">
+    <nav class="nav-inner" aria-label="Main navigation">
+      <a href="/" class="brand"><span class="brand-mark">❦ Bindery</span><span class="brand-divider"></span></a>
+      <select id="lib-select" class="nav-select lib-select" aria-label="Library"></select>
+      <span id="lib-stats" class="nav-meta"></span>
+      <span id="look-state" class="nav-meta look-state"></span>
+      <span class="spacer"></span>
+      <div class="nav-links">
+        <button type="button" class="nav-link" id="open-libstyle">Library style</button>
+        <button type="button" class="nav-link" id="open-looks">Looks</button>
+        <select id="shelf-jump" class="nav-select" aria-label="Show bookshelf"></select>
+        <button type="button" class="nav-link" id="open-add" data-write>+ Books</button>
+        <button type="button" class="nav-link gold" id="try-look" data-write title="Generate a cover for every sample book (★) in the library, using the current styles">✦ Try look</button>
+      </div>
+      <span id="save-state" class="save-state" aria-live="polite"></span>
+      <button type="button" class="nav-icon" id="theme-btn" title="Light / dark — covers must read on both" aria-label="Switch light or dark">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor"/></svg></button>
+      <details class="user-menu">
+        <summary class="nav-icon user-btn" aria-label="Account">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0"/></svg></summary>
+        <div class="menu">
+          <button type="button" class="menu-item" id="login-btn" data-read>Log in to edit</button>
+          <button type="button" class="menu-item" id="new-lib" data-write>New library…</button>
+          <button type="button" class="menu-item" id="logout" data-write>Log out</button>
         </div>
       </details>
     </nav>
-    <span id="save-state" class="save-state" aria-live="polite"></span>
   </header>
 
   <main id="app" class="shelves" hidden></main>
@@ -49,6 +53,31 @@
     <button type="button" class="btn small ghost danger" id="sel-delete" data-write>Remove</button>
     <button type="button" class="btn small ghost" id="sel-clear">Clear</button>
   </div>
+
+  <!-- Style chat (after Anis, siftersearch.com) behind a launcher (after Jafar, CTAI.info). Logged-in only. -->
+  <button type="button" class="fab" id="chat-fab" data-write aria-label="Open the style chat">
+    <span class="fab-emblem"><span class="fab-halo"></span>
+      <svg width="40" height="40" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="fabGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2dea8"/><stop offset=".5" stop-color="#d9942c"/><stop offset="1" stop-color="#a0571f"/></linearGradient></defs>
+        <path fill="url(#fabGold)" stroke="#fdf9ef" stroke-opacity=".45" stroke-width="1.1" d="M50 6c-9 0-24 3-34 9v66c10-6 25-9 34-9s24 3 34 9V15c-10-6-25-9-34-9z"/>
+        <path d="M50 12v58" stroke="#1a1714" stroke-opacity=".55" stroke-width="2.4"/>
+        <path d="M27 30q8-3 16 0M27 40q8-3 16 0M57 30q8-3 16 0M57 40q8-3 16 0" stroke="#1a1714" stroke-opacity=".45" stroke-width="2" fill="none"/></svg></span>
+    <span class="fab-text"><span class="fab-title">Ask the Binder</span><span class="fab-sub">Restyle shelves in plain words</span></span>
+  </button>
+  <div class="chat-backdrop" id="chat-backdrop" hidden></div>
+  <section class="chat" id="chat" hidden aria-label="Style chat">
+    <header class="chat-head">
+      <span class="roundel">❦</span>
+      <span class="titles"><span class="title">The Binder</span><span class="subtitle">Style assistant</span></span>
+      <button type="button" class="chat-icon" id="chat-clear" title="New conversation" aria-label="New conversation"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"/></svg></button>
+      <button type="button" class="chat-icon" id="chat-close" aria-label="Close chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="chat-rule"></div>
+    <div class="chat-body" id="chat-body" role="log" aria-live="polite"></div>
+    <form class="chat-compose" id="chat-form">
+      <textarea id="chat-input" rows="1" placeholder="e.g. The style on The Masnavi is what I want — use it for the rest of the Islam shelf"></textarea>
+      <button type="submit" class="chat-send" aria-label="Send"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 11.2 20.2 3.4c.8-.4 1.6.5 1.2 1.3l-7.8 16.8c-.4.8-1.6.7-1.9-.2l-2-6.6a1 1 0 0 0-.7-.7l-6.6-2c-.9-.3-.9-1.5 0-1.9z" transform="rotate(3 12 12)"/></svg></button>
+    </form>
+  </section>
 
   <!-- Library style -->
   <dialog id="dlg-lib" class="dlg">
@@ -148,6 +177,7 @@
           <button type="button" class="btn" data-act="edit" title="Edit the CURRENT cover: describe the change in the illustration box">✎ Edit current</button>
           <button type="button" class="btn ghost" data-act="rekey" title="Cut the background away again (no new generation)">⟳ Re-key</button>
           <button type="button" class="btn ghost" data-act="browse">Upload…</button>
+          <button type="button" class="btn ghost" data-act="chat" title="Ask the Binder about this cover's style">✎ Ask the Binder</button>
           <input type="file" id="im-file" accept="image/*" hidden />
         </div>
         <details class="inherit"><summary>The full prompt</summary><pre id="im-prompt"></pre></details>
@@ -176,6 +206,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=6"></script>
+  <script type="module" src="/app.js?v=8"></script>
 </body>
 </html>

@@ -13,10 +13,17 @@ const unent = (s) => String(s || '').replace(/&amp;/g, '&').replace(/&#39;|&#x27
 const rid = () => Math.random().toString(36).slice(2, 10);
 
 const cookie = WRITE ? (await fetch(`${BASE}/api/login`, { method: 'POST', body: JSON.stringify({ passcode: PASS }) })).headers.get('set-cookie')?.split(';')[0] : '';
-const api = async (path, body, method = 'POST') => {
+// Retries: the dev server restarts when files change, and that drops in-flight writes.
+const api = async (path, body, method = 'POST', tries = 4) => {
   const r = await fetch(BASE + path, { method, headers: { cookie, 'content-type': 'application/json' }, body: body && JSON.stringify(body) });
-  const j = await r.json(); if (!j.ok) throw new Error(`${path}: ${j.error}`); return j;
+  const j = await r.json().catch(() => null);
+  if (!j && tries > 1) { await sleep(3000); return api(path, body, method, tries - 1); }
+  if (!j?.ok) throw new Error(`${path}: ${j?.error || r.status}`); return j;
 };
+// Page addresses are built from the catalogue title (+ _author): /significance-of-the-formative-age_bahaullah/.
+// Site titles drift ("…Formative Age of Our Faith"), so the address is the fallback match.
+const slug = (s) => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/['’‘ʻʼ`]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').replace(/^(the|a|an)-/, '');
+const urlSlug = (u) => slug(new URL(u).pathname.split('/').filter(Boolean)[0].split('_')[0]);
 
 async function scrape(site) {
   const xml = await (await fetch(`https://${site}/server/sitemap/sitemap.xml`)).text();
@@ -43,11 +50,13 @@ for (const [lib, site] of Object.entries(SITES)) {
   const uses = pages.reduce((m, p) => m.set(p.cover, (m.get(p.cover) || 0) + 1), new Map());
   const usable = pages.filter((p) => p.cover && uses.get(p.cover) <= 2 && /\/server\/files\//.test(p.cover));
   const byTitle = Map.groupBy(usable, (p) => norm(p.title));
+  const bySlug = Map.groupBy(usable, (p) => urlSlug(p.url));
   const missing = project.books.filter((b) => !b.versions.length);
   const matched = [], unmatched = [];
   for (const b of missing) {
     const cands = byTitle.get(norm(b.title)) || [];
-    const p = cands.length > 1 ? cands.find((c) => norm(c.author) === norm(b.author)) || null : cands[0];
+    const pick = (list) => (list.length > 1 ? list.find((c) => norm(c.author) === norm(b.author)) || null : list[0]);
+    const p = pick(cands) || pick(bySlug.get(slug(b.title)) || []);
     p ? matched.push([b, p]) : unmatched.push(b);
   }
   console.log(`${lib}: ${urls} sitemap pages · ${usable.length} with a real cover · ${project.books.length} books, ${missing.length} without a cover → ${matched.length} matched, ${unmatched.length} unmatched`);

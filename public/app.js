@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=6';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=7';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -72,6 +72,7 @@ function setAuthed(on) {
   document.querySelectorAll('dialog.dlg:not(.login) :is(select, input[type=checkbox])').forEach((el) => { el.disabled = !on; });
 }
 $('login-btn').addEventListener('click', showLogin);
+document.querySelector('.user-menu').addEventListener('click', (e) => { if (e.target.closest('.menu-item')) e.currentTarget.open = false; });
 async function boot() {
   setAuthed((await api('/api/me')).authed);
   ({ libraries: libs } = await api('/api/libraries'));
@@ -169,10 +170,12 @@ const cardHtml = (b) => {
     : v?.aspect && !aspectOk(v.aspect) ? '<span class="state warn" title="Proportions look off — consider regenerating">Check framing</span>' : '';
   const src = v?.cover || v?.raw;
   return `<article class="card ${selected.has(b.id) ? 'sel' : ''}" data-book="${b.id}">
-    <input type="checkbox" class="pick" ${selected.has(b.id) ? 'checked' : ''} aria-label="Select ${esc(b.title)}" />
-    <button type="button" class="star ${b.sample ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${b.sample}" title="${b.sample ? 'Sample book — included in ✦ Try look' : 'Make this a sample book'}">★</button>
     ${badge}
-    <div class="thumb" data-open title="Open the Image Manager">${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB) : `<span class="none">${esc(b.title)}</span>`}</div>
+    <div class="thumb"><div class="book" data-open title="Open the Image Manager">
+      ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB) : `<span class="none">${esc(b.title)}</span>`}
+      <input type="checkbox" class="pick" ${selected.has(b.id) ? 'checked' : ''} aria-label="Select ${esc(b.title)}" />
+      <button type="button" class="star ${b.sample ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${b.sample}" title="${b.sample ? 'Sample book — included in ✦ Try look' : 'Make this a sample book'}">★</button>
+    </div></div>
     <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
       <span class="tags">${[coll?.name, b.versions.length > 1 ? `${b.versions.length} versions` : ''].filter(Boolean).map(esc).join(' · ')}</span></div>
   </article>`;
@@ -605,6 +608,7 @@ $('imgmgr').addEventListener('click', async (e) => {
       await addVersion(b, { raw: v.raw, cover: await storeImage(b, 'covers', k.base64), prompt: v.prompt, aspect: k.aspect, edit: v.edit, lookId: v.lookId });
       imStatus('Re-keyed ✓', 'ok');
     } else if (act === 'browse') { $('im-file').click(); return; }
+    else if (act === 'chat') { $('imgmgr').close(); openChat(b.id, `The style on “${b.title}” is what I'm after. Apply it to `); return; }
   } catch (err) { imStatus(err.message, 'err'); }
   finally { imBusy(false); renderManager(); renderCard(b.id); }
 });
@@ -624,6 +628,85 @@ $('im-file').addEventListener('change', async (e) => {
     imStatus('Uploaded ✓', 'ok');
   } catch (err) { imStatus(err.message, 'err'); }
   finally { imBusy(false); renderManager(); renderCard(b.id); }
+});
+
+// ---------------------------------------------------------------- style chat (logged in only)
+// Messages go to the Worker (Gemini + cover vision); replies may carry a PLAN, applied only on the user's click.
+const chat = { messages: [], focus: null, busy: false };
+const STAGES = ['Reading the shelves…', 'Looking at the cover…', 'Putting the style into words…'];
+const EXAMPLES = ['The style on The Masnavi is just what I want — use it for the rest of the Islam shelf', 'Give every book by Rumi the same treatment as The Masnavi', 'Make the Bahá’í shelf a lighter blue with silver tooling'];
+function openChat(focusBookId = null, draft = '') {
+  if (!authed) return showLogin();
+  if (focusBookId) chat.focus = focusBookId;
+  $('chat').hidden = $('chat-backdrop').hidden = false; $('chat-fab').hidden = true;
+  if (draft) $('chat-input').value = draft;
+  renderChat();
+  setTimeout(() => { const i = $('chat-input'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350);
+}
+function closeChat() { $('chat').hidden = $('chat-backdrop').hidden = true; $('chat-fab').hidden = false; }
+// Books whose ★ samples a plan touches: what "Apply & try" generates.
+function planSamples(plan) {
+  const ids = new Set(plan.generateBookIds);
+  for (const c of plan.changes) {
+    const hit = c.scope === 'library' ? () => true : c.scope === 'shelf' ? (b) => b.shelfId === c.targetId : c.scope === 'collection' ? (b) => b.collectionId === c.targetId : (b) => c.bookIds.includes(b.id);
+    project.books.filter((b) => b.sample && hit(b)).forEach((b) => ids.add(b.id));
+  }
+  return project.books.filter((b) => ids.has(b.id));
+}
+const SCOPE = { library: 'Library', shelf: 'Shelf', collection: 'Collection', books: 'Books' };
+const planHtml = (m, i) => {
+  const p = m.plan, gen = planSamples(p);
+  return `<div class="plan" data-plan="${i}">${p.changes.map((c) => `<div class="change"><span class="scope">${SCOPE[c.scope]}</span> <b>${esc(c.name)}</b>
+      <p class="after">${esc(c.style)}</p>${c.before ? `<details><summary>Current style</summary><p class="before">${esc(c.before)}</p></details>` : ''}</div>`).join('')}
+    ${m.applied ? `<p class="applied">Applied ✓${m.applied === 'gen' ? ` · generating ${gen.length}` : ''}</p>` : `<div class="plan-actions">
+      ${p.changes.length ? '<button type="button" class="btn small" data-apply>Apply</button>' : ''}
+      ${gen.length ? `<button type="button" class="btn small gold" data-apply-gen>${p.changes.length ? 'Apply &amp; ' : ''}generate ${gen.length} ${p.generateBookIds.length ? 'cover' : '★ sample'}${gen.length > 1 ? 's' : ''}</button>` : ''}
+      <button type="button" class="btn small ghost" data-dismiss>Not now</button></div>`}</div>`;
+};
+function renderChat() {
+  const body = $('chat-body');
+  const welcome = `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble">Point me at a cover you like and tell me where its look should go: the rest of its shelf, a collection, every book by an author. I'll write the style and show you exactly what changes before anything is applied.
+<div class="chips">${EXAMPLES.map((x) => `<button type="button" class="chip" data-example>${esc(x)}</button>`).join('')}</div></div></div>`;
+  body.innerHTML = welcome + chat.messages.map((m, i) => m.role === 'user'
+    ? `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`
+    : `<div class="msg assistant"><span class="avatar">❦</span><div class="bubblewrap"><div class="bubble ${m.error ? 'err' : ''}">${esc(m.text)}</div>${m.plan ? planHtml(m, i) : ''}</div></div>`).join('')
+    + (chat.busy ? `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble"><span class="stage" id="chat-stage">${STAGES[0]}</span></div></div>` : '');
+  body.scrollTop = body.scrollHeight;
+}
+async function sendChat(text) {
+  if (!text.trim() || chat.busy) return;
+  chat.messages.push({ role: 'user', text: text.trim() }); chat.busy = true; renderChat();
+  let s = 0; const tick = setInterval(() => { const el = $('chat-stage'); if (el) el.textContent = STAGES[++s % STAGES.length]; }, 3500);
+  try {
+    const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text }) => ({ role, text })), focusBookId: chat.focus }) });
+    chat.messages.push({ role: 'assistant', text: r.reply, plan: r.plan });
+  } catch (e) { chat.messages.push({ role: 'assistant', text: `Something went wrong: ${e.message}`, error: true }); }
+  finally { clearInterval(tick); chat.busy = false; renderChat(); }
+}
+function applyPlan(plan) {
+  for (const c of plan.changes) {
+    if (c.scope === 'library') { project.app.style = c.style; patch('libraries', lib, { style: c.style }); }
+    else if (c.scope === 'shelf') { const s = shelfById(c.targetId); if (s) { s.style = c.style; patch('shelves', s.id, { style: c.style }); } }
+    else if (c.scope === 'collection') { const x = collById(c.targetId); if (x) { x.style = c.style; patch('collections', x.id, { style: c.style }); } }
+    else c.bookIds.forEach((id) => { const b = project.books.find((x) => x.id === id); if (b) { b.style = c.style; patch('books', id, { style: c.style }); } });
+  }
+  renderAll();
+}
+$('chat-fab').addEventListener('click', () => openChat());
+$('chat-close').addEventListener('click', closeChat);
+$('chat-backdrop').addEventListener('click', closeChat);
+$('chat-clear').addEventListener('click', () => { chat.messages = []; chat.focus = null; renderChat(); });
+$('chat-form').addEventListener('submit', (e) => { e.preventDefault(); const t = $('chat-input').value; $('chat-input').value = ''; $('chat-input').style.height = ''; sendChat(t); });
+$('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } });
+$('chat-input').addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`; });
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('chat').hidden && !document.querySelector('dialog[open]')) closeChat(); });
+$('chat-body').addEventListener('click', (e) => {
+  if (e.target.closest('[data-example]')) { $('chat-input').value = e.target.textContent; $('chat-input').focus(); return; }
+  const card = e.target.closest('[data-plan]'); if (!card) return;
+  const m = chat.messages[+card.dataset.plan];
+  if (e.target.closest('[data-dismiss]')) { m.plan = null; m.text += '\n(Not applied.)'; renderChat(); return; }
+  if (e.target.closest('[data-apply]')) { applyPlan(m.plan); m.applied = 'yes'; renderChat(); return; }
+  if (e.target.closest('[data-apply-gen]')) { const books = planSamples(m.plan); applyPlan(m.plan); m.applied = 'gen'; renderChat(); generate(books); }
 });
 
 // Keep the shelf headers just under the library bar, whatever height it wraps to.

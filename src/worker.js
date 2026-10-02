@@ -6,6 +6,7 @@ import { generateImage } from '../core/gemini.js';
 import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
 import { renderImage, initCodecs } from './render.js';
+import { runChat, geminiChat, geminiDescribe } from './chat.js';
 import webpEncWasm from '@jsquash/webp/codec/enc/webp_enc_simd.wasm';
 
 const COOKIE = 'cg_auth';
@@ -143,6 +144,25 @@ export default {
         const key = `sets/${lib}/${kind}/${bookId}/${Date.now()}.png`;
         await env.COVERS.put(key, bytes, { httpMetadata: { contentType: 'image/png' } });
         return json({ ok: true, key });
+      }
+
+      // POST /api/libraries/<lib>/chat {messages, focusBookId?} → {reply, plan}. The plan is a proposal the client
+      // shows for approval; nothing changes here. Covers are described from a 640px webp rendition.
+      if (part === 'chat' && req.method === 'POST') {
+        const { messages = [], focusBookId } = await body();
+        const project = await loadLibrary(env.DB, lib);
+        if (!project) return fail(404, 'No such library');
+        const describe = geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined);
+        const describeCover = async (book, v) => {
+          const obj = await env.COVERS.get(v.cover || v.raw);
+          if (!obj) return '(cover image missing)';
+          await initCodecs(webpEncWasm);
+          const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
+          return describe(bytesToB64(webp), 'image/webp', v.prompt);
+        };
+        try {
+          return json({ ok: true, ...(await runChat({ project, messages, focusBookId, callModel: geminiChat(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined), describeCover })) });
+        } catch (e) { return fail(502, String(e.message || e)); }
       }
 
       // Rows: POST <table> {rows} · PATCH <table>/<id> {fields} · DELETE <table> {ids}. store.js whitelists
