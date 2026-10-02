@@ -1,4 +1,4 @@
-# Cover Generator
+# Bindery Cover Generator
 
 Generate consistent, photorealistic book covers for a whole library, with backgrounds that come out
 cleanly transparent.
@@ -7,7 +7,7 @@ Paste a list of books, describe the look once at three levels (the whole library
 each collection), and generate. Every cover comes back as a transparent PNG you can drop onto any page,
 alongside the exact prompt that made it, so any single cover can be regenerated later.
 
-**Live demo: [cover-generator.chadananda.workers.dev](https://cover-generator.chadananda.workers.dev)**
+**Live demo: [bindery.lnker.com](https://bindery.lnker.com)**
 *(protected by a passcode, because every generation spends Gemini credit; ask Chad for it)*
 
 ![The Bindery: house style and bookshelf styles on the left, the library on walnut shelves](docs/3-app.jpg)
@@ -125,7 +125,7 @@ current cover with a new one side by side.
 | **OceanLibrary** | 457 | 10 traditions (Bahá'í, Islam, Christian, Hindu, Buddhist, …), each with its own leather and motifs |
 | **WholeReader** | 586 | 9 genres (Short Stories, Novels, Children, Drama, …) in Victorian cloth bindings |
 
-1. Open the [demo](https://cover-generator.chadananda.workers.dev) and enter the passcode.
+1. Open the [demo](https://bindery.lnker.com) and enter the passcode.
 2. Choose a library (one per application) or create a new one.
 3. Add books:
    - **Paste CSV**: headers in any order or case. `title, author, bookshelf, collection` works, and so do
@@ -160,7 +160,7 @@ has a Node example.
 npm install
 npm test                          # 38 tests: keyer, prompt layering + metadata, CSV, Gemini client
 cp .dev.vars.example .dev.vars    # add GEMINI_API_KEY and a PASSCODE
-npm run dev                       # http://localhost:8787 (local R2)
+npm run dev                       # http://localhost:8788 (pinned; local R2)
 ```
 
 `npm run dev` and `npm run deploy` first copy `core/` into `public/core/`, so the browser runs the same
@@ -169,7 +169,8 @@ files as the Worker and the tests. Always edit `core/`, never `public/core/`, an
 
 ## Deployment
 
-The demo runs on Chad's personal Cloudflare account (`account_id` in [`wrangler.jsonc`](wrangler.jsonc)).
+The demo runs on Chad's personal Cloudflare account (`account_id` in [`wrangler.jsonc`](wrangler.jsonc)), served at
+**bindery.lnker.com** (custom domain; the `workers.dev` address is off).
 
 **One-time setup** (already done for the demo):
 
@@ -183,8 +184,8 @@ npx wrangler secret put PASSCODE
 
 **Next: deploy on every push.** Connect the repo with Cloudflare Workers Builds:
 
-1. Cloudflare dashboard → **Workers & Pages** → `cover-generator` → **Settings** → **Builds** → **Connect**.
-2. Choose GitHub repo `chadananda/cover-generator`, branch `main`.
+1. Cloudflare dashboard → **Workers & Pages** → `cover-generator` (the Worker keeps its original name) → **Settings** → **Builds** → **Connect**.
+2. Choose GitHub repo `chadananda/Bindery-Cover-Generator`, branch `main`.
 3. Set the deploy command to `npm run deploy`, which copies `core/` into `public/core/` before deploying.
 
 From then on, every commit to `main` deploys the demo. The secrets and the R2 bucket carry over,

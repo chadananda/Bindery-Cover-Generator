@@ -1,6 +1,6 @@
-# cover-generator — "The Bindery"
+# Bindery Cover Generator
 Book-cover PoC: Gemini art on magenta → chroma key → transparent PNG. Cloudflare Worker + R2.
-Demo https://cover-generator.chadananda.workers.dev (passcode = Worker secret PASSCODE; ask Chad). Repo public: chadananda/cover-generator.
+Demo https://bindery.lnker.com (custom domain; workers.dev is off) (passcode = Worker secret PASSCODE; ask Chad). Repo public: chadananda/Bindery-Cover-Generator. Worker + R2 bucket keep the name `cover-generator`.
 
 ## Layout
 - `core/` — ALL cover logic, zero deps, runs in browser/Worker/Node. Edit here; `public/core/` is a generated copy.
@@ -13,7 +13,7 @@ Demo https://cover-generator.chadananda.workers.dev (passcode = Worker secret PA
 - Cloudflare: Chad's PERSONAL account (b750d0f7…). Export CLOUDFLARE_ACCOUNT_ID if wrangler asks which account.
 - Do NOT bulk-generate until Chad has dialled in the prompts (each generation is paid). Tune on single covers.
 - Bump `?v=N` on styles.css/app.js/core import in public/ when shipping UI changes (cache).
-- Local dev: `npm run dev -- --port 8788 --local` (.dev.vars holds GEMINI_API_KEY + PASSCODE; never commit it).
+- Local dev: `npm run dev` → http://localhost:8788 (port pinned in wrangler.jsonc) (.dev.vars holds GEMINI_API_KEY + PASSCODE; never commit it).
 
 ## State (2026-10-02)
 - Two libraries, published books only (= live on the site, matched from sitemaps; CSV has no published column):
