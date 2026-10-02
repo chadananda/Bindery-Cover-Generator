@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=22';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=23';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -613,7 +613,7 @@ function openManager(bookId) {
   $('im-title').textContent = b.title;
   $('im-about-wrap').hidden = !b.description;
   $('im-about').textContent = b.description || '';
-  $('im-content').value = b.content || ''; $('im-change').value = '';
+  $('im-content').value = b.content || ''; $('im-change').value = ''; resetAdjust();
   $('im-style').value = b.style || '';
   $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
   $('im-sample').checked = !!b.sample;
@@ -621,8 +621,36 @@ function openManager(bookId) {
   renderManager();
   openPane('imgmgr');
 }
+// ---- Adjust: brightness/contrast/saturation/warmth. Live as a CSS filter on the preview; "Save" bakes the same
+// filter into the full-resolution cover on a canvas (alpha kept) and stores it as a new version. Free, no model call.
+const adjSliders = () => [...document.querySelectorAll('#im-adjust [data-adj]')];
+const adjFilter = () => adjSliders().map((s) => `${s.dataset.adj}(${s.value}%)`).join(' ');
+const adjNeutral = () => adjSliders().every((s) => +s.value === (s.dataset.adj === 'sepia' ? 0 : 100));
+function applyAdjust() {
+  adjSliders().forEach((s) => { s.nextElementSibling.textContent = s.value; });
+  $('im-preview').style.setProperty('--adj', adjNeutral() ? 'none' : adjFilter());
+  $('adj-save').disabled = adjNeutral();
+}
+function resetAdjust() { adjSliders().forEach((s) => { s.value = s.dataset.adj === 'sepia' ? 0 : 100; }); applyAdjust(); }
+$('im-adjust').addEventListener('input', (e) => { if (e.target.matches('[data-adj]')) applyAdjust(); });
+$('adj-reset').addEventListener('click', resetAdjust);
+$('adj-save').addEventListener('click', async () => {
+  const b = imBook(), v = currentVersion(b); if (!b || !v?.cover) return imStatus('Only a cut-out cover can be adjusted.', 'err');
+  imBusy(true, 'Saving…');
+  try {
+    const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
+    const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
+    const ctx = c.getContext('2d'); ctx.filter = adjFilter(); ctx.drawImage(bmp, 0, 0);
+    const label = adjSliders().filter((s) => +s.value !== (s.dataset.adj === 'sepia' ? 0 : 100)).map((s) => `${s.closest('label').querySelector('span').textContent.toLowerCase()} ${s.value}`).join(', ');
+    const key = await storeImage(b, 'covers', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
+    await addVersion(b, { raw: v.raw, cover: key, prompt: v.prompt, aspect: v.aspect, w: bmp.width, h: bmp.height, lookId: v.lookId, edit: `adjust: ${label}` });
+    resetAdjust(); imStatus('Adjusted ✓ — saved as a new version', 'ok');
+  } catch (err) { imStatus(err.message, 'err'); }
+  finally { imBusy(false); renderCard(b.id); }
+});
+
 // What a version is, for the History strip: site cover, upload, edit (of what), or the look that generated it.
-const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit ? 'edit' : x.lookId ? lookById(x.lookId)?.name || 'look' : 'generated';
+const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit?.startsWith('adjust') ? 'adjusted' : x.edit ? 'edit' : x.lookId ? lookById(x.lookId)?.name || 'look' : 'generated';
 function renderManager() {
   const b = imBook(); if (!b) return;
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')

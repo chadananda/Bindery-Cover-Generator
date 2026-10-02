@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=22" />
+  <link rel="stylesheet" href="/styles.css?v=23" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -158,6 +158,19 @@
         <div id="im-spin" class="im-spin" hidden><span class="spinner"></span><span id="im-spin-lab">Working…</span></div>
       </div>
       <div class="im-status-row"><span id="im-status" class="status"></span><span id="im-aspect" class="badge" hidden></span></div>
+      <details class="adjust" id="im-adjust">
+        <summary>Adjust <small>· brightness, contrast, colour — free, instant, saved as a new version</small></summary>
+        <div class="sliders">
+          <label><span>Brightness</span><input type="range" min="60" max="140" value="100" data-adj="brightness" /><output>100</output></label>
+          <label><span>Contrast</span><input type="range" min="60" max="160" value="100" data-adj="contrast" /><output>100</output></label>
+          <label><span>Saturation</span><input type="range" min="0" max="200" value="100" data-adj="saturate" /><output>100</output></label>
+          <label><span>Warmth</span><input type="range" min="0" max="50" value="0" data-adj="sepia" /><output>0</output></label>
+        </div>
+        <div class="row wrap">
+          <button type="button" class="btn small ghost" id="adj-reset">Reset</button>
+          <button type="button" class="btn small gold" id="adj-save" data-write>Save as new version</button>
+        </div>
+      </details>
       <div id="im-versions" hidden>
         <h3>History <small>· every version is kept · click one to use it</small></h3>
         <div id="im-strip" class="strip"></div>
@@ -224,6 +237,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=22"></script>
+  <script type="module" src="/app.js?v=23"></script>
 </body>
 </html>
