@@ -1,6 +1,6 @@
 # Bindery Cover Generator
 Book-cover PoC: Gemini art on magenta → chroma key → transparent PNG. Cloudflare Worker + D1 (data, prompts) + R2 (images only).
-Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read; writes need passcode = Worker secret PASSCODE (ask Chad). Clean paths /<lib>/<shelf-slug> (SPA fallback). Repo public: chadananda/Bindery-Cover-Generator. Worker + R2 bucket keep the name `cover-generator`.
+Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read; writes need the passcode. Production secret PASSCODE = the PASSCODE in .dev.vars — keep them identical (secrets are write-only; set with `printf %s "$PASS" | wrangler secret put PASSCODE`). Clean paths /<lib>/<shelf-slug> (SPA fallback). Repo public: chadananda/Bindery-Cover-Generator. Worker + R2 bucket keep the name `cover-generator`.
 
 ## Layout
 - `core/` — ALL cover logic, zero deps, runs in browser/Worker/Node. Edit here; `public/core/` is a generated copy.

@@ -79,7 +79,8 @@ if (WRITE) {
   if (newShelves.size) await api(`/api/libraries/${LIB}/shelves`, { rows: [...newShelves.values()] });
   // Six books at a time (each is ~5 requests through the dev server).
   let k = 0;
-  await Promise.all(Array.from({ length: 6 }, async () => { while (k < add.length) { const { cover, book } = add[k++];
+  const failed = [];
+  await Promise.all(Array.from({ length: 6 }, async () => { while (k < add.length) { const { cover, book } = add[k++]; try {
     await api(`/api/libraries/${LIB}/books`, { rows: [book] });
     const bytes = Buffer.from(await (await fetch(cover)).arrayBuffer());
     const { key } = await api(`/api/libraries/${LIB}/store`, { bookId: book.id, kind: 'covers', base64: bytes.toString('base64') });
@@ -87,6 +88,6 @@ if (WRITE) {
     await api(`/api/libraries/${LIB}/versions`, { rows: [v] });
     await api(`/api/libraries/${LIB}/books/${book.id}`, { selected: v.id }, 'PATCH');
     if (++n % 100 === 0) console.log(`  ${n}/${add.length}`);
-  } }));
-  console.log(`  added ${n} books`);
+  } catch (e) { failed.push(`${book.title}: ${e.message}`); } } }));
+  console.log(`  added ${n} books${failed.length ? `; ${failed.length} failed (re-run to retry):\n   ${failed.slice(0, 8).join('\n   ')}` : ''}`);
 }

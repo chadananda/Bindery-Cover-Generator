@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=14';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=15';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -209,16 +209,40 @@ function renderShelves() {
 // volumes in a collapsible tray beneath. Volumes whose collection has no head on this shelf stay loose.
 const openColls = new Set(store.get('openColls', []));
 const isHead = (b) => b.type === 'Collection' && b.collectionId;
+// Series stem: "Sahih Muslim (Book 13)" / "Revival … Vol-II" / "Pahlavi Texts, Part I" / "Sutra Collection (HIJK)" → stem.
+const seriesStem = (t) => {
+  const s = String(t).trim();
+  const m = s.match(/^(.*?)\s*\([^)]*\)\s*$/) // trailing brackets: "Sutra Collection (A, Part-1)"
+    || s.match(/^(.*?)[\s,:.\-–—]*\b(?:book|vol(?:ume)?|part|no)\b[\s.\-]*[\divxlc]+\b.*$/i) // "… Vol-II", "…, Part I"
+    || s.match(/^(.*?)\s+\d+(?:\s*[-–]\s*\d+)?$/); // trailing number or range: "The Pickwick Papers 9-11"
+  return m && m[1].trim().length >= 3 ? m[1].trim() : null;
+};
+const tray = (key, title, vols) => `<div class="tray" data-tray="${esc(key)}">
+  <div class="tray-head"><b>${esc(title)}</b> · ${vols.length} volumes<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
+  <div class="tray-grid">${vols.map((b) => cardHtml(b)).join('')}</div></div>`;
 function shelfCards(books) {
   const heads = books.filter(isHead);
   const inTray = new Set(heads.map((h) => h.collectionId));
-  const loose = books.filter((b) => !isHead(b) && !inTray.has(b.collectionId));
-  return loose.map((b) => cardHtml(b)).join('') + heads.map((h) => {
-    const vols = books.filter((b) => b !== h && b.collectionId === h.collectionId), open = openColls.has(h.collectionId);
-    return cardHtml(h, { vols: vols.length, open }) + (open ? `<div class="tray" data-tray="${h.collectionId}">
-      <div class="tray-head"><b>${esc(h.title)}</b> · ${vols.length} volumes<button type="button" class="btn small ghost" data-coll-toggle="${h.collectionId}">Collapse ▴</button></div>
-      <div class="tray-grid">${vols.map((b) => cardHtml(b)).join('')}</div></div>` : '');
-  }).join('');
+  let loose = books.filter((b) => !isHead(b) && !inTray.has(b.collectionId));
+  // Unlinked numbered series (3+ volumes sharing a stem) group the same way, under a tile built from the first volume.
+  const series = Object.entries(Object.groupBy(loose.filter((b) => !b.collectionId && seriesStem(b.title)), (b) => seriesStem(b.title))).filter(([, v]) => v.length >= 3);
+  const grouped = new Set(series.flatMap(([, v]) => v));
+  loose = loose.filter((b) => !grouped.has(b));
+  return loose.map((b) => cardHtml(b)).join('')
+    + heads.map((h) => { const vols = books.filter((b) => b !== h && b.collectionId === h.collectionId), open = openColls.has(h.collectionId);
+      return cardHtml(h, { vols: vols.length, open }) + (open ? tray(h.collectionId, h.title, vols) : ''); }).join('')
+    + series.map(([stem, vols]) => { const key = `series:${stem}`, open = openColls.has(key);
+      return seriesCard(key, stem, vols, open) + (open ? tray(key, stem, vols) : ''); }).join('');
+}
+// A series tile: the first volume's cover drawn as a stack; it only toggles its tray (no editor — it isn't a book).
+function seriesCard(key, stem, vols, open) {
+  const first = vols.find((b) => currentVersion(b)) || vols[0], v = currentVersion(first), src = v?.cover || v?.raw;
+  return `<article class="card head series ${open ? 'open' : ''}" data-series="${esc(key)}">
+    <div class="thumb"><div class="book" data-coll-toggle="${esc(key)}" title="${esc(stem)} — show the volumes"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
+      ${src ? pic(src, stem, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(stem)}</span>`}</div></div>
+    <div class="meta"><span class="t">${esc(stem)}</span><span class="tags">Series</span>
+      <button type="button" class="vols" data-coll-toggle="${esc(key)}" aria-expanded="${open}">${open ? '▴' : '▾'} ${vols.length} volumes</button></div>
+  </article>`;
 }
 // Re-render one card in place (status changes, new versions) without rebuilding every shelf.
 function renderCard(bookId) {
