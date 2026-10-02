@@ -67,7 +67,8 @@ for (const url of urls) {
       const row = cands.find((r) => norm(r.category) === norm(cat)) || (cands.length === 1 ? cands[0] : null);
       const author = row?.author && !/^unknown$/i.test(row.author) ? row.author : (meta().split(', ').length > 1 ? meta().split(', ')[0] : '');
       const shelf = shelfByCat(row?.category) || shelfFor(cat);
-      add.push({ url, cover, book: { id: row?.id && /^[A-Za-z0-9_-]+$/.test(row.id) && !ids.has(row.id) ? row.id : rid(), title, author, type: row?.type || 'Book', description: row?.description || '', shelfId: shelf?.id || '', source: url } });
+      const id = row?.id && /^[A-Za-z0-9_-]+$/.test(row.id) && !ids.has(row.id) ? row.id : rid(); ids.add(id); // e.g. a book and its (adapted) edition match one CSV row
+      add.push({ url, cover, book: { id, title, author, type: row?.type || 'Book', description: row?.description || '', shelfId: shelf?.id || '', source: url } });
     } catch {}
 }
 if (newShelves.size) console.log('new shelves from site categories:', [...newShelves.values()].map((s) => s.name).join(', '));

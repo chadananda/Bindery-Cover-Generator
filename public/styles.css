@@ -420,12 +420,8 @@ body.dock-chat .card .book { cursor: copy; }
 :root[data-theme="dark"] .ref { background: #1b212a; border-color: #3a4556; } :root[data-theme="dark"] .ref-t { color: #e9e6dd; }
 
 /* ---------------------------------------------------------------- collections: a head tile at the shelf's end */
-/* The head is the collection's own cover, drawn as a stack (two offset sheets behind it); clicking it opens a tray
-   of its volumes spanning the full row beneath. */
-.card.head .book::before, .card.head .book::after { content: ''; position: absolute; inset: 0; border-radius: 3px; background: color-mix(in srgb, var(--accent) 22%, var(--panel)); box-shadow: 0 2px 6px rgb(0 0 0 / .18); z-index: -1; }
-.card.head .book::before { transform: translate(7px, -7px); }
-.card.head .book::after { transform: translate(3.5px, -3.5px); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
-.card.head .book { isolation: isolate; }
+/* The head is the collection's own cover (no extra stack — the covers already picture the set); clicking it opens a
+   tray of its volumes spanning the full row beneath. */
 .card .vols { justify-self: center; margin-top: .3rem; font: 600 12.5px var(--sans); color: var(--accent-hi); background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: .22rem .7rem; cursor: pointer; }
 .card .vols:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .card.head.open .book img { outline: 2px solid var(--accent); outline-offset: 4px; }
