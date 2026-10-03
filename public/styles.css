@@ -177,8 +177,9 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 .card .star:disabled { cursor: default; }
 .card .star:disabled:not(.on) { display: none; }
 /* Checkbox and unset star only show on hover or when set — less clutter on a full shelf. */
-@media (hover: hover) { .card .pick:not(:checked), .card .star:not(.on) { opacity: 0; transition: opacity .15s; } .card:hover .pick, .card:hover .star, .card .pick:focus-visible, .card .star:focus-visible, body.has-selbar .card .pick { opacity: 1; } }
-.card.sel .book img, .card.sel .book .none { outline: 3px solid var(--accent); outline-offset: 3px; }
+@media (hover: hover) { .card .star:not(.on) { opacity: 0; transition: opacity .15s; } .card:hover .star, .card .star:focus-visible { opacity: 1; } }
+.card.sel .book { border-radius: 6px; box-shadow: 0 0 0 3px var(--panel), 0 0 0 6px var(--accent), 0 8px 22px -8px color-mix(in srgb, var(--accent) 60%, transparent); }
+.card.sel .meta .t { color: var(--accent-hi); }
 .card .state {
   position: absolute; top: .3rem; left: 50%; transform: translateX(-50%); z-index: 3; font-size: 12px; font-weight: 600; white-space: nowrap;
   padding: .15rem .55rem; border-radius: 20px; background: var(--panel); border: 1px solid var(--line-2); color: var(--ink);
@@ -519,3 +520,9 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .lb-stage img { position: absolute; inset: 4vh 4vw 8vh; width: 92vw; height: 88vh; object-fit: contain; filter: var(--adj, none) drop-shadow(0 30px 40px rgb(0 0 0 / .55)); }
 .lb-cap { position: absolute; left: 50%; bottom: 2.2vh; transform: translateX(-50%); margin: 0; padding: .35rem .9rem; border-radius: 999px; font: 600 14px var(--sans); color: #f2e9d6; background: rgb(0 0 0 / .55); white-space: nowrap; }
 .lb-x { position: absolute; top: 1rem; right: 1rem; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: rgb(0 0 0 / .5); border: 1px solid rgb(255 255 255 / .3); cursor: pointer; }
+
+/* Selection groups: tray-wide checkbox, clear buttons. */
+.tray-head .pick-tray { margin-right: .2rem; }
+.sel-x { margin-left: .4rem; font: 600 12px var(--sans); color: #7a3a1c; background: none; border: 1px solid rgb(200 162 75 / .6); border-radius: 999px; padding: .1rem .55rem; cursor: pointer; }
+.sel-x:hover { background: rgb(200 162 75 / .18); }
+#sel-clear { font-weight: 700; }

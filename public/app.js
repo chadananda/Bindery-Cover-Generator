@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=34';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=38';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -179,7 +179,6 @@ const cardHtml = (b, head = null) => {
     ${badge}
     <div class="thumb"><div class="book" data-open title="Open the Image Manager"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
       ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(b.title)}</span>`}
-      <input type="checkbox" class="pick" ${selected.has(b.id) ? 'checked' : ''} aria-label="Select ${esc(b.title)}" />
       <button type="button" class="star ${b.sample ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${b.sample}" title="${b.sample ? 'Sample book — included in ✦ Try look' : 'Make this a sample book'}">★</button>
     </div></div>
     <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
@@ -211,6 +210,7 @@ function renderShelves() {
 // A shelf: loose books first, then each collection as ONE tile at the end (its own cover, type Collection), with its
 // volumes in a collapsible tray beneath. Volumes whose collection has no head on this shelf stay loose.
 const openColls = new Set(store.get('openColls', []));
+let lastPick = null; // anchor for ⇧-click range selection
 const isHead = (b) => b.type === 'Collection' && b.collectionId;
 // Series stem: "Sahih Muslim (Book 13)" / "Revival … Vol-II" / "Pahlavi Texts, Part I" / "Sutra Collection (HIJK)" → stem.
 const seriesStem = (t) => {
@@ -221,7 +221,7 @@ const seriesStem = (t) => {
   return m && m[1].trim().length >= 3 ? m[1].trim() : null;
 };
 const tray = (key, title, vols) => `<div class="tray" data-tray="${esc(key)}">
-  <div class="tray-head"><b>${esc(title)}</b> · ${vols.length} volumes<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
+  <div class="tray-head"><input type="checkbox" class="pick-tray" ${vols.length && vols.every((b) => selected.has(b.id)) ? 'checked' : ''} aria-label="Select every volume of ${esc(title)}" title="Select / deselect all ${vols.length} volumes" /><b>${esc(title)}</b> · ${vols.length} volumes<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
   <div class="tray-grid">${vols.map((b) => cardHtml(b)).join('')}</div></div>`;
 function shelfCards(books) {
   const heads = books.filter(isHead);
@@ -261,6 +261,7 @@ function renderSelbar() {
   if (typeof chat !== 'undefined' && chatOpen()) { renderRefs(); renderMode(); }
   $('selbar').hidden = !n;
   $('sel-count').textContent = `${n} selected`;
+  $('sel-clear').textContent = `✕ Clear ${n}`;
   $('sel-move').innerHTML = `<option value="" disabled selected>Move to shelf…</option>` + project.shelves.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
   document.body.classList.toggle('has-selbar', !!n);
 }
@@ -274,18 +275,28 @@ $('app').addEventListener('click', (e) => {
   const card = e.target.closest('[data-book]');
   if (card) {
     const id = card.dataset.book, b = project.books.find((x) => x.id === id);
-    if (e.target.matches('.pick')) { e.target.checked ? selected.add(id) : selected.delete(id); card.classList.toggle('sel', e.target.checked); renderSelbar(); return; }
     if (e.target.closest('[data-star]') && authed) { b.sample = !b.sample; patch('books', id, { sample: b.sample }); renderCard(id); renderBar(); return; }
     if (e.target.closest('[data-edit]')) { openManager(id); return; }
     if (e.target.closest('[data-open]')) {
-      // A click always opens the cover in the editor (the chat sees the editor's book). ⇧/⌘-click attaches it to the
-      // chat message instead, for referring to several covers at once.
-      if (chatOpen() && (e.shiftKey || e.metaKey || e.ctrlKey)) addRef(id);
-      else if (card.dataset.head) { const c = card.dataset.head; openColls.has(c) ? openColls.delete(c) : openColls.add(c); store.set('openColls', [...openColls]); renderShelves(); }
-      else openManager(id);
+      if (card.dataset.head) { const c = card.dataset.head; openColls.has(c) ? openColls.delete(c) : openColls.add(c); store.set('openColls', [...openColls]); renderShelves(); return; }
+      // Desktop-standard selection: click = just this one (and open it); Ctrl/⌘-click = toggle it; Shift-click = the
+      // range from the last-clicked book (Ctrl+Shift adds the range to the selection).
+      const add = e.ctrlKey || e.metaKey;
+      if (e.shiftKey && lastPick) {
+        const all = [...$('app').querySelectorAll('.card[data-book]:not([data-head])')].map((c) => c.dataset.book);
+        const a1 = all.indexOf(lastPick), a2 = all.indexOf(id);
+        if (a1 >= 0 && a2 >= 0) { if (!add) selected.clear(); all.slice(Math.min(a1, a2), Math.max(a1, a2) + 1).forEach((x) => selected.add(x)); syncSelection(); return; }
+      }
+      if (add) { selected.has(id) ? selected.delete(id) : selected.add(id); lastPick = id; syncSelection(); return; }
+      selected.clear(); selected.add(id); lastPick = id; syncSelection(); openManager(id);
     }
     return;
   }
+  if (e.target.matches('.pick-tray')) {
+    e.target.closest('.tray').querySelectorAll('.card[data-book]').forEach((c) => (e.target.checked ? selected.add(c.dataset.book) : selected.delete(c.dataset.book)));
+    renderShelves(); renderSelbar(); return;
+  }
+  if (e.target.matches('.grid, .tray-grid') && selected.size && !e.shiftKey && !e.ctrlKey && !e.metaKey) { clearSelection(); return; } // empty shelf space
   const books = groups().find((g) => (g.shelf?.id || '-') === shelfId)?.books || [];
   if (e.target.matches('.pick-shelf')) { books.forEach((b) => (e.target.checked ? selected.add(b.id) : selected.delete(b.id))); renderShelves(); renderSelbar(); return; }
   if (e.target.closest('[data-toggle]')) { if (focusShelf) return; collapsed.has(shelfId) ? collapsed.delete(shelfId) : collapsed.add(shelfId); store.set('collapsed', [...collapsed]); renderShelves(); return; }
@@ -297,7 +308,13 @@ $('try-look').addEventListener('click', () => generate(project.books.filter((b) 
 
 // Selection bar
 const selBooks = () => project.books.filter((b) => selected.has(b.id));
-$('sel-clear').addEventListener('click', () => { selected.clear(); renderShelves(); renderSelbar(); });
+// Reflect `selected` on the visible cards (checkbox + outline) without rebuilding the shelves.
+function syncSelection() {
+  $('app').querySelectorAll('.card[data-book]').forEach((c) => { const on = selected.has(c.dataset.book); c.classList.toggle('sel', on); c.setAttribute('aria-selected', on); });
+  renderSelbar();
+}
+const clearSelection = () => { selected.clear(); lastPick = null; renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
+$('sel-clear').addEventListener('click', clearSelection);
 $('sel-generate').addEventListener('click', () => generate(selBooks()));
 $('sel-sample').addEventListener('click', () => {
   const books = selBooks(), on = !books.every((b) => b.sample);
@@ -874,7 +891,7 @@ chat.refs = [];
 function addRef(id) { if (!chat.refs.includes(id)) chat.refs.push(id); renderRefs(); $('chat-input').focus(); }
 function renderRefs() {
   $('chat-sel').hidden = !selected.size;
-  $('chat-sel').innerHTML = selected.size ? `<span class="dot"></span>The Binder sees your <b>${selected.size}</b> selected book${selected.size > 1 ? 's' : ''} — say “these” to act on them.` : '';
+  $('chat-sel').innerHTML = selected.size ? `<span class="dot"></span>The Binder sees your <b>${selected.size}</b> selected book${selected.size > 1 ? 's' : ''} — say “these” to act on them. <button type="button" class="sel-x" data-clear-sel>Clear</button>` : '';
   $('chat-refs').hidden = !chat.refs.length;
   $('chat-refs').innerHTML = chat.refs.map((id) => {
     const b = project.books.find((x) => x.id === id); if (!b) return '';
@@ -883,6 +900,7 @@ function renderRefs() {
       <span class="ref-t">${esc(b.title)}</span><button type="button" class="ref-x" data-unref="${id}" aria-label="Remove ${esc(b.title)}">×</button></span>`;
   }).join('');
 }
+$('chat-sel').addEventListener('click', (e) => { if (e.target.closest('[data-clear-sel]')) clearSelection(); });
 $('chat-refs').addEventListener('click', (e) => {
   const x = e.target.closest('[data-unref]'); if (x) { chat.refs = chat.refs.filter((id) => id !== x.dataset.unref); renderRefs(); return; }
   const o = e.target.closest('[data-open-book]'); if (o) openManager(o.dataset.openBook);
@@ -973,7 +991,8 @@ function autosize() { const i = $('chat-input'); i.style.height = 'auto'; i.styl
 $('chat-input').addEventListener('input', autosize);
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
-  if (!$('imgmgr').hidden) closePane('imgmgr'); else if (chatOpen()) closeChat();
+  // Esc peels back one layer: the editor, then the chat, then the selection.
+  if (!$('imgmgr').hidden) closePane('imgmgr'); else if (chatOpen()) closeChat(); else if (selected.size) clearSelection();
 });
 $('chat-body').addEventListener('click', (e) => {
   if (e.target.closest('[data-example]')) { $('chat-input').value = e.target.textContent; autosize(); $('chat-input').focus(); return; }
