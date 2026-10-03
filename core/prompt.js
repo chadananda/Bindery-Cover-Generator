@@ -168,11 +168,13 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
 
 export function composeEditPrompt(project, change) {
   const k = keyColor(project);
-  // In-place, but VISIBLE: "pixel-for-pixel" wording made the model change almost nothing (3–9/255 average difference).
+  // In-place, but VISIBLE: "pixel-for-pixel" wording made the model change almost nothing (3–9/255 average difference), and
+  // a fixed "keep the lettering/colours/illustration" list vetoed edits aimed at exactly those (a font change did nothing).
   return `Edit this photograph of a book cover. Make this change: ${change.trim()}\n\n` +
     `Make the change CLEARLY VISIBLE — it must be obvious even at thumbnail size; change as much of the cover as the request ` +
-    `needs, and no more. It is still the same photograph of the same book: keep what the change does not touch (material, ` +
-    `colours, lettering, illustration, lighting, camera angle, scale and position in the frame) as it is. Do not re-shoot, ` +
+    `needs, and no more. What the change touches must change, decisively — if it names a typeface, the letters are redrawn ` +
+    `in a visibly different typeface. It is still the same photograph of the same book: the parts the request does not ` +
+    `mention stay as they are, and the lighting, camera angle, scale and position in the frame are unchanged. Do not re-shoot, ` +
     `re-light, re-frame, crop or zoom. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and keep the ` +
     `same ${k.name.toLowerCase()} margin around all edges of the book.`;
 }

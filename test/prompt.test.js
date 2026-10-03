@@ -104,8 +104,14 @@ describe('effectiveStyles', () => {
     expect(p).toMatch(/do not re-?(shoot|photograph|frame|crop)/i);
     expect(p).toMatch(/clearly visible/i);            // a timid change reads as "nothing happened"
     expect(p).not.toMatch(/pixel-for-pixel/i);        // that wording froze the whole image
-    expect(p).toMatch(/lettering/i);
     expect(p).toContain('#FF00FF');
+  });
+
+  it('never tells the model to keep the very thing the change is about (a font change kept "lettering … as it is")', async () => {
+    const { composeEditPrompt } = await import('../core/prompt.js');
+    const p = composeEditPrompt({ app: {} }, '1. Change the title typeface to an elegant, more legible serif');
+    expect(p).not.toMatch(/keep[^.]*\b(lettering|colours|illustration)\b/i);
+    expect(p).toMatch(/what the change touches (must|should) change/i);
   });
 
   it('an OVERRIDE layer replaces everything above it instead of adding to it', async () => {

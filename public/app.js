@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=66';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=67';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1002,6 +1002,18 @@ function setMode(m) {
 $('chat-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) { setMode(b.dataset.mode); $('chat-input').focus(); } });
 // Edit mode: the message IS the edit. Ticked books → every one of them (in turn, each a paid call); otherwise the cover
 // open in the editor. Each result is a new version; the editor follows along.
+// Feedback → numbered, concrete commands read against THIS cover (vague feedback made the image model change ~nothing),
+// shown in the chat as "Applying to …". null = it isn't a change request. Every edit path goes through this.
+async function refineEdit(b, text, { fallback = false } = {}) {
+  const { instruction, byline } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text }) });
+  // An author-line change is saved on the book too, so later regenerations keep it ("" = no author line).
+  if (byline !== undefined && byline !== null) { b.byline = byline; patch('books', b.id, { byline }); }
+  const none = !instruction || /^NONE\b/i.test(instruction);
+  if (none && !fallback) return null;
+  const change = none ? text : instruction; // a numbered list of commands — shown as-is, and sent as-is to the image model
+  chat.messages.push({ role: 'assistant', text: `Applying to ${b.title}:\n${change}` }); renderChat();
+  return change;
+}
 async function editFromChat(text) {
   const targets = (selected.size ? project.books.filter((b) => selected.has(b.id)) : [imBook()]).filter((b) => b && currentVersion(b));
   if (!targets.length) return sendChat(text);
@@ -1015,13 +1027,8 @@ async function editFromChat(text) {
     if (im?.bookId !== b.id) openManager(b.id);
     status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat(); imBusy(true, `Reading ${targets.length > 1 ? `cover ${done + failed + 1} of ${targets.length}` : 'the cover'}…`);
     try {
-      // Feedback → one concrete instruction against THIS cover (vague feedback made the image model change ~nothing).
-      const { instruction, byline } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text }) });
-      // An author-line change is saved on the book too, so later regenerations keep it ("" = no author line).
-      if (byline !== undefined && byline !== null) { b.byline = byline; patch('books', b.id, { byline }); }
-      if (/^NONE\b/i.test(instruction || '')) { status.delete(b.id); imBusy(false); renderCard(b.id); chat.messages.pop(); chat.messages.pop(); return sendChat(text); }
-      const change = instruction || text; // a numbered list of commands — shown as-is, and sent as-is to the image model
-      chat.messages.push({ role: 'assistant', text: `Applying to ${b.title}:\n${change}` }); renderChat();
+      const change = await refineEdit(b, text);
+      if (!change) { status.delete(b.id); imBusy(false); renderCard(b.id); chat.messages.pop(); chat.messages.pop(); return sendChat(text); }
       imBusy(true, `Editing${targets.length > 1 ? ` ${done + failed + 1} of ${targets.length}` : ''}… (~20–40s)`);
       await produce(b, { removeBg: $('im-removebg').checked, change }); status.delete(b.id); done++;
     }
@@ -1204,8 +1211,11 @@ $('chat-body').addEventListener('click', (e) => {
       for (const x of edits) {
         const b = project.books.find((y) => y.id === x.bookId);
         status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat();
-        if (im?.bookId === b.id) { imBusy(true, 'Editing… (~20–40s)'); imStatus('Editing from the chat…'); }
-        try { await produce(b, { removeBg: true, change: x.change }); status.delete(b.id); if (im?.bookId === b.id) imStatus('Edited ✓ — saved as a new version', 'ok'); }
+        if (im?.bookId === b.id) { imBusy(true, 'Reading the cover…'); imStatus('Editing from the chat…'); }
+        try {
+          const change = await refineEdit(b, x.change, { fallback: true }); // the Binder's proposal → commands against this cover
+          if (im?.bookId === b.id) imBusy(true, 'Editing… (~20–40s)');
+          await produce(b, { removeBg: true, change }); status.delete(b.id); if (im?.bookId === b.id) imStatus('Edited ✓ — saved as a new version', 'ok'); }
         catch (err) { status.set(b.id, { state: 'err', msg: err.message }); chat.messages.push({ role: 'assistant', text: `Couldn't edit ${b.title}: ${err.message}`, error: true }); }
         renderCard(b.id); renderChat(); if (im?.bookId === b.id) { imBusy(false); renderManager(); }
       }
