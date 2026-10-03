@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=28';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=29';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -278,7 +278,9 @@ $('app').addEventListener('click', (e) => {
     if (e.target.closest('[data-star]') && authed) { b.sample = !b.sample; patch('books', id, { sample: b.sample }); renderCard(id); renderBar(); return; }
     if (e.target.closest('[data-edit]')) { openManager(id); return; }
     if (e.target.closest('[data-open]')) {
-      if (chatOpen()) addRef(id);
+      // A click always opens the cover in the editor (the chat sees the editor's book). ⇧/⌘-click attaches it to the
+      // chat message instead, for referring to several covers at once.
+      if (chatOpen() && (e.shiftKey || e.metaKey || e.ctrlKey)) addRef(id);
       else if (card.dataset.head) { const c = card.dataset.head; openColls.has(c) ? openColls.delete(c) : openColls.add(c); store.set('openColls', [...openColls]); renderShelves(); }
       else openManager(id);
     }

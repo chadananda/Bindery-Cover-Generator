@@ -420,7 +420,7 @@ main.shelves, .empty { margin-right: var(--dock-w); transition: margin-right .3s
 .ref-x:hover { color: #8a2a1a; }
 .user-wrap { justify-items: end; }
 .user-wrap .chat-thumb { width: 84px; } .user-wrap .ct-img { height: 92px; } .user-wrap .ct-img img { width: 72px; height: 92px; }
-body.dock-chat .card .book { cursor: copy; }
+
 :root[data-theme="dark"] .ref { background: #1b212a; border-color: #3a4556; } :root[data-theme="dark"] .ref-t { color: #e9e6dd; }
 
 /* ---------------------------------------------------------------- collections: a head tile at the shelf's end */
