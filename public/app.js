@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=65';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=66';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -234,8 +234,7 @@ const cardHtml = (b, head = null) => {
     </div></div>
     <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
       <span class="tags">${[coll?.name, b.versions.length > 1 ? `${b.versions.length} versions` : ''].filter(Boolean).map(esc).join(' · ')}</span>
-      ${head ? `<button type="button" class="vols" data-coll-toggle="${b.collectionId}" aria-expanded="${head.open}">${head.open ? '▴' : '▾'} ${head.vols} volumes</button>
-        <button type="button" class="head-edit" data-edit title="Open the collection cover in the editor">Edit cover</button>` : ''}</div>
+      ${head ? `<button type="button" class="vols" data-coll-toggle="${b.collectionId}" aria-expanded="${head.open}" title="${head.open ? 'Hide' : 'Show'} the ${head.vols} volumes">${head.open ? '▴ Hide' : '▾ Show'} ${head.vols} volumes</button>` : ''}</div>
   </article>`;
 };
 
@@ -297,7 +296,7 @@ function seriesCard(key, stem, vols, open) {
     <div class="thumb"><div class="book" data-coll-toggle="${esc(key)}" title="${esc(stem)} — show the volumes"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
       ${src ? pic(src, stem, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(stem)}</span>`}</div></div>
     <div class="meta"><span class="t">${esc(stem)}</span><span class="tags">Series</span>
-      <button type="button" class="vols" data-coll-toggle="${esc(key)}" aria-expanded="${open}">${open ? '▴' : '▾'} ${vols.length} volumes</button></div>
+      <button type="button" class="vols" data-coll-toggle="${esc(key)}" aria-expanded="${open}">${open ? '▴ Hide' : '▾ Show'} ${vols.length} volumes</button></div>
   </article>`;
 }
 // Re-render one card in place (status changes, new versions) without rebuilding every shelf.
@@ -334,12 +333,12 @@ $('app').addEventListener('click', (e) => {
     if (e.target.closest('[data-star]') && authed) { setModel(project.app.modelBookId === id ? '' : id); return; }
     if (e.target.closest('[data-edit]')) { openManager(id); return; }
     if (e.target.closest('[data-open]')) {
-      if (card.dataset.head) { const c = card.dataset.head; openColls.has(c) ? openColls.delete(c) : openColls.add(c); store.set('openColls', [...openColls]); renderShelves(); return; }
+      // A collection cover selects like any cover; its volumes open with the Show/Hide toggle beneath it.
       // Desktop-standard selection: click = just this one (and open it); Ctrl/⌘-click = toggle it; Shift-click = the
       // range from the last-clicked book (Ctrl+Shift adds the range to the selection).
       const add = e.ctrlKey || e.metaKey;
       if (e.shiftKey && lastPick) {
-        const all = [...$('app').querySelectorAll('.card[data-book]:not([data-head])')].map((c) => c.dataset.book);
+        const all = [...$('app').querySelectorAll('.card[data-book]')].map((c) => c.dataset.book);
         const a1 = all.indexOf(lastPick), a2 = all.indexOf(id);
         if (a1 >= 0 && a2 >= 0) { if (!add) selected.clear(); all.slice(Math.min(a1, a2), Math.max(a1, a2) + 1).forEach((x) => selected.add(x)); syncSelection(); return; }
       }
