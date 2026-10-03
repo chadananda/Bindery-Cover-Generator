@@ -188,8 +188,9 @@ export const geminiDescribe = (apiKey, model = CHAT_MODEL) => async (imageB64, m
  *  image model, by looking at the cover. Vague feedback made the image model change almost nothing. */
 export const refineRequest = (feedback, book = {}) =>
   `You are directing an image editor that will edit this book cover. The art director says: "${String(feedback).trim()}"\n\n` +
-  `This cover is for "${book.title || ''}"${book.subtitle ? ` (subtitle "${book.subtitle}")` : ''}${book.author ? ` by ${book.author}` : ''}. ` +
-  `Any text on it must be exactly that — never invent titles, numbers or placeholders. You can see only THIS cover.\n\n` +
+  `This cover's title is "${book.title || ''}"${book.subtitle ? ` (subtitle "${book.subtitle}")` : ''}. Never invent titles, numbers or ` +
+  `placeholders. Keep existing text (bylines, credits like "Translation by …") exactly as it is unless the director asks to ` +
+  `change it. You can see only THIS cover.\n\n` +
   `Look at the cover and turn that into concrete editing commands that achieve what they want. Each command names exactly ` +
   `what to remove, simplify, enlarge, shrink, recolour or move, and by how much (e.g. "Remove the inner floral border", ` +
   `"Enlarge the title lettering by a third", "Make the byline twice as large"). Be decisive enough to be clearly visible at ` +

@@ -143,6 +143,8 @@ describe('refineRequest', () => {
     const r = refineRequest('good but a bit too busy for thumbnail visibility', { title: 'Sura LXXXVII. The Most High', author: 'Muhammad' });
     expect(r).toContain('Sura LXXXVII. The Most High');           // the real title, so it can't invent "AL-FATIHA"
     expect(r).toMatch(/never invent|do not invent/i);
+    expect(r).not.toContain('Muhammad');                         // no forced author: bylines/credits stay unless asked
+    expect(r).toMatch(/keep existing text/i);
     expect(r).toContain('good but a bit too busy for thumbnail visibility');
     expect(r).toMatch(/concrete/i);
     expect(r).toMatch(/what to remove|remove|enlarge|simplify/i);

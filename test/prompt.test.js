@@ -216,5 +216,25 @@ describe('effectiveStyles', () => {
     expect(p).toContain('Centres of Bahá’í Learning');                  // subject falls back to the title
     expect(p).not.toMatch(/everything else stays pixel-for-pixel/i);    // no blanket "keep everything" that protects the art
   });
+
+  it('same author as the model: Same Style / Same Cover KEEP the model\'s credit line ("TRANSLATION BY J.M. RODWELL")', async () => {
+    const { composeBasedOnPrompt } = await import('../core/prompt.js');
+    const sura = { title: 'Sura XXIV. Light', author: 'Muhammad' };
+    for (const exact of [false, true]) {
+      const p = composeBasedOnPrompt({ app: {} }, sura, 'Sura LXXXI. The Folded up', { exact, refAuthor: 'Muhammad' });
+      expect(p).not.toContain('"Muhammad"');
+      expect(p).toMatch(/keep the byline and any credit line exactly as/i);
+    }
+    // a different author still gets their byline
+    expect(composeBasedOnPrompt({ app: {} }, { title: 'X', author: 'Rumi' }, 'Y', { refAuthor: 'Hafiz' })).toContain('"Rumi"');
+  });
+
+  it('Similar Style with the same author keeps the model\'s byline line', async () => {
+    const { composePrompt: compose, retitlePrompt } = await import('../core/prompt.js');
+    const mp = compose({ app: { style: 'leather' } }, { title: 'Sura LXXXI', author: 'Translated by J.M. Rodwell' });
+    const p = retitlePrompt(mp, { app: {} }, { title: 'Sura XXIV', author: 'Muhammad' }, { keepByline: true });
+    expect(p).toContain('Translated by J.M. Rodwell');
+    expect(p).not.toContain('"Muhammad"');
+  });
 });
 

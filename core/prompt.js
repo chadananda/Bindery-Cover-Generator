@@ -16,6 +16,7 @@ export const DEFAULT_APP_STYLE =
   'thick, heavy gold-leaf capital letters at the top, large and unmissable. Hyper-detailed macro photography of a ' +
   'real, physical book — skeuomorphic, never a flat graphic or a plaque. No modern elements.';
 
+const norm = (x) => String(x || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/['’‘ʻʼ`]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const find = (list, id) => (list || []).find((x) => x.id === id);
 
 /** The style layers that apply to a book, most general first. A layer with `override` REPLACES every layer above it
@@ -108,10 +109,11 @@ const BOOK_LINE = /^(The title "|The line "|ABOUT THIS BOOK|The embossed centre 
 
 /** Similar Style: the model's EXACT generation prompt with this book's title, byline and illustration brief swapped in —
  *  no library/shelf defaults consulted, so later default changes can't pull it away from the model. */
-export function retitlePrompt(modelPrompt, project, book) {
-  const lines = String(modelPrompt).split('\n').filter((l) => !BOOK_LINE.test(l));
+export function retitlePrompt(modelPrompt, project, book, { keepByline = false } = {}) {
+  // keepByline (same author as the model): the model's byline/credit line stays, the book's author isn't swapped in.
+  const lines = String(modelPrompt).split('\n').filter((l) => !BOOK_LINE.test(l) || (keepByline && l.startsWith('The line "')));
   const at = lines.findIndex((l) => l.startsWith('Flat, even studio lighting'));
-  lines.splice(at >= 0 ? at : lines.length, 0, ...bookLines(project, book));
+  lines.splice(at >= 0 ? at : lines.length, 0, ...bookLines(project, keepByline ? { ...book, author: '' } : book));
   return lines.join('\n');
 }
 /** Is this a full generation prompt (one Similar Style can reuse)? */
@@ -120,12 +122,15 @@ export const isGenerationPrompt = (p) => /^Front cover of a book/.test(p || '');
 /** A book based on another: EDIT that cover's photograph for this book — same binding, wear, light and framing. Style
  *  mode replaces title, byline AND centre illustration (from the book's content/description, never printed); exact mode
  *  changes only the title and byline and keeps the illustration as it is. */
-export function composeBasedOnPrompt(project, book, refTitle, { exact = false } = {}) {
+export function composeBasedOnPrompt(project, book, refTitle, { exact = false, refAuthor } = {}) {
   const k = keyColor(project);
   const title = (book?.title || '').trim(), sub = (book?.subtitle || '').trim(), author = (book?.author || '').trim();
+  // Same author as the model (every sura is "Muhammad"): its byline/credit ("TRANSLATION BY J.M. RODWELL") is right as it is.
+  const sameAuthor = refAuthor !== undefined && norm(refAuthor) === norm(author);
   const lettering = [
     `Replace the title lettering with "${title}"${sub ? ` and the subtitle "${sub}"` : ''}, in the same typeface, size, colour, finish and placement as the current title.`,
-    author ? `Replace the byline with "${author}", in the same style and place.` : 'Remove the byline.',
+    sameAuthor ? 'Keep the byline and any credit line exactly as they are — same words, same place.'
+      : author ? `Replace the byline with "${author}", in the same style and place.` : 'Remove the byline.',
   ];
   const keep = `Keep the book itself exactly as it is: the same binding and material, colour and texture, wear and patina, border and ` +
     `ornaments, typeface and layout, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +

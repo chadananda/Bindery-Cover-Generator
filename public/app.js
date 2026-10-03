@@ -1,10 +1,11 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=62';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=63';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const norm = (x) => String(x || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/['’‘ʻʼ`]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const rid = () => Math.random().toString(36).slice(2, 10);
 const slug = (s) => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'cover';
 const img = (key) => `/img/${key}`; // the full-size original: keying and downloads only
@@ -691,10 +692,11 @@ async function produce(book, { removeBg = true, change = '', lookId = null } = {
   const similar = !!refBook && book.refMode === 'similar';
   const basedOn = !similar && !!(refV?.cover || refV?.raw);
   const inputKey = change ? from.raw || await rawFromCover(book, from) : basedOn ? await refRaw(refBook, refV) : undefined;
-  let prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact' }) : null;
+  let prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact', refAuthor: refBook.author }) : null;
   if (!prompt && similar) { // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
     const mp = modelPrompt(refBook);
-    prompt = mp ? retitlePrompt(mp, project, book) : composePrompt(project, book, { styleText: await describedStyle(refBook) });
+    const keepByline = norm(refBook.author) === norm(book.author);
+    prompt = mp ? retitlePrompt(mp, project, book, { keepByline }) : composePrompt(project, keepByline ? { ...book, author: '' } : book, { styleText: await describedStyle(refBook) });
   }
   prompt ||= composePrompt(project, book);
   const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey }) });
