@@ -31,8 +31,8 @@ Use show_books to put thumbnails of the books you are talking about in front of 
 books a change will affect — up to 12); they can open any of them. Finish with propose_plan when changes are wanted.
 When the user wants other books based ON a particular cover ("make the others like this one", "base the Rumi books on
 The Masnavi", "use this cover for the whole collection"), propose references: refBookId = that book, bookIds = the others
-(resolve shelves/collections/authors to book ids), generate: true if they want them made now. This shows the model the
-reference image itself — prefer it over describing the style when the user points at a cover.
+(resolve shelves/collections/authors to book ids), generate: true if they want them made now. This hands the model the
+reference photograph itself (edited per book) — prefer it over describing the style when the user points at a cover.
 When the user wants a specific cover's PICTURE changed ("darker leather", "add a clasp", "fix the lettering", "less shiny"),
 propose an edit of that cover (edits: bookId + one precise visual instruction) — not a style change — unless they say it
 should apply to a whole shelf/collection/author, which is a style change. Attached covers and the cover open in the
@@ -54,7 +54,7 @@ export const TOOLS = [{ functionDeclarations: [
         style: { type: 'string', description: 'the complete new style text for that layer' },
         override: { type: 'boolean', description: 'true = this layer REPLACES the inherited styles above it (library, and shelf for a collection) instead of adding to them' } }, required: ['scope', 'style'] } },
       generateBookIds: { type: 'array', items: { type: 'string' } },
-      references: { type: 'array', description: 'Base books on a reference cover: when they are generated, the model is shown that cover and matches it exactly (not just a description).', items: { type: 'object', properties: {
+      references: { type: 'array', description: 'Base books on a reference cover: each is made by EDITING that cover photograph — new title, byline and centre illustration; everything else identical.', items: { type: 'object', properties: {
         refBookId: { type: 'string', description: 'the book whose current cover is the reference' }, bookIds: { type: 'array', items: { type: 'string' } },
         generate: { type: 'boolean', description: 'also generate those books now' } }, required: ['refBookId', 'bookIds'] } },
       edits: { type: 'array', description: "In-place edits of a book's current cover image", items: { type: 'object', properties: {

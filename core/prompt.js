@@ -33,8 +33,8 @@ export function effectiveStyles(project, book) {
   return layers.map((l, i) => (i < cut ? { ...l, overridden: true } : l));
 }
 
-/** The full generation prompt for one book. opts.reference = the title of a reference cover sent with the prompt. */
-export function composePrompt(project, book, opts = {}) {
+/** The full generation prompt for one book. */
+export function composePrompt(project, book) {
   const k = keyColor(project);
   const bgName = `${k.name} (${k.hex})`;
   const out = [
@@ -43,11 +43,6 @@ export function composePrompt(project, book, opts = {}) {
       `the ${k.name.toLowerCase()} background. Leave a visible margin of ${k.name.toLowerCase()} around all edges of the book.`,
     '',
   ];
-  if (opts.reference) out.push(`STYLE REFERENCE: The attached image is the cover of "${opts.reference}", from this same set. ` +
-    `Make this cover match it exactly, as if bound by the same bindery: the same material, colour and texture, the same wear ` +
-    `and patina, the same border and corner ornaments, the same typeface, size, colour and placement of the lettering, and ` +
-    `the same overall layout and proportions. Only the title, the byline and the centre illustration differ. The styles ` +
-    `below describe the set; where they disagree with the reference image, follow the image.`, '');
   for (const layer of effectiveStyles(project, book).filter((l) => !l.overridden)) {
     if (layer.level === 'application' && layer.style) out.push(`STYLE: ${layer.style}`);
     if (layer.level === 'bookshelf' && layer.style) out.push(`BOOKSHELF STYLE — ${layer.name}: ${layer.style}`);
@@ -87,6 +82,23 @@ export function composePrompt(project, book, opts = {}) {
 }
 
 /** Instruction wrapper for an img2img edit of an existing cover. */
+/** A book based on another: EDIT that cover's photograph for this book — same binding, wear, light and framing; only the
+ *  title, byline and centre illustration change. The description guides the new illustration and is never printed. */
+export function composeBasedOnPrompt(project, book, refTitle) {
+  const k = keyColor(project);
+  const about = (book?.content || '').trim()
+    ? `a new centre illustration showing: ${book.content.trim()}`
+    : `a new centre illustration that evokes this book${(book?.description || '').trim() ? ` (context only, never print it: ${book.description.trim().slice(0, 600)})` : ''}`;
+  return `Edit this exact photograph. It is the cover of "${refTitle}". Turn it into the cover of another volume of the same set:\n` +
+    `1. Replace the title lettering with "${(book?.title || '').trim()}"${book?.subtitle ? ` and the subtitle "${book.subtitle.trim()}"` : ''}, in the same typeface, size, colour, finish and placement.\n` +
+    `2. ${(book?.author || '').trim() ? `Replace the byline with "${book.author.trim()}", in the same style and place.` : 'Remove the byline.'}\n` +
+    `3. Replace the centre illustration with ${about}, in exactly the same technique, materials, size and frame.\n\n` +
+    `Change nothing else. Everything else stays pixel-for-pixel: the same book, leather colour and texture, wear and patina, ` +
+    `border and corner ornaments, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +
+    `crop or zoom. Do not print any other text. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, ` +
+    `and keep the same ${k.name.toLowerCase()} margin around all edges of the book.`;
+}
+
 export function composeEditPrompt(project, change) {
   const k = keyColor(project);
   // In-place edit, not a re-shoot: the model drifts to a fresh photograph (new light, crop, lettering) unless told hard.

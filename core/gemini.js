@@ -11,14 +11,12 @@ const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
  * @returns {Promise<{base64: string, mimeType: string, text: string}>}
  */
 export async function generateImage({
-  apiKey, prompt, inputImage, refImage, inputMime = 'image/png', model = DEFAULT_MODEL,
+  apiKey, prompt, inputImage, inputMime = 'image/png', model = DEFAULT_MODEL,
   aspectRatio = '3:4', fetch: f = globalThis.fetch, retries = 2,
 }) {
   if (!apiKey) throw new Error('No Gemini API key');
   const parts = [];
   if (inputImage) parts.push({ inlineData: { mimeType: inputMime, data: inputImage } });
-  // A style reference (another cover of the set) for a NEW generation: the prompt says to match it.
-  else if (refImage) parts.push({ inlineData: { mimeType: 'image/png', data: refImage } });
   parts.push({ text: prompt });
   const init = {
     method: 'POST',

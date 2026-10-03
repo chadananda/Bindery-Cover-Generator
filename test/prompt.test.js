@@ -124,15 +124,19 @@ describe('effectiveStyles', () => {
     expect(own).toContain('plain vellum');
   });
 
-  it('a book based on a reference cover is told to match that image exactly; only title, byline, illustration differ', async () => {
-    const { composePrompt: compose } = await import('../core/prompt.js');
-    const plain = compose({ app: { style: 'leather' } }, { title: 'Diwan' });
-    const ref = compose({ app: { style: 'leather' } }, { title: 'Diwan' }, { reference: 'The Masnavi' });
-    expect(plain).not.toMatch(/STYLE REFERENCE/);
-    expect(ref).toMatch(/STYLE REFERENCE/);
-    expect(ref).toContain('The Masnavi');
-    expect(ref).toMatch(/typeface/i);
-    expect(ref).toMatch(/only the title/i);
+  it('a book based on another cover is an EDIT of that photograph: only title, byline and illustration change', async () => {
+    const { composeBasedOnPrompt } = await import('../core/prompt.js');
+    const p = composeBasedOnPrompt({ app: { keyColor: 'magenta' } }, { title: 'The Bustan', author: 'Saadi', description: 'Moral tales in verse about justice and humility.' }, 'The Masnavi');
+    expect(p).toMatch(/edit this exact photograph/i);
+    expect(p).toContain('The Masnavi');
+    expect(p).toContain('"The Bustan"');
+    expect(p).toContain('"Saadi"');
+    expect(p).toMatch(/justice and humility/);           // the description guides the new illustration…
+    expect(p).toMatch(/never print|not.*printed|do not print/i); // …but is never printed
+    expect(p).toMatch(/pixel-for-pixel/i);
+    expect(p).toContain('#FF00FF');
+    const withContent = composeBasedOnPrompt({ app: {} }, { title: 'X', content: 'a nightingale on a rose' }, 'Y');
+    expect(withContent).toContain('a nightingale on a rose');
   });
 });
 
