@@ -38,7 +38,10 @@ function extend(seeds, listed) {
   const out = new Set(seeds);
   for (const b of project.books) {
     const x = slugOf(b.source); if (!x || b.type === 'Collection') continue;
-    if ([...series].some((p) => x.startsWith(p)) || (prefix && x.startsWith(prefix)) || (suffix && x.endsWith(suffix) && authors.has(b.author))) out.add(b);
+    // A joint, multi-author credit shared with the seeds marks a member even when its address breaks the pattern
+    // (/fire-and-light/, /compilation-deepening_bahai/ are Research Department compilations).
+    const jointCredit = /,/.test(b.author) && [...authors].some((a) => /,/.test(a) && norm(a) === norm(b.author));
+    if ([...series].some((p) => x.startsWith(p)) || (prefix && x.startsWith(prefix)) || (suffix && x.endsWith(suffix) && authors.has(b.author)) || jointCredit) out.add(b);
   }
   return [...out];
 }
