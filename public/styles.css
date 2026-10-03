@@ -417,14 +417,8 @@ body.bench-open .selbar { left: calc((100vw - var(--bench-w)) / 2); }
 .drawer { overflow-y: auto; min-height: 0; max-height: 28vh; padding: .2rem .1rem .7rem; }
 .bench:not(.chat-on) .drawer { max-height: none; flex: 1; }
 .drawer .sliders { margin-top: .3rem; }
-/* chat beneath; the in-panel "Ask the Binder" when only the cover is open */
+/* chat beneath the cover */
 .bench .chat { border-top: 0; }
-.bench-chat { flex: none; margin: auto .9rem .9rem; display: flex; align-items: center; justify-content: center; gap: .6rem; padding: .6rem 1rem; cursor: pointer;
-  font: 600 16px var(--display); color: #f2dea8; background: rgb(26 23 20 / .97); border: 1.5px solid #f2dea8; border-radius: 999px;
-  box-shadow: 0 0 0 3px rgb(255 252 246 / .92), 0 0 0 4px rgb(160 120 50 / .35), 0 14px 30px -14px rgb(0 0 0 / .55); }
-.bench-chat .roundel { width: 30px; height: 30px; font-size: 18px; }
-.bench-chat small { font: 13px var(--sans); color: rgb(172 166 160); }
-.bench-chat:hover { border-color: #f6e3ad; }
 .mode { display: flex; gap: .25rem; padding: .2rem; border-radius: 999px; background: rgb(200 162 75 / .14); align-self: flex-start; }
 .mode button { font: 600 13px var(--sans); border: 0; border-radius: 999px; padding: .3rem .8rem; background: none; color: #5c5244; cursor: pointer; }
 .mode button[aria-checked="true"] { background: #fff; color: #2a1d08; box-shadow: 0 1px 3px rgb(0 0 0 / .18); }
@@ -536,3 +530,4 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .refmode { display: inline-flex; gap: .15rem; padding: .12rem; border-radius: 999px; background: rgb(200 162 75 / .16); margin-left: .3rem; }
 .refmode button { font: 600 12px var(--sans); border: 0; border-radius: 999px; padding: .15rem .55rem; background: none; color: #5c5244; cursor: pointer; }
 .refmode button[aria-checked="true"] { background: #fff; color: #2a1d08; box-shadow: 0 1px 2px rgb(0 0 0 / .18); }
+.tray-regen { display: inline-flex; align-items: center; gap: .35rem; margin-left: .8rem; font-size: 13px; color: var(--ink-2); }

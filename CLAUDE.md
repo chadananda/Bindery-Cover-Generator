@@ -6,7 +6,7 @@ Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read;
 - `core/` — ALL cover logic, zero deps, runs in browser/Worker/Node. Edit here; `public/core/` is a generated copy.
 - `src/worker.js` — routes, passcode cookie, Gemini proxy, /img from R2. `src/store.js` — D1 layer (column whitelists; versions + looks append-only). `migrations/` — schema.
 - `public/` — UI; keying runs in the browser. CTAI-style navbar, per-shelf sticky headers, flat cover grid; style editing in dialogs;
-  cover editor + style chat are ONE right-hand panel (`#bench`: cover section over chat; .has-cover/.chat-on; drawers Adjust/Details), non-modal. `src/chat.js` — Gemini style chat (tools: describe_cover_style, show_books, propose_plan; plans applied client-side on click).
+  "the Binder" = ONE right-hand panel (`#bench`): cover editor over its chat, opened together (chat only when logged in); drawers Adjust/Details; non-modal. `src/chat.js` — Gemini style chat (tools: describe_cover_style, show_books, propose_plan; plans applied client-side on click).
 - Images: `/img/<key>?tr=w-320` → `src/image.js` (ImageKit grammar, widths snap) + `src/render.js` (Photon resize, jSquash lossy webp with alpha; exact widths). Edge cache + R2 `fx/v<N>/`. versions.w/h feed <img width/height>.
 - Keyer = Recipe A of the "Book Cover Generation" artifact (book-covers/knowledge/cover-generation-recipe.md). Don't re-derive it.
 - `scripts/tmp/` — one-off scripts (gitignored): `seed.mjs`/`published-only.mjs`/`mirror-local.mjs` (old R2 project.json era), `r2-to-d1.mjs` (the one-time import).

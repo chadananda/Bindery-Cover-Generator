@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=36" />
+  <link rel="stylesheet" href="/styles.css?v=38" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -56,7 +56,7 @@
   <div class="selbar" id="selbar" hidden role="region" aria-label="Selected books">
     <span id="sel-count" class="sel-count"></span>
     <button type="button" class="btn small gold" id="sel-generate" data-write>✦ Generate</button>
-    <span class="regen" id="sel-regen" data-write><span class="regen-lab">From model:</span><button type="button" class="btn small" data-regen="similar" title="A fresh generation using the model's style prompt">✦ Similar · fresh</button><button type="button" class="btn small gold" data-regen="style" title="Same binding as the model; each book gets its own centre illustration">✦ Style · new art</button><button type="button" class="btn small" data-regen="exact" title="Identical to the model; only the title and byline change">✦ Exactly · text only</button></span>
+    <span class="regen" id="sel-regen" data-write><span class="regen-lab">From model:</span><button type="button" class="btn small" data-regen="similar" title="A fresh generation using the model's style prompt">✦ Similar style · fresh</button><button type="button" class="btn small gold" data-regen="style" title="Same binding as the model; each book gets its own centre illustration">✦ Same style · new art</button><button type="button" class="btn small" data-regen="exact" title="Identical to the model; only the title and byline change">✦ Same cover · text only</button></span>
     <button type="button" class="btn small" id="sel-download">⇩ Download</button>
     <select id="sel-move" data-write aria-label="Move to bookshelf"></select>
     <button type="button" class="btn small ghost danger" id="sel-delete" data-write>Remove</button>
@@ -64,13 +64,13 @@
   </div>
 
   <!-- Style chat (after Anis, siftersearch.com) behind a launcher (after Jafar, CTAI.info). Logged-in only. -->
-  <button type="button" class="fab" id="chat-fab" aria-label="Open the style chat">
+  <button type="button" class="fab" id="chat-fab" aria-label="Open the Binder">
     <span class="fab-emblem"><span class="fab-halo"></span>
       <svg width="40" height="40" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="fabGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2dea8"/><stop offset=".5" stop-color="#d9942c"/><stop offset="1" stop-color="#a0571f"/></linearGradient></defs>
         <path fill="url(#fabGold)" stroke="#fdf9ef" stroke-opacity=".45" stroke-width="1.1" d="M50 6c-9 0-24 3-34 9v66c10-6 25-9 34-9s24 3 34 9V15c-10-6-25-9-34-9z"/>
         <path d="M50 12v58" stroke="#1a1714" stroke-opacity=".55" stroke-width="2.4"/>
         <path d="M27 30q8-3 16 0M27 40q8-3 16 0M57 30q8-3 16 0M57 40q8-3 16 0" stroke="#1a1714" stroke-opacity=".45" stroke-width="2" fill="none"/></svg></span>
-    <span class="fab-text"><span class="fab-title">Ask the Binder</span><span class="fab-sub">Restyle shelves in plain words</span></span>
+    <span class="fab-text"><span class="fab-title">Open the Binder</span><span class="fab-sub">Edit covers in plain words</span></span>
   </button>
 
   <!-- Library style -->
@@ -145,14 +145,14 @@
     </div>
   </dialog>
 
-  <!-- WORKBENCH (right, non-modal): ONE panel holding the cover editor (top) and the style chat (below). States on the
-       panel: .has-cover (a book is loaded) and .chat-on. Cover only → an "Ask the Binder" button opens the chat beneath;
-       chat only → full height, and the cover slides in when a cover is clicked, generated or edited. Optional editor
+  <!-- WORKBENCH (right, non-modal): ONE panel holding the cover editor (top) and the style chat (below), opened together
+       (the chat only for logged-in users). Chat alone (from the launcher) → full height; the cover slides in when a
+       cover is clicked, generated or edited. Optional editor
        controls live in two drawers (Adjust, Details), one open at a time, so the panel never needs to scroll. -->
-  <aside class="bench" id="bench" hidden aria-label="Workbench">
+  <aside class="bench" id="bench" hidden aria-label="The Binder">
     <header class="bench-head">
       <span class="roundel" aria-hidden="true">❦</span>
-      <span class="titles"><h2 id="im-title" class="title">The Binder</h2><span class="subtitle" id="bench-sub">Style assistant</span></span>
+      <span class="titles"><h2 class="title">The Binder</h2><span class="subtitle" id="bench-sub"><span id="im-title">Cover editor &amp; style chat</span></span></span>
       <button type="button" class="chat-icon" id="chat-clear" title="New conversation" aria-label="New conversation"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"/></svg></button>
       <button type="button" class="chat-icon" id="bench-close" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </header>
@@ -229,8 +229,6 @@
         <p class="compose-hint">Click a cover to open it · Ctrl/⌘-click to add to the selection · Shift-click for a range — the Binder sees what's selected.</p>
       </form>
     </section>
-
-    <button type="button" class="bench-chat" id="bench-chat" data-write><span class="roundel" aria-hidden="true">❦</span> Ask the Binder <small>· change this cover in plain words</small></button>
   </aside>
 
   <!-- Full view of the current cover (click the editor preview): large rendition on the chosen backdrop. -->
@@ -249,6 +247,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=41"></script>
+  <script type="module" src="/app.js?v=45"></script>
 </body>
 </html>

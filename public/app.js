@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=41';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=45';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -217,8 +217,11 @@ const seriesStem = (t) => {
     || s.match(/^(.*?)\s+\d+(?:\s*[-–]\s*\d+)?$/); // trailing number or range: "The Pickwick Papers 9-11"
   return m && m[1].trim().length >= 3 ? m[1].trim() : null;
 };
+// Same style / Same cover are mostly for a series: when the model is in this tray (or is its collection cover),
+// the tray header offers them for every other volume — no selecting.
+const trayModel = (vols, key) => { const m = project.app.modelBookId; return m && (vols.some((b) => b.id === m) || project.books.some((b) => b.id === m && b.collectionId && `${b.collectionId}` === key)) ? m : null; };
 const tray = (key, title, vols) => `<div class="tray" data-tray="${esc(key)}">
-  <div class="tray-head"><input type="checkbox" class="pick-tray" ${vols.length && vols.every((b) => selected.has(b.id)) ? 'checked' : ''} aria-label="Select every volume of ${esc(title)}" title="Select / deselect all ${vols.length} volumes" /><b>${esc(title)}</b> · ${vols.length} volumes<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
+  <div class="tray-head"><input type="checkbox" class="pick-tray" ${vols.length && vols.every((b) => selected.has(b.id)) ? 'checked' : ''} aria-label="Select every volume of ${esc(title)}" title="Select / deselect all ${vols.length} volumes" /><b>${esc(title)}</b> · ${vols.length} volumes${trayModel(vols, key) ? `<span class="tray-regen" data-write>From the model: <button type="button" class="btn small gold" data-tray-regen="style" title="Every other volume: the model's photograph with its own title, byline and illustration">✦ Same style</button><button type="button" class="btn small" data-tray-regen="exact" title="Every other volume: the model's cover, only title and byline changed">✦ Same cover</button></span>` : ''}<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
   <div class="tray-grid">${vols.map((b) => cardHtml(b)).join('')}</div></div>`;
 function shelfCards(books) {
   const heads = books.filter(isHead);
@@ -292,6 +295,14 @@ $('app').addEventListener('click', (e) => {
     }
     return;
   }
+  const tr = e.target.closest('[data-tray-regen]');
+  if (tr && authed) {
+    const mode = tr.dataset.trayRegen, model = project.books.find((b) => b.id === project.app.modelBookId);
+    const vols = [...tr.closest('.tray').querySelectorAll('.card[data-book]')].map((c) => project.books.find((b) => b.id === c.dataset.book)).filter((b) => b && b.id !== model?.id);
+    if (!model || !vols.length) return;
+    vols.forEach((b) => { Object.assign(b, { refBookId: model.id, refMode: mode }); patch('books', b.id, { refBookId: model.id, refMode: mode }); });
+    openManager(vols[0].id); generate(vols); return;
+  }
   if (e.target.matches('.pick-tray')) {
     e.target.closest('.tray').querySelectorAll('.card[data-book]').forEach((c) => (e.target.checked ? selected.add(c.dataset.book) : selected.delete(c.dataset.book)));
     renderShelves(); renderSelbar(); return;
@@ -317,7 +328,7 @@ $('sel-generate').addEventListener('click', () => generate(selBooks()));
 // ONE model per library: ★ on a cover. Regenerate from model edits it into each selected book (based-on edit).
 function setModel(id) {
   const prev = project.app.modelBookId; project.app.modelBookId = id; patch('libraries', lib, { modelBookId: id });
-  [prev, id].filter(Boolean).forEach(renderCard); renderSelbar();
+  renderShelves(); renderSelbar(); // shelves, not just the two cards: tray headers offer Same style/cover when they hold the model
 }
 $('sel-regen').addEventListener('click', (e) => {
   const mode = e.target.closest('[data-regen]')?.dataset.regen; if (!mode) return;
@@ -652,11 +663,10 @@ const backdropBar = () => `<div class="backdrops" role="group" aria-label="Previ
 function openManager(bookId) {
   im = { bookId };
   const b = imBook();
-  $('im-title').textContent = b.title;
   $('im-about-wrap').hidden = !b.description;
   $('im-about').textContent = b.description || '';
   $('im-content').value = b.content || ''; resetAdjust();
-  $('bench-sub').textContent = [b.author, shelfById(b.shelfId)?.name].filter(Boolean).join(' · ') || 'Cover';
+  $('im-title').textContent = [b.title, b.author, shelfById(b.shelfId)?.name].filter(Boolean).join(' · ');
   $('im-style').value = b.style || '';
   $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
   imStatus(''); imBusy(status.get(bookId)?.state === 'busy', status.get(bookId)?.msg || 'Working…');
@@ -727,7 +737,7 @@ function renderManager() {
   $('im-prompt').textContent = !refV ? composePrompt(project, b) : b.refMode === 'similar' ? composePrompt(project, b, { styleFrom: refB }) : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact' });
   $('im-ref').hidden = !refB;
   if (refB) $('im-ref').innerHTML = `<span class="ref-lab">Based on</span><button type="button" class="ref-img" data-open-ref="${refB.id}" title="Open ${esc(refB.title)}">${refV ? pic(refV.cover || refV.raw, refB.title, '40px', [160], true, refV) : ''}</button><b>${esc(refB.title)}</b>
-    <span class="refmode" role="radiogroup" aria-label="How it's based on it"><button type="button" data-refmode="similar" aria-checked="${b.refMode === 'similar'}" data-write title="Fresh generation with its style prompt">Similar</button><button type="button" data-refmode="style" aria-checked="${!['similar', 'exact'].includes(b.refMode)}" data-write title="Edit of its picture: same binding, own illustration">Style</button><button type="button" data-refmode="exact" aria-checked="${b.refMode === 'exact'}" data-write title="Identical; only title and byline change">Exactly</button></span><button type="button" class="ref-x" data-unref-book data-write title="Stop basing this cover on ${esc(refB.title)}" aria-label="Unlink reference">×</button>`;
+    <span class="refmode" role="radiogroup" aria-label="How it's based on it"><button type="button" data-refmode="similar" aria-checked="${b.refMode === 'similar'}" data-write title="Fresh generation with its style prompt">Similar style</button><button type="button" data-refmode="style" aria-checked="${!['similar', 'exact'].includes(b.refMode)}" data-write title="Edit of its picture: same binding, own illustration">Same style</button><button type="button" data-refmode="exact" aria-checked="${b.refMode === 'exact'}" data-write title="Identical; only title and byline change">Same cover</button></span><button type="button" class="ref-x" data-unref-book data-write title="Stop basing this cover on ${esc(refB.title)}" aria-label="Unlink reference">×</button>`;
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
@@ -751,7 +761,7 @@ for (const [id, field] of Object.entries(imFields)) {
     const b = imBook(); if (!b) return;
     b[field] = e.target.value; patch('books', b.id, { [field]: e.target.value });
     $('im-prompt').textContent = composePrompt(project, b);
-    if (field === 'title') $('im-title').textContent = b.title;
+    if (field === 'title' || field === 'author') $('im-title').textContent = [b.title, b.author, shelfById(b.shelfId)?.name].filter(Boolean).join(' · ');
   });
 }
 $('im-ref').addEventListener('click', (e) => {
@@ -830,20 +840,23 @@ function layoutBench() {
   bench.hidden = !cover && !on;
   bench.classList.toggle('has-cover', cover);
   $('chat').hidden = !on;
-  $('bench-chat').hidden = on || !cover;
   $('chat-clear').hidden = !on;
-  if (!cover) { $('im-title').textContent = 'The Binder'; $('bench-sub').textContent = 'Style assistant'; }
+  if (!cover) $('im-title').textContent = 'Cover editor & style chat';
   renderMode();
   document.body.classList.toggle('bench-open', !bench.hidden);
   $('chat-fab').hidden = !bench.hidden;
 }
-function openPane(id) { if (id === 'imgmgr') $('imgmgr').hidden = false; else bench.classList.add('chat-on'); layoutBench(); }
+// The cover and the chat open together (one step to edit); logged-out visitors get the cover only.
+function openPane(id) {
+  if (id === 'imgmgr') $('imgmgr').hidden = false;
+  if (id !== 'imgmgr' || authed) bench.classList.add('chat-on');
+  layoutBench(); if (chatOpen()) { renderChat(); renderRefs(); }
+}
 function closePane(id) {
   if (id === 'imgmgr') { $('imgmgr').hidden = true; im = null; } else bench.classList.remove('chat-on');
   layoutBench(); renderAll(); if (chatOpen()) renderChat();
 }
 $('bench-close').addEventListener('click', () => { $('imgmgr').hidden = true; im = null; bench.classList.remove('chat-on'); layoutBench(); renderAll(); });
-$('bench-chat').addEventListener('click', () => openChat());
 // Composer mode, when a cover is loaded: Ask (the Binder proposes) or ✎ Edit cover (the text IS the edit, run at once).
 let chatMode = 'ask';
 function setMode(m) {
@@ -929,7 +942,7 @@ const planHtml = (m, i) => {
   return `<div class="plan" data-plan="${i}">${p.changes.map((c) => `<div class="change"><span class="scope">${SCOPE[c.scope]}</span>${c.override ? ' <span class="scope over">Replaces inherited styles</span>' : ''} <b>${esc(c.name)}</b>
       <p class="after">${esc(c.style)}</p>${c.before ? `<details><summary>Current style</summary><p class="before">${esc(c.before)}</p></details>` : ''}</div>`).join('')}
     ${(p.edits || []).map((e) => `<div class="change"><span class="scope">Edit cover</span> <b>${esc(e.title)}</b><p class="after">${esc(e.change)}</p></div>`).join('')}
-    ${(p.references || []).map((r) => `<div class="change"><span class="scope">Based on</span> <b>${esc(r.refTitle)}</b><p class="after">${r.bookIds.length} book${r.bookIds.length > 1 ? 's' : ''} made by editing this cover — ${r.mode === 'exact' ? '<b>exactly</b>: only title and byline change' : r.mode === 'similar' ? '<b>similar</b>: fresh covers from its style prompt' : '<b>its style</b>: new title, byline and illustration'}: ${esc(r.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${r.bookIds.length > 6 ? '…' : ''}</p>${thumbsHtml([r.refBookId])}</div>`).join('')}
+    ${(p.references || []).map((r) => `<div class="change"><span class="scope">Based on</span> <b>${esc(r.refTitle)}</b><p class="after">${r.bookIds.length} book${r.bookIds.length > 1 ? 's' : ''} made by editing this cover — ${r.mode === 'exact' ? '<b>same cover</b>: only title and byline change' : r.mode === 'similar' ? '<b>similar style</b>: fresh covers from its style prompt' : '<b>same style</b>: new title, byline and illustration'}: ${esc(r.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${r.bookIds.length > 6 ? '…' : ''}</p>${thumbsHtml([r.refBookId])}</div>`).join('')}
     ${m.applied ? `<p class="applied">Applied ✓${m.applied === 'gen' ? ` · generating ${gen.length}` : m.applied === 'edit' ? ` · editing ${p.edits.length}` : ''}</p>` : `<div class="plan-actions">
       ${p.references?.length ? `<button type="button" class="btn small gold" data-apply-refs>Base them on it &amp; generate ${p.references.reduce((n, r) => n + r.bookIds.length, 0)}</button><button type="button" class="btn small" data-apply-refs-only>Just link them</button>` : ''}
       ${p.edits?.length ? `<button type="button" class="btn small gold" data-apply-edits>✎ Edit ${p.edits.length > 1 ? `${p.edits.length} covers` : 'this cover'}</button>` : ''}
