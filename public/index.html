@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=39" />
+  <link rel="stylesheet" href="/styles.css?v=41" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -173,7 +173,7 @@
             <input type="file" id="im-file" accept="image/*" hidden />
           </div>
           <div class="im-model" id="im-model" hidden data-write>
-            <span id="im-model-lab">From the model:</span>
+            <div class="im-model-head" id="im-model-lab"></div>
             <button type="button" class="btn small" data-like="similar">Similar Style</button>
             <button type="button" class="btn small gold" data-like="style" title="Edit the model's cover: new art, title and author">Same Style</button>
             <button type="button" class="btn small" data-like="exact" title="Edit the model's cover: only title and author change">Same Cover</button>
@@ -253,6 +253,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=47"></script>
+  <script type="module" src="/app.js?v=49"></script>
 </body>
 </html>

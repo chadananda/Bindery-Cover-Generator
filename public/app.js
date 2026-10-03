@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=47';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=49';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -751,21 +751,26 @@ function renderManager() {
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')
     .map((l) => `<p class="layer-line ${l.overridden ? 'overridden' : ''}"><b>${l.level}</b> ${esc(l.name)}${l.override ? ' <em>(replaces the styles above)</em>' : ''} — ${esc(l.style || '(no style text)')}${l.overridden ? ' <em>(replaced)</em>' : ''}</p>`).join('');
   $('im-override').checked = !!b.override;
+  // ONE "from the model" block: its source is this book's saved source (Based on) or else the library's model.
   const refB = b.refBookId && project.books.find((x) => x.id === b.refBookId), refV = refB && currentVersion(refB);
-  const model = project.books.find((x) => x.id === project.app.modelBookId);
-  const showModel = !!model && model.id !== b.id && !!currentVersion(model);
-  $('im-model').hidden = !showModel;
-  if (showModel) {
-    $('im-model-lab').textContent = `From the model “${model.title}”:`;
-    const sim = $('im-model').querySelector('[data-like="similar"]');
-    sim.title = modelPrompt(model) ? "The model's exact prompt, with this book's title, author and illustration — a fresh generation"
-      : "A fresh generation in the model's look (read from its image, since it has no prompt to reuse), with this book's title, author and illustration";
-    $('im-model').querySelectorAll('[data-like]').forEach((x) => x.setAttribute('aria-current', b.refBookId === model.id && (b.refMode || 'style') === x.dataset.like));
+  const libModel = project.books.find((x) => x.id === project.app.modelBookId);
+  const src = refV ? refB : libModel && libModel.id !== b.id && currentVersion(libModel) ? libModel : null, srcV = src && currentVersion(src);
+  $('im-ref').hidden = true;
+  $('im-model').hidden = !src;
+  if (src) {
+    const mode = b.refBookId === src.id ? b.refMode || 'style' : null;
+    $('im-model-lab').innerHTML = `<button type="button" class="ref-img" data-open-ref="${src.id}" title="Open ${esc(src.title)}">${pic(srcV.cover || srcV.raw, src.title, '40px', [160], true, srcV)}</button>
+      <span>${refV ? 'Based on' : 'From the model'} <b>“${esc(src.title)}”</b></span>${refV ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
+      + (refV && libModel && libModel.id !== src.id && libModel.id !== b.id ? `<button type="button" class="use-model" data-use-model>Use the model “${esc(libModel.title)}” instead</button>` : '');
+    $('im-model').querySelectorAll('[data-like]').forEach((x) => x.setAttribute('aria-current', x.dataset.like === mode));
+    $('im-model').querySelector('[data-like="similar"]').title = modelPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
+      : "A fresh generation in its look (read from its image — it has no prompt to reuse), with this book's title, author and illustration";
   }
-  $('im-prompt').textContent = !refV ? composePrompt(project, b) : b.refMode === 'similar' ? composePrompt(project, b, { styleFrom: refB }) : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact' });
-  $('im-ref').hidden = !refB;
-  if (refB) $('im-ref').innerHTML = `<span class="ref-lab">Based on</span><button type="button" class="ref-img" data-open-ref="${refB.id}" title="Open ${esc(refB.title)}">${refV ? pic(refV.cover || refV.raw, refB.title, '40px', [160], true, refV) : ''}</button><b>${esc(refB.title)}</b>
-    <span class="refmode" role="radiogroup" aria-label="How it's based on it"><button type="button" data-refmode="similar" aria-checked="${b.refMode === 'similar'}" data-write title="Fresh generation with its style prompt">Similar style</button><button type="button" data-refmode="style" aria-checked="${!['similar', 'exact'].includes(b.refMode)}" data-write title="Edit of its picture: same binding, own illustration">Same style</button><button type="button" data-refmode="exact" aria-checked="${b.refMode === 'exact'}" data-write title="Identical; only title and byline change">Same cover</button></span><button type="button" class="ref-x" data-unref-book data-write title="Stop basing this cover on ${esc(refB.title)}" aria-label="Unlink reference">×</button>`;
+  const gen = document.querySelector('#imgmgr [data-act="generate"]');
+  gen.textContent = src ? '✦ Generate new · own style' : '✦ Generate new'; gen.classList.toggle('gold', !src);
+  $('im-prompt').textContent = !refV ? composePrompt(project, b) : b.refMode === 'similar'
+    ? (modelPrompt(refB) ? retitlePrompt(modelPrompt(refB), project, b) : `(The look of “${refB.title}” is read from its image when you generate, then:)\n\n` + composePrompt(project, b, { styleText: '…its described look…' }))
+    : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact' });
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
@@ -792,10 +797,10 @@ for (const [id, field] of Object.entries(imFields)) {
     if (field === 'title' || field === 'author') $('im-title').textContent = [b.title, b.author, shelfById(b.shelfId)?.name].filter(Boolean).join(' · ');
   });
 }
-$('im-ref').addEventListener('click', (e) => {
+$('im-model').addEventListener('click', (e) => {
   const b = imBook(); if (!b) return;
   if (e.target.closest('[data-unref-book]') && authed) { b.refBookId = ''; patch('books', b.id, { refBookId: '' }); renderManager(); return; }
-  const rm = e.target.closest('[data-refmode]'); if (rm && authed) { b.refMode = rm.dataset.refmode; patch('books', b.id, { refMode: b.refMode }); renderManager(); return; }
+  if (e.target.closest('[data-use-model]') && authed) { b.refBookId = project.app.modelBookId; patch('books', b.id, { refBookId: b.refBookId }); renderManager(); return; }
   const o = e.target.closest('[data-open-ref]'); if (o) openManager(o.dataset.openRef);
 });
 $('im-override').addEventListener('change', (e) => { const b = imBook(); b.override = e.target.checked; patch('books', b.id, { override: b.override }); renderManager(); });
@@ -819,7 +824,8 @@ $('imgmgr').addEventListener('click', async (e) => {
   if (ver && authed) { b.selected = ver.dataset.ver; patch('books', b.id, { selected: b.selected }); renderManager(); renderCard(b.id); imStatus('Now the current cover ✓', 'ok'); return; }
   const like = e.target.closest('[data-like]');
   if (like && authed) {
-    const model = project.books.find((x) => x.id === project.app.modelBookId); if (!model) return;
+    // the block's source: this book's saved source, else the library's model
+    const model = project.books.find((x) => x.id === (b.refBookId && project.books.some((y) => y.id === b.refBookId) ? b.refBookId : project.app.modelBookId)); if (!model) return;
     Object.assign(b, { refBookId: model.id, refMode: like.dataset.like }); patch('books', b.id, { refBookId: model.id, refMode: like.dataset.like });
     imBusy(true, 'Generating from the model… (~20–40s)'); imStatus('Generating from the model…');
     try { await produce(b, { removeBg: $('im-removebg').checked, lookId: model.versions.find((v) => v.id === model.selected)?.lookId || null }); imStatus('Done ✓ — saved as a new version', 'ok'); }
