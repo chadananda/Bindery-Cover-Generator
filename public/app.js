@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=51';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=52';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -759,11 +759,9 @@ function renderManager() {
   $('im-ref').hidden = true;
   $('im-model').hidden = !src;
   if (src) {
-    const mode = b.refBookId === src.id ? b.refMode || 'style' : null;
     $('im-model-lab').innerHTML = `<button type="button" class="ref-img" data-open-ref="${src.id}" title="Open ${esc(src.title)}">${pic(srcV.cover || srcV.raw, src.title, '40px', [160], true, srcV)}</button>
       <span>${src === libModel ? 'From the model' : 'Based on'} <b>“${esc(src.title)}”</b></span>${src !== libModel ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
       + (refV && src === libModel && refB.id !== libModel.id ? `<small class="prev-src">Previously based on “${esc(refB.title)}” — these buttons use the model.</small>` : '');
-    $('im-model').querySelectorAll('[data-like]').forEach((x) => x.setAttribute('aria-current', x.dataset.like === mode));
     $('im-model').querySelector('[data-like="similar"]').title = modelPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
       : "A fresh generation in its look (read from its image — it has no prompt to reuse), with this book's title, author and illustration";
   }
