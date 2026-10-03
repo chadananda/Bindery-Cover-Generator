@@ -95,10 +95,13 @@ export function sanitizePlan(p, plan) {
 }
 
 /** One chat turn. messages: [{role:'user'|'assistant', text}]. callModel(contents) → parts. */
-export async function runChat({ project, messages, focusBookId, callModel, describeCover }) {
+export async function runChat({ project, messages, focusBookId, selectedIds = [], callModel, describeCover }) {
   const focus = project.books.find((b) => b.id === focusBookId);
+  // Books ticked on the shelves: "these", "the selected ones" mean exactly these.
+  const sel = selectedIds.map((id) => project.books.find((b) => b.id === id)).filter(Boolean);
+  const selText = sel.length ? `\n\nThe user has SELECTED ${sel.length} book${sel.length > 1 ? 's' : ''} on the shelves (when they say "these", "the selected ones" or "them", they mean exactly these): ${sel.slice(0, 200).map((b) => `${b.id} “${b.title}”`).join(', ')}${sel.length > 200 ? ', …' : ''}.` : '';
   const contents = [
-    { role: 'user', parts: [{ text: `${catalogue(project)}${focus ? `\n\nThe user is looking at book ${focus.id} (${focus.title}).` : ''}` }] },
+    { role: 'user', parts: [{ text: `${catalogue(project)}${focus ? `\n\nThe user is looking at book ${focus.id} (${focus.title}).` : ''}${selText}` }] },
     { role: 'model', parts: [{ text: 'Understood.' }] },
     ...messages.slice(-12).map((m) => {
       // Covers the user attached (clicked on the shelves) arrive as ids; name them for the model.

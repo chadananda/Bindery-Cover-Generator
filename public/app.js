@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=27';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=28';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -258,6 +258,7 @@ function renderCard(bookId) {
 
 function renderSelbar() {
   const n = selected.size;
+  if (typeof chat !== 'undefined' && chatOpen()) renderRefs();
   $('selbar').hidden = !n;
   $('sel-count').textContent = `${n} selected`;
   $('sel-move').innerHTML = `<option value="" disabled selected>Move to shelf…</option>` + project.shelves.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
@@ -813,6 +814,8 @@ const closeChat = () => closePane('chat');
 chat.refs = [];
 function addRef(id) { if (!chat.refs.includes(id)) chat.refs.push(id); renderRefs(); $('chat-input').focus(); }
 function renderRefs() {
+  $('chat-sel').hidden = !selected.size;
+  $('chat-sel').innerHTML = selected.size ? `<span class="dot"></span>The Binder sees your <b>${selected.size}</b> selected book${selected.size > 1 ? 's' : ''} — say “these” to act on them.` : '';
   $('chat-refs').hidden = !chat.refs.length;
   $('chat-refs').innerHTML = chat.refs.map((id) => {
     const b = project.books.find((x) => x.id === id); if (!b) return '';
@@ -872,7 +875,7 @@ async function sendChat(text) {
   chat.messages.push({ role: 'user', text: text.trim(), refs: chat.refs }); chat.refs = []; renderRefs(); chat.busy = true; renderChat();
   let s = 0; const tick = setInterval(() => { const el = $('chat-stage'); if (el) el.textContent = STAGES[++s % STAGES.length]; }, 3500);
   try {
-    const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text, refs }) => ({ role, text, refs })), focusBookId: im?.bookId || chat.focus }) });
+    const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text, refs }) => ({ role, text, refs })), focusBookId: im?.bookId || chat.focus, selectedIds: [...selected] }) });
     chat.messages.push({ role: 'assistant', text: r.reply, plan: r.plan, books: r.books || [] });
   } catch (e) { chat.messages.push({ role: 'assistant', text: `Something went wrong: ${e.message}`, error: true }); }
   finally { clearInterval(tick); chat.busy = false; renderChat(); }

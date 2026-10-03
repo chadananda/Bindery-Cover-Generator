@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=26" />
+  <link rel="stylesheet" href="/styles.css?v=28" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -224,6 +224,7 @@
     <div class="chat-rule"></div>
     <div class="chat-body" id="chat-body" role="log" aria-live="polite"></div>
     <form class="chat-compose" id="chat-form">
+      <p class="chat-sel" id="chat-sel" hidden></p>
       <div class="refs" id="chat-refs" hidden></div>
       <div class="compose-row">
       <textarea id="chat-input" rows="1" placeholder="e.g. The style on The Masnavi is what I want — use it for the rest of the Islam shelf"></textarea>
@@ -244,6 +245,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=27"></script>
+  <script type="module" src="/app.js?v=28"></script>
 </body>
 </html>

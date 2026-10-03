@@ -101,6 +101,16 @@ describe('runChat', () => {
     expect(last).toContain('use this one');
   });
 
+  it('tells the model which books are ticked (selected) on the shelves', async () => {
+    const m = script([[{ text: 'ok' }]]);
+    await runChat({ project, messages: [{ role: 'user', text: 'generate the selected ones' }], selectedIds: ['b2', 'b3', 'zzz'], callModel: m.call });
+    const ctx = m.seen[0][0].parts[0].text;
+    expect(ctx).toMatch(/selected/i);
+    expect(ctx).toContain('b2 “Diwan”');
+    expect(ctx).toContain('b3 “Sahih Muslim 1”');
+    expect(ctx).not.toContain('zzz');
+  });
+
   it('answers plain questions without a plan', async () => {
     const m = script([[{ text: 'There are 3 books.' }]]);
     expect(await runChat({ project, messages: [{ role: 'user', text: 'how many?' }], callModel: m.call })).toEqual({ reply: 'There are 3 books.', plan: null, books: [] });

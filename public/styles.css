@@ -481,3 +481,7 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .im-ref .ref-lab { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); }
 .im-ref small { color: var(--ink-3); }
 .im-ref .ref-x { margin-left: auto; }
+
+.chat-sel { margin: 0; display: flex; align-items: center; gap: .45rem; font-size: 13px; color: #5c5244; }
+.chat-sel .dot { width: 8px; height: 8px; border-radius: 50%; background: #e2ad44; }
+:root[data-theme="dark"] .chat-sel { color: #cfc6b8; }
