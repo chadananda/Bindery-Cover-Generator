@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=50';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=51';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -751,17 +751,18 @@ function renderManager() {
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')
     .map((l) => `<p class="layer-line ${l.overridden ? 'overridden' : ''}"><b>${l.level}</b> ${esc(l.name)}${l.override ? ' <em>(replaces the styles above)</em>' : ''} — ${esc(l.style || '(no style text)')}${l.overridden ? ' <em>(replaced)</em>' : ''}</p>`).join('');
   $('im-override').checked = !!b.override;
-  // ONE "from the model" block: its source is this book's saved source (Based on) or else the library's model.
+  // ONE "from the model" block. Its source is THE MODEL (★) the user chose; a book's older saved link is only noted.
+  // (Preferring the saved link sent a "Same Style from Divorce" to a previous source instead.)
   const refB = b.refBookId && project.books.find((x) => x.id === b.refBookId), refV = refB && currentVersion(refB);
   const libModel = project.books.find((x) => x.id === project.app.modelBookId);
-  const src = refV ? refB : libModel && libModel.id !== b.id && currentVersion(libModel) ? libModel : null, srcV = src && currentVersion(src);
+  const src = libModel && libModel.id !== b.id && currentVersion(libModel) ? libModel : refV ? refB : null, srcV = src && currentVersion(src);
   $('im-ref').hidden = true;
   $('im-model').hidden = !src;
   if (src) {
     const mode = b.refBookId === src.id ? b.refMode || 'style' : null;
     $('im-model-lab').innerHTML = `<button type="button" class="ref-img" data-open-ref="${src.id}" title="Open ${esc(src.title)}">${pic(srcV.cover || srcV.raw, src.title, '40px', [160], true, srcV)}</button>
-      <span>${refV ? 'Based on' : 'From the model'} <b>“${esc(src.title)}”</b></span>${refV ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
-      + (refV && libModel && libModel.id !== src.id && libModel.id !== b.id ? `<button type="button" class="use-model" data-use-model>Use the model “${esc(libModel.title)}” instead</button>` : '');
+      <span>${src === libModel ? 'From the model' : 'Based on'} <b>“${esc(src.title)}”</b></span>${src !== libModel ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
+      + (refV && src === libModel && refB.id !== libModel.id ? `<small class="prev-src">Previously based on “${esc(refB.title)}” — these buttons use the model.</small>` : '');
     $('im-model').querySelectorAll('[data-like]').forEach((x) => x.setAttribute('aria-current', x.dataset.like === mode));
     $('im-model').querySelector('[data-like="similar"]').title = modelPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
       : "A fresh generation in its look (read from its image — it has no prompt to reuse), with this book's title, author and illustration";
@@ -800,7 +801,6 @@ for (const [id, field] of Object.entries(imFields)) {
 $('im-model').addEventListener('click', (e) => {
   const b = imBook(); if (!b) return;
   if (e.target.closest('[data-unref-book]') && authed) { b.refBookId = ''; patch('books', b.id, { refBookId: '' }); renderManager(); return; }
-  if (e.target.closest('[data-use-model]') && authed) { b.refBookId = project.app.modelBookId; patch('books', b.id, { refBookId: b.refBookId }); renderManager(); return; }
   const o = e.target.closest('[data-open-ref]'); if (o) openManager(o.dataset.openRef);
 });
 $('im-override').addEventListener('change', (e) => { const b = imBook(); b.override = e.target.checked; patch('books', b.id, { override: b.override }); renderManager(); });
@@ -826,8 +826,9 @@ $('imgmgr').addEventListener('click', async (e) => {
   if (ver && authed) { b.selected = ver.dataset.ver; patch('books', b.id, { selected: b.selected }); renderManager(); renderCard(b.id); imStatus('Now the current cover ✓', 'ok'); return; }
   const like = e.target.closest('[data-like]');
   if (like && authed) {
-    // the block's source: this book's saved source, else the library's model
-    const model = project.books.find((x) => x.id === (b.refBookId && project.books.some((y) => y.id === b.refBookId) ? b.refBookId : project.app.modelBookId)); if (!model) return;
+    // the block's source: THE MODEL if one is set (and isn't this book), else this book's saved source
+    const lm = project.books.find((x) => x.id === project.app.modelBookId);
+    const model = lm && lm.id !== b.id ? lm : project.books.find((x) => x.id === b.refBookId); if (!model) return;
     Object.assign(b, { refBookId: model.id, refMode: like.dataset.like }); patch('books', b.id, { refBookId: model.id, refMode: like.dataset.like });
     imBusy(true, 'Generating from the model… (~20–40s)'); imStatus('Generating from the model…');
     try { await produce(b, { removeBg: $('im-removebg').checked, lookId: model.versions.find((v) => v.id === model.selected)?.lookId || null }); imStatus('Done ✓ — saved as a new version', 'ok'); }

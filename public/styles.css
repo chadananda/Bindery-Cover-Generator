@@ -538,4 +538,5 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .im-model-head { flex-basis: 100%; display: flex; align-items: center; gap: .45rem; font-size: 13px; color: #3d352a; }
 .im-model-head .ref-x { margin-left: auto; }
 .im-model .btn[aria-current="true"] { box-shadow: 0 0 0 2px #c8a24b; }
+.prev-src { flex-basis: 100%; font-size: 12px; color: #6b6150; }
 .use-model { flex-basis: 100%; text-align: left; font: 600 12px var(--sans); color: #7a3a1c; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
