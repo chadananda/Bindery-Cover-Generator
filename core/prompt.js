@@ -122,18 +122,27 @@ export const isGenerationPrompt = (p) => /^Front cover of a book/.test(p || '');
  *  changes only the title and byline and keeps the illustration as it is. */
 export function composeBasedOnPrompt(project, book, refTitle, { exact = false } = {}) {
   const k = keyColor(project);
-  const about = (book?.content || '').trim()
-    ? `a new centre illustration showing: ${book.content.trim()}`
-    : `a new centre illustration that evokes this book${(book?.description || '').trim() ? ` (context only, never print it: ${book.description.trim().slice(0, 600)})` : ''}`;
-  return `Edit this exact photograph. It is the cover of "${refTitle}". Turn it into the cover of another volume of the same set:\n` +
-    `1. Replace the title lettering with "${(book?.title || '').trim()}"${book?.subtitle ? ` and the subtitle "${book.subtitle.trim()}"` : ''}, in the same typeface, size, colour, finish and placement.\n` +
-    `2. ${(book?.author || '').trim() ? `Replace the byline with "${book.author.trim()}", in the same style and place.` : 'Remove the byline.'}\n` +
-    (exact ? `3. Keep the centre illustration exactly as it is — the same image, unchanged.\n\n`
-      : `3. Replace the centre illustration with ${about}, in exactly the same technique, materials, size and frame.\n\n`) +
-    `Change nothing else. Everything else stays pixel-for-pixel: the same book, leather colour and texture, wear and patina, ` +
-    `border and corner ornaments, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +
-    `crop or zoom. Do not print any other text. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, ` +
-    `and keep the same ${k.name.toLowerCase()} margin around all edges of the book.`;
+  const title = (book?.title || '').trim(), sub = (book?.subtitle || '').trim(), author = (book?.author || '').trim();
+  const lettering = [
+    `Replace the title lettering with "${title}"${sub ? ` and the subtitle "${sub}"` : ''}, in the same typeface, size, colour, finish and placement as the current title.`,
+    author ? `Replace the byline with "${author}", in the same style and place.` : 'Remove the byline.',
+  ];
+  const keep = `Keep the book itself exactly as it is: the same binding and material, colour and texture, wear and patina, border and ` +
+    `ornaments, typeface and layout, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +
+    `crop or zoom. Do not print any other text. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and ` +
+    `keep the same ${k.name.toLowerCase()} margin around all edges of the book.`;
+  if (exact) {
+    return `Edit this exact photograph. It is the cover of "${refTitle}". Make it the cover of another volume of the same set by ` +
+      `changing ONLY the text:\n1. ${lettering[0]}\n2. ${lettering[1]}\n3. Keep the centre illustration exactly as it is — the same image, unchanged.\n\n` + keep;
+  }
+  // Same Style: NEW art is the point. Stated first and explicitly — as item 3 under "change nothing else" the model kept the old art.
+  const subject = (book?.content || '').trim() ? book.content.trim()
+    : (book?.description || '').trim() ? `an image that evokes this book (context only, never print it: ${book.description.trim().slice(0, 600)})`
+    : `an image that symbolises "${title}"`;
+  return `Edit this photograph. It is the cover of "${refTitle}"; turn it into the cover of a different book in the same set.\n` +
+    `1. THE CENTRE ILLUSTRATION: remove the existing centre illustration completely — it belongs to "${refTitle}" and must not appear ` +
+    `on this cover. In its place draw a NEW illustration: ${subject}. Use the same technique, materials, colours, size and frame as ` +
+    `the illustration it replaces, so it clearly belongs to the same set.\n2. ${lettering[0]}\n3. ${lettering[1]}\n\n` + keep;
 }
 
 export function composeEditPrompt(project, change) {

@@ -127,13 +127,13 @@ describe('effectiveStyles', () => {
   it('a book based on another cover is an EDIT of that photograph: only title, byline and illustration change', async () => {
     const { composeBasedOnPrompt } = await import('../core/prompt.js');
     const p = composeBasedOnPrompt({ app: { keyColor: 'magenta' } }, { title: 'The Bustan', author: 'Saadi', description: 'Moral tales in verse about justice and humility.' }, 'The Masnavi');
-    expect(p).toMatch(/edit this exact photograph/i);
+    expect(p).toMatch(/edit this photograph/i);
     expect(p).toContain('The Masnavi');
     expect(p).toContain('"The Bustan"');
     expect(p).toContain('"Saadi"');
     expect(p).toMatch(/justice and humility/);           // the description guides the new illustration…
     expect(p).toMatch(/never print|not.*printed|do not print/i); // …but is never printed
-    expect(p).toMatch(/pixel-for-pixel/i);
+    expect(p).toMatch(/keep the book itself exactly/i);
     expect(p).toContain('#FF00FF');
     const withContent = composeBasedOnPrompt({ app: {} }, { title: 'X', content: 'a nightingale on a rose' }, 'Y');
     expect(withContent).toContain('a nightingale on a rose');
@@ -156,7 +156,7 @@ describe('effectiveStyles', () => {
     expect(exact).toMatch(/keep the centre illustration exactly/i);
     expect(exact).not.toMatch(/hadith on prayer/);                // no new illustration brief
     const style = composeBasedOnPrompt({ app: {} }, { title: 'Book 2', description: 'hadith on prayer' }, 'Book 1');
-    expect(style).toMatch(/replace the centre illustration/i);
+    expect(style).toMatch(/remove the existing centre illustration/i);
     expect(style).toMatch(/hadith on prayer/);
   });
 
@@ -201,6 +201,18 @@ describe('effectiveStyles', () => {
     expect(p).not.toContain('emerald girih');
     expect(p).toContain('"Divan"');
     expect(p).toMatch(/^Front cover of a book/);
+  });
+
+  it('Same Style REPLACES the model\'s art (explicitly, first), with a concrete subject even without a description', async () => {
+    const { composeBasedOnPrompt } = await import('../core/prompt.js');
+    const p = composeBasedOnPrompt({ app: {} }, { title: 'Centres of Bahá’í Learning', author: 'Research Department' }, 'Divorce');
+    const art = p.search(/illustration/i), title = p.search(/title lettering/i);
+    expect(art).toBeGreaterThan(-1);
+    expect(art).toBeLessThan(title);                                    // the art change comes first
+    expect(p).toMatch(/remove the existing centre illustration (completely|entirely)/i);
+    expect(p).toMatch(/must not appear/i);
+    expect(p).toContain('Centres of Bahá’í Learning');                  // subject falls back to the title
+    expect(p).not.toMatch(/everything else stays pixel-for-pixel/i);    // no blanket "keep everything" that protects the art
   });
 });
 
