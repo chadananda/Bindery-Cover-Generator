@@ -19,7 +19,7 @@ describe('store', () => {
     await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'Quran', shelfId: 's1', sample: true, junk: 'ignored' }]);
     await insertRows(db, 'ocean', 'versions', [{ id: 'v1', bookId: 'b1', cover: 'sets/ocean/covers/b1/1.png', prompt: 'p', at: 1 }]);
     const p = await loadLibrary(db, 'ocean');
-    expect(p.app).toEqual({ name: 'Ocean', style: 'leather', keyColor: 'magenta', lookId: null });
+    expect(p.app).toEqual({ name: 'Ocean', style: 'leather', keyColor: 'magenta', lookId: null, modelBookId: '' });
     expect(p.shelves).toEqual([{ id: 's1', name: 'Islam', style: 'green', override: false }]);
     const b = p.books[0];
     expect(b).toMatchObject({ id: 'b1', title: 'Quran', shelfId: 's1', sample: true, author: '' });
@@ -58,9 +58,19 @@ describe('store', () => {
     expect(p.books[0].override).toBe(true);
   });
 
+  it('a library has ONE model book (modelBookId), set and cleared on the library', async () => {
+    await patchRow(db, 'ocean', 'libraries', 'ocean', { modelBookId: 'b7' });
+    expect((await loadLibrary(db, 'ocean')).app.modelBookId).toBe('b7');
+    await patchRow(db, 'ocean', 'libraries', 'ocean', { modelBookId: '' });
+    expect((await loadLibrary(db, 'ocean')).app.modelBookId).toBe('');
+  });
+
   it('a book can point at a reference book (refBookId)', async () => {
     await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'A' }, { id: 'b2', title: 'B', refBookId: 'b1' }]);
     expect((await loadLibrary(db, 'ocean')).books[1].refBookId).toBe('b1');
+    expect((await loadLibrary(db, 'ocean')).books[1].refMode).toBe('style');
+    await patchRow(db, 'ocean', 'books', 'b2', { refMode: 'exact' });
+    expect((await loadLibrary(db, 'ocean')).books[1].refMode).toBe('exact');
     await patchRow(db, 'ocean', 'books', 'b2', { refBookId: '' });
     expect((await loadLibrary(db, 'ocean')).books[1].refBookId).toBe('');
   });

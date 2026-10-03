@@ -148,5 +148,29 @@ describe('effectiveStyles', () => {
     // only one layer: no precedence line needed
     expect(compose({ app: { style: 'leather' } }, { title: 'X' })).not.toMatch(/more specific/i);
   });
+
+  it('"exactly" based-on keeps the model\'s illustration; only title and byline change', async () => {
+    const { composeBasedOnPrompt } = await import('../core/prompt.js');
+    const exact = composeBasedOnPrompt({ app: {} }, { title: 'Book 2', author: 'Muslim', description: 'hadith on prayer' }, 'Book 1', { exact: true });
+    expect(exact).toContain('"Book 2"');
+    expect(exact).toMatch(/keep the centre illustration exactly/i);
+    expect(exact).not.toMatch(/hadith on prayer/);                // no new illustration brief
+    const style = composeBasedOnPrompt({ app: {} }, { title: 'Book 2', description: 'hadith on prayer' }, 'Book 1');
+    expect(style).toMatch(/replace the centre illustration/i);
+    expect(style).toMatch(/hadith on prayer/);
+  });
+
+  it('"similar" is a fresh prompt with the MODEL\'s style layers but this book\'s own title and illustration', async () => {
+    const { composePrompt: compose } = await import('../core/prompt.js');
+    const proj = { app: { style: 'leather' }, shelves: [{ id: 'a', name: 'Islam', style: 'emerald, girih' }, { id: 'b', name: 'Tao', style: 'indigo silk' }] };
+    const model = { title: 'The Masnavi', shelfId: 'a', style: 'copper corner guards' };
+    const p = compose(proj, { title: 'Tao Te Ching', shelfId: 'b', content: 'a mountain path' }, { styleFrom: model });
+    expect(p).toContain('emerald, girih');
+    expect(p).toContain('copper corner guards');
+    expect(p).not.toContain('indigo silk');
+    expect(p).toContain('Tao Te Ching');
+    expect(p).toContain('a mountain path');
+    expect(p).not.toContain('The Masnavi');
+  });
 });
 

@@ -55,7 +55,7 @@ describe('sanitizePlan', () => {
 
   it('keeps references: a reference book with a cover, and other existing books to base on it', () => {
     const plan = sanitizePlan(project, { changes: [], references: [{ refBookId: 'b1', bookIds: ['b2', 'b3', 'b1', 'zzz'], generate: true }, { refBookId: 'b2', bookIds: ['b3'] }] });
-    expect(plan.references).toEqual([{ refBookId: 'b1', refTitle: 'The Masnavi', bookIds: ['b2', 'b3'], generate: true }]);
+    expect(plan.references).toEqual([{ refBookId: 'b1', refTitle: 'The Masnavi', bookIds: ['b2', 'b3'], generate: true, mode: 'style' }]);
   });
 
   it('returns null for an empty plan', () => {

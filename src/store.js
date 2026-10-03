@@ -3,10 +3,10 @@
 // Looks are append-only. Versions can't be edited (w/h size is patchable metadata); generated versions can be deleted
 // (failed iterations), site covers never. Deleting a book keeps its versions.
 const COLS = {
-  libraries: ['name', 'style', 'keyColor', 'lookId'],
+  libraries: ['name', 'style', 'keyColor', 'lookId', 'modelBookId'],
   shelves: ['id', 'name', 'style', 'override'],
   collections: ['id', 'shelfId', 'name', 'style', 'override'],
-  books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample', 'override', 'refBookId'],
+  books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample', 'override', 'refBookId', 'refMode'],
   versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'aspect', 'edit', 'lookId', 'at', 'w', 'h'],
   looks: ['id', 'name', 'styles', 'notes', 'at'],
 };
@@ -26,7 +26,7 @@ export async function createLibrary(db, { id, name, style = '', keyColor = 'mage
 }
 
 export async function loadLibrary(db, lib) {
-  const app = await db.prepare('SELECT name, style, keyColor, lookId FROM libraries WHERE id = ?').bind(lib).first();
+  const app = await db.prepare('SELECT name, style, keyColor, lookId, modelBookId FROM libraries WHERE id = ?').bind(lib).first();
   if (!app) return null;
   const q = (sql) => db.prepare(sql).bind(lib).all().then((r) => r.results);
   const strip = ({ lib: _, ...row }) => row;

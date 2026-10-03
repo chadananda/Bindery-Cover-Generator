@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=34" />
+  <link rel="stylesheet" href="/styles.css?v=36" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -28,7 +28,6 @@
         <button type="button" class="nav-link" id="open-looks">Looks</button>
         <select id="shelf-jump" class="nav-select" aria-label="Show bookshelf"></select>
         <button type="button" class="nav-link" id="open-add" data-write>+ Books</button>
-        <button type="button" class="nav-link gold" id="try-look" data-write title="Generate a cover for every sample book (★) in the library, using the current styles">✦ Try look</button>
       </div>
       <button type="button" class="nav-link gold" id="login-nav" data-read>Log in to edit</button>
       <span id="save-state" class="save-state" aria-live="polite"></span>
@@ -57,7 +56,7 @@
   <div class="selbar" id="selbar" hidden role="region" aria-label="Selected books">
     <span id="sel-count" class="sel-count"></span>
     <button type="button" class="btn small gold" id="sel-generate" data-write>✦ Generate</button>
-    <button type="button" class="btn small" id="sel-sample" data-write title="Toggle sample (★): samples are what ✦ Try look generates">★ Sample</button>
+    <span class="regen" id="sel-regen" data-write><span class="regen-lab">From model:</span><button type="button" class="btn small" data-regen="similar" title="A fresh generation using the model's style prompt">✦ Similar · fresh</button><button type="button" class="btn small gold" data-regen="style" title="Same binding as the model; each book gets its own centre illustration">✦ Style · new art</button><button type="button" class="btn small" data-regen="exact" title="Identical to the model; only the title and byline change">✦ Exactly · text only</button></span>
     <button type="button" class="btn small" id="sel-download">⇩ Download</button>
     <select id="sel-move" data-write aria-label="Move to bookshelf"></select>
     <button type="button" class="btn small ghost danger" id="sel-delete" data-write>Remove</button>
@@ -207,7 +206,6 @@
           <label class="field"><span>Byline</span><input id="im-by" /></label>
         </div>
         <div class="row wrap">
-          <label class="check" data-write><input type="checkbox" id="im-sample" /> ★ Sample book</label>
           <label class="check" data-write><input type="checkbox" id="im-removebg" checked /> Cut away the background</label>
         </div>
         <details class="inherit"><summary>Inherited style</summary><div id="im-layers"></div></details>
@@ -251,6 +249,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=38"></script>
+  <script type="module" src="/app.js?v=41"></script>
 </body>
 </html>

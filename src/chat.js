@@ -7,6 +7,7 @@ export const CHAT_MODEL = 'gemini-3-flash-preview';
 
 export const catalogue = (p) => [
   `LIBRARY: ${p.app.name}\nLIBRARY STYLE: ${p.app.style || '(none)'}`,
+  ...(p.app.modelBookId ? [`MODEL COVER (the user's chosen edit source): ${p.app.modelBookId} “${p.books.find((b) => b.id === p.app.modelBookId)?.title || '?'}”`] : []),
   'SHELVES (id | name | style):', ...p.shelves.map((s) => `${s.id} | ${s.name} | ${s.style || '(none)'}`),
   'COLLECTIONS (id | name | shelf | style):', ...p.collections.map((c) => `${c.id} | ${c.name} | shelf ${c.shelfId || '-'} | ${c.style || '(none)'}`),
   'BOOKS (id | title | author | shelfId | collectionId | cover? | own style):',
@@ -37,6 +38,12 @@ Write style text as concrete visual instructions for an image model, never the b
 illustration (those come from each book). Keep the existing layer text when the user asks to "add" or "also".
 Use show_books to put thumbnails of the books you are talking about in front of the user (examples, matches, the
 books a change will affect — up to 12); they can open any of them. Finish with propose_plan when changes are wanted.
+Three ways to base books on a cover, loosest first: mode 'similar' ("similar style", "in the same spirit") generates each book
+FRESH from the model's style prompt; mode 'style' ("use this style", "like this but with their own art") edits the model's
+photograph keeping the binding and drawing each book its own centre illustration; mode 'exact' ("use this exactly", "same
+cover, just change the title") edits it changing only title and byline. If unclear, default to 'style'.
+"The model" means the MODEL COVER above; "regenerate these from the model" = references with that refBookId and
+generate: true.
 When the user wants other books based ON a particular cover ("make the others like this one", "base the Rumi books on
 The Masnavi", "use this cover for the whole collection"), propose references: refBookId = that book, bookIds = the others
 (resolve shelves/collections/authors to book ids), generate: true if they want them made now. This hands the model the
@@ -69,7 +76,8 @@ export const TOOLS = [{ functionDeclarations: [
       generateBookIds: { type: 'array', items: { type: 'string' } },
       references: { type: 'array', description: 'Base books on a reference cover: each is made by EDITING that cover photograph — new title, byline and centre illustration; everything else identical.', items: { type: 'object', properties: {
         refBookId: { type: 'string', description: 'the book whose current cover is the reference' }, bookIds: { type: 'array', items: { type: 'string' } },
-        generate: { type: 'boolean', description: 'also generate those books now' } }, required: ['refBookId', 'bookIds'] } },
+        generate: { type: 'boolean', description: 'also generate those books now' },
+        mode: { type: 'string', enum: ['similar', 'style', 'exact'], description: "'similar' = a FRESH generation with the model's style prompt; 'style' = edit the model's photograph: same binding, NEW centre illustration; 'exact' = edit the model's photograph: only title and byline change" } }, required: ['refBookId', 'bookIds'] } },
       edits: { type: 'array', description: "In-place edits of a book's current cover image", items: { type: 'object', properties: {
         bookId: { type: 'string' }, change: { type: 'string', description: 'one precise visual instruction, e.g. "make the leather a deeper forest green; keep everything else"' } }, required: ['bookId', 'change'] } } },
       required: ['changes'] } },
@@ -102,7 +110,7 @@ export function sanitizePlan(p, plan) {
   const references = (plan?.references || []).flatMap((r) => {
     const ref = p.books.find((b) => b.id === r.refBookId);
     const ids = [...new Set((r.bookIds || []).filter((id) => books.has(id) && id !== r.refBookId))];
-    return ref?.versions?.length && ids.length ? [{ refBookId: ref.id, refTitle: ref.title, bookIds: ids, generate: !!r.generate }] : [];
+    return ref?.versions?.length && ids.length ? [{ refBookId: ref.id, refTitle: ref.title, bookIds: ids, generate: !!r.generate, mode: ['similar', 'exact'].includes(r.mode) ? r.mode : 'style' }] : [];
   });
   return changes.length || generateBookIds.length || edits.length || references.length ? { changes, generateBookIds, edits, references } : null;
 }

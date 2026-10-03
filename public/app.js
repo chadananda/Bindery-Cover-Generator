@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=38';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=41';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -162,9 +162,7 @@ function renderAll() { renderBar(); renderShelves(); renderSelbar(); renderLookS
 
 function renderBar() {
   const covers = project.books.filter((b) => b.versions.length).length;
-  const samples = project.books.filter((b) => b.sample).length;
-  $('lib-stats').textContent = `${project.books.length.toLocaleString()} books · ${covers.toLocaleString()} with covers · ${samples} samples`;
-  $('try-look').disabled = !samples;
+  $('lib-stats').textContent = `${project.books.length.toLocaleString()} books · ${covers.toLocaleString()} with covers`;
   $('shelf-jump').innerHTML = `<option value="">All shelves</option>` + groups().map((g) => `<option value="${g.shelf?.id || '-'}" ${(g.shelf?.id || '-') === focusShelf ? 'selected' : ''}>${esc(g.shelf?.name || 'No shelf')} (${g.books.length})</option>`).join('');
   $('empty').hidden = project.books.length > 0;
 }
@@ -179,10 +177,10 @@ const cardHtml = (b, head = null) => {
     ${badge}
     <div class="thumb"><div class="book" data-open title="Open the Image Manager"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
       ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(b.title)}</span>`}
-      <button type="button" class="star ${b.sample ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${b.sample}" title="${b.sample ? 'Sample book — included in ✦ Try look' : 'Make this a sample book'}">★</button>
+      <button type="button" class="star ${project.app.modelBookId === b.id ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${project.app.modelBookId === b.id}" title="${project.app.modelBookId === b.id ? 'The model — selected books can be regenerated from it (click to clear)' : 'Make this the model (the edit source for Regenerate from model)'}">★</button>
     </div></div>
     <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
-      <span class="tags">${[coll?.name, b.versions.length > 1 ? `${b.versions.length} versions` : ''].filter(Boolean).map(esc).join(' · ')}</span>
+      <span class="tags">${project.app.modelBookId === b.id ? '<b class="model-tag">★ Model</b> ' : ''}${[coll?.name, b.versions.length > 1 ? `${b.versions.length} versions` : ''].filter(Boolean).map(esc).join(' · ')}</span>
       ${head ? `<button type="button" class="vols" data-coll-toggle="${b.collectionId}" aria-expanded="${head.open}">${head.open ? '▴' : '▾'} ${head.vols} volumes</button>
         <button type="button" class="head-edit" data-edit title="Open the collection cover in the editor">Edit cover</button>` : ''}</div>
   </article>`;
@@ -191,16 +189,15 @@ const cardHtml = (b, head = null) => {
 function renderShelves() {
   $('app').innerHTML = groups().filter((g) => !focusShelf || (g.shelf?.id || '-') === focusShelf).map((g) => {
     const id = g.shelf?.id || '-', open = !!focusShelf || !collapsed.has(id);
-    const covers = g.books.filter((b) => b.versions.length).length, samples = g.books.filter((b) => b.sample).length;
+    const covers = g.books.filter((b) => b.versions.length).length;
     const allSel = g.books.length && g.books.every((b) => selected.has(b.id));
     return `<section class="shelf" data-shelf="${id}">
       <header class="shelf-head">
         <input type="checkbox" class="pick-shelf" ${allSel ? 'checked' : ''} aria-label="Select every book on ${esc(g.shelf?.name || 'no shelf')}" />
         <button type="button" class="shelf-toggle" data-toggle aria-expanded="${open}"><span class="chev" aria-hidden="true">▸</span><h2>${esc(g.shelf?.name || 'No shelf')}</h2></button>
-        <span class="shelf-count">${g.books.length} books · ${covers} covers${samples ? ` · ${samples} ★` : ''}</span>
+        <span class="shelf-count">${g.books.length} books · ${covers} covers</span>
         <span class="spacer"></span>
         ${g.shelf ? `<button type="button" class="btn small" data-shelf-style>Shelf style</button>` : ''}
-        <button type="button" class="btn small gold" data-write data-shelf-samples ${samples ? '' : 'disabled'} title="${samples ? 'Generate the ★ sample books on this shelf with the current styles' : 'Star (★) a few books on this shelf to try looks on them'}">✦ Samples</button>
         ${g.shelf?.style ? `<p class="shelf-style-line">${esc(g.shelf.style)}</p>` : ''}
       </header>
       ${open ? `<div class="grid">${shelfCards(g.books)}</div>` : ''}
@@ -262,6 +259,9 @@ function renderSelbar() {
   $('selbar').hidden = !n;
   $('sel-count').textContent = `${n} selected`;
   $('sel-clear').textContent = `✕ Clear ${n}`;
+  const model = project.app.modelBookId, others = [...selected].filter((x) => x !== model).length;
+  $('sel-regen').hidden = !model || !others;
+  $('sel-regen').querySelector('.regen-lab').textContent = `Regenerate ${others} from model:`;
   $('sel-move').innerHTML = `<option value="" disabled selected>Move to shelf…</option>` + project.shelves.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
   document.body.classList.toggle('has-selbar', !!n);
 }
@@ -275,7 +275,7 @@ $('app').addEventListener('click', (e) => {
   const card = e.target.closest('[data-book]');
   if (card) {
     const id = card.dataset.book, b = project.books.find((x) => x.id === id);
-    if (e.target.closest('[data-star]') && authed) { b.sample = !b.sample; patch('books', id, { sample: b.sample }); renderCard(id); renderBar(); return; }
+    if (e.target.closest('[data-star]') && authed) { setModel(project.app.modelBookId === id ? '' : id); return; }
     if (e.target.closest('[data-edit]')) { openManager(id); return; }
     if (e.target.closest('[data-open]')) {
       if (card.dataset.head) { const c = card.dataset.head; openColls.has(c) ? openColls.delete(c) : openColls.add(c); store.set('openColls', [...openColls]); renderShelves(); return; }
@@ -301,10 +301,8 @@ $('app').addEventListener('click', (e) => {
   if (e.target.matches('.pick-shelf')) { books.forEach((b) => (e.target.checked ? selected.add(b.id) : selected.delete(b.id))); renderShelves(); renderSelbar(); return; }
   if (e.target.closest('[data-toggle]')) { if (focusShelf) return; collapsed.has(shelfId) ? collapsed.delete(shelfId) : collapsed.add(shelfId); store.set('collapsed', [...collapsed]); renderShelves(); return; }
   if (e.target.closest('[data-shelf-style]')) return openShelfDialog(shelfId);
-  if (e.target.closest('[data-shelf-samples]')) return generate(books.filter((b) => b.sample));
 });
 $('shelf-jump').addEventListener('change', (e) => { focusShelf = e.target.value; go(); renderShelves(); scrollTo({ top: 0 }); });
-$('try-look').addEventListener('click', () => generate(project.books.filter((b) => b.sample)));
 
 // Selection bar
 const selBooks = () => project.books.filter((b) => selected.has(b.id));
@@ -316,10 +314,19 @@ function syncSelection() {
 const clearSelection = () => { selected.clear(); lastPick = null; renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
 $('sel-clear').addEventListener('click', clearSelection);
 $('sel-generate').addEventListener('click', () => generate(selBooks()));
-$('sel-sample').addEventListener('click', () => {
-  const books = selBooks(), on = !books.every((b) => b.sample);
-  books.forEach((b) => { b.sample = on; patch('books', b.id, { sample: on }); });
-  renderShelves(); renderBar();
+// ONE model per library: ★ on a cover. Regenerate from model edits it into each selected book (based-on edit).
+function setModel(id) {
+  const prev = project.app.modelBookId; project.app.modelBookId = id; patch('libraries', lib, { modelBookId: id });
+  [prev, id].filter(Boolean).forEach(renderCard); renderSelbar();
+}
+$('sel-regen').addEventListener('click', (e) => {
+  const mode = e.target.closest('[data-regen]')?.dataset.regen; if (!mode) return;
+  const model = project.books.find((b) => b.id === project.app.modelBookId);
+  if (!model || !currentVersion(model)) return alert('Mark one cover as the model first (★ on its corner).');
+  const books = selBooks().filter((b) => b.id !== model.id);
+  books.forEach((b) => { if (b.refBookId !== model.id || b.refMode !== mode) { Object.assign(b, { refBookId: model.id, refMode: mode }); patch('books', b.id, { refBookId: model.id, refMode: mode }); } });
+  if (books[0]) openManager(books[0].id);
+  generate(books);
 });
 $('sel-move').addEventListener('change', (e) => {
   const shelfId = e.target.value;
@@ -601,14 +608,17 @@ async function produce(book, { removeBg = true, change = '', lookId = null } = {
   // Based on another book: EDIT that book's current cover for this one (same photograph; new title, byline, illustration).
   const refBook = !change && book.refBookId && project.books.find((x) => x.id === book.refBookId);
   const refV = refBook && currentVersion(refBook);
-  const basedOn = !!(refV?.cover || refV?.raw);
+  // 'similar' = fresh generation with the model's style layers; 'style'/'exact' = an edit of the model's photograph.
+  const similar = !!refBook && book.refMode === 'similar';
+  const basedOn = !similar && !!(refV?.cover || refV?.raw);
   const inputKey = change ? from.raw || await rawFromCover(book, from) : basedOn ? await refRaw(refBook, refV) : undefined;
-  const prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title) : composePrompt(project, book);
+  const prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact' })
+    : composePrompt(project, book, similar ? { styleFrom: refBook } : {});
   const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
-  return addVersion(book, { raw: rawKey, cover, prompt, aspect, w, h, edit: change || (basedOn ? `based on ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
+  return addVersion(book, { raw: rawKey, cover, prompt, aspect, w, h, edit: change || (basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
 }
 
 async function generate(books) {
@@ -649,7 +659,6 @@ function openManager(bookId) {
   $('bench-sub').textContent = [b.author, shelfById(b.shelfId)?.name].filter(Boolean).join(' · ') || 'Cover';
   $('im-style').value = b.style || '';
   $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
-  $('im-sample').checked = !!b.sample;
   imStatus(''); imBusy(status.get(bookId)?.state === 'busy', status.get(bookId)?.msg || 'Working…');
   renderManager();
   openPane('imgmgr');
@@ -708,17 +717,17 @@ $('adj-save').addEventListener('click', async () => {
 });
 
 // What a version is, for the History strip: site cover, upload, edit (of what), or the look that generated it.
-const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit?.startsWith('adjust') ? 'adjusted' : x.edit?.startsWith('based on') ? x.edit : x.edit ? 'edit' : x.lookId ? lookById(x.lookId)?.name || 'look' : 'generated';
+const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit?.startsWith('adjust') ? 'adjusted' : /^(based on|like) /.test(x.edit || '') ? x.edit : x.edit ? 'edit' : x.lookId ? lookById(x.lookId)?.name || 'look' : 'generated';
 function renderManager() {
   const b = imBook(); if (!b) return;
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')
     .map((l) => `<p class="layer-line ${l.overridden ? 'overridden' : ''}"><b>${l.level}</b> ${esc(l.name)}${l.override ? ' <em>(replaces the styles above)</em>' : ''} — ${esc(l.style || '(no style text)')}${l.overridden ? ' <em>(replaced)</em>' : ''}</p>`).join('');
   $('im-override').checked = !!b.override;
   const refB = b.refBookId && project.books.find((x) => x.id === b.refBookId), refV = refB && currentVersion(refB);
-  $('im-prompt').textContent = refV ? composeBasedOnPrompt(project, b, refB.title) : composePrompt(project, b);
+  $('im-prompt').textContent = !refV ? composePrompt(project, b) : b.refMode === 'similar' ? composePrompt(project, b, { styleFrom: refB }) : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact' });
   $('im-ref').hidden = !refB;
   if (refB) $('im-ref').innerHTML = `<span class="ref-lab">Based on</span><button type="button" class="ref-img" data-open-ref="${refB.id}" title="Open ${esc(refB.title)}">${refV ? pic(refV.cover || refV.raw, refB.title, '40px', [160], true, refV) : ''}</button><b>${esc(refB.title)}</b>
-    <small>· ✦ Generate edits that cover for this book</small><button type="button" class="ref-x" data-unref-book data-write title="Stop basing this cover on ${esc(refB.title)}" aria-label="Unlink reference">×</button>`;
+    <span class="refmode" role="radiogroup" aria-label="How it's based on it"><button type="button" data-refmode="similar" aria-checked="${b.refMode === 'similar'}" data-write title="Fresh generation with its style prompt">Similar</button><button type="button" data-refmode="style" aria-checked="${!['similar', 'exact'].includes(b.refMode)}" data-write title="Edit of its picture: same binding, own illustration">Style</button><button type="button" data-refmode="exact" aria-checked="${b.refMode === 'exact'}" data-write title="Identical; only title and byline change">Exactly</button></span><button type="button" class="ref-x" data-unref-book data-write title="Stop basing this cover on ${esc(refB.title)}" aria-label="Unlink reference">×</button>`;
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
@@ -748,10 +757,10 @@ for (const [id, field] of Object.entries(imFields)) {
 $('im-ref').addEventListener('click', (e) => {
   const b = imBook(); if (!b) return;
   if (e.target.closest('[data-unref-book]') && authed) { b.refBookId = ''; patch('books', b.id, { refBookId: '' }); renderManager(); return; }
+  const rm = e.target.closest('[data-refmode]'); if (rm && authed) { b.refMode = rm.dataset.refmode; patch('books', b.id, { refMode: b.refMode }); renderManager(); return; }
   const o = e.target.closest('[data-open-ref]'); if (o) openManager(o.dataset.openRef);
 });
 $('im-override').addEventListener('change', (e) => { const b = imBook(); b.override = e.target.checked; patch('books', b.id, { override: b.override }); renderManager(); });
-$('im-sample').addEventListener('change', (e) => { const b = imBook(); b.sample = e.target.checked; patch('books', b.id, { sample: b.sample }); });
 $('imgmgr').addEventListener('click', async (e) => {
   const b = imBook(); if (!b) return;
   if (e.target.closest('#im-preview img')) { openLightbox(b); return; }
@@ -905,12 +914,12 @@ $('chat-refs').addEventListener('click', (e) => {
   const x = e.target.closest('[data-unref]'); if (x) { chat.refs = chat.refs.filter((id) => id !== x.dataset.unref); renderRefs(); return; }
   const o = e.target.closest('[data-open-book]'); if (o) openManager(o.dataset.openBook);
 });
-// Books whose ★ samples a plan touches: what "Apply & try" generates.
+// Books a plan asks to generate.
 function planSamples(plan) {
   const ids = new Set(plan.generateBookIds);
   for (const c of plan.changes) {
     const hit = c.scope === 'library' ? () => true : c.scope === 'shelf' ? (b) => b.shelfId === c.targetId : c.scope === 'collection' ? (b) => b.collectionId === c.targetId : (b) => c.bookIds.includes(b.id);
-    project.books.filter((b) => b.sample && hit(b)).forEach((b) => ids.add(b.id));
+    void hit;
   }
   return project.books.filter((b) => ids.has(b.id));
 }
@@ -920,12 +929,12 @@ const planHtml = (m, i) => {
   return `<div class="plan" data-plan="${i}">${p.changes.map((c) => `<div class="change"><span class="scope">${SCOPE[c.scope]}</span>${c.override ? ' <span class="scope over">Replaces inherited styles</span>' : ''} <b>${esc(c.name)}</b>
       <p class="after">${esc(c.style)}</p>${c.before ? `<details><summary>Current style</summary><p class="before">${esc(c.before)}</p></details>` : ''}</div>`).join('')}
     ${(p.edits || []).map((e) => `<div class="change"><span class="scope">Edit cover</span> <b>${esc(e.title)}</b><p class="after">${esc(e.change)}</p></div>`).join('')}
-    ${(p.references || []).map((r) => `<div class="change"><span class="scope">Based on</span> <b>${esc(r.refTitle)}</b><p class="after">${r.bookIds.length} book${r.bookIds.length > 1 ? 's' : ''} made by editing this cover (new title, byline and illustration; everything else identical): ${esc(r.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${r.bookIds.length > 6 ? '…' : ''}</p>${thumbsHtml([r.refBookId])}</div>`).join('')}
+    ${(p.references || []).map((r) => `<div class="change"><span class="scope">Based on</span> <b>${esc(r.refTitle)}</b><p class="after">${r.bookIds.length} book${r.bookIds.length > 1 ? 's' : ''} made by editing this cover — ${r.mode === 'exact' ? '<b>exactly</b>: only title and byline change' : r.mode === 'similar' ? '<b>similar</b>: fresh covers from its style prompt' : '<b>its style</b>: new title, byline and illustration'}: ${esc(r.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${r.bookIds.length > 6 ? '…' : ''}</p>${thumbsHtml([r.refBookId])}</div>`).join('')}
     ${m.applied ? `<p class="applied">Applied ✓${m.applied === 'gen' ? ` · generating ${gen.length}` : m.applied === 'edit' ? ` · editing ${p.edits.length}` : ''}</p>` : `<div class="plan-actions">
       ${p.references?.length ? `<button type="button" class="btn small gold" data-apply-refs>Base them on it &amp; generate ${p.references.reduce((n, r) => n + r.bookIds.length, 0)}</button><button type="button" class="btn small" data-apply-refs-only>Just link them</button>` : ''}
       ${p.edits?.length ? `<button type="button" class="btn small gold" data-apply-edits>✎ Edit ${p.edits.length > 1 ? `${p.edits.length} covers` : 'this cover'}</button>` : ''}
       ${p.changes.length ? '<button type="button" class="btn small" data-apply>Apply</button>' : ''}
-      ${gen.length ? `<button type="button" class="btn small gold" data-apply-gen>${p.changes.length ? 'Apply &amp; ' : ''}generate ${gen.length} ${p.generateBookIds.length ? 'cover' : '★ sample'}${gen.length > 1 ? 's' : ''}</button>` : ''}
+      ${gen.length ? `<button type="button" class="btn small gold" data-apply-gen>${p.changes.length ? 'Apply &amp; ' : ''}generate ${gen.length} cover${gen.length > 1 ? 's' : ''}</button>` : ''}
       <button type="button" class="btn small ghost" data-dismiss>Not now</button></div>`}</div>`;
 };
 // Thumbnails the assistant put in front of the user; each opens the full Image Manager above the chat.
@@ -1006,7 +1015,7 @@ $('chat-body').addEventListener('click', (e) => {
   if (refsGen || refsOnly) {
     // Link each book to its reference cover; generating them sends that cover to the model as the style reference.
     const books = [];
-    for (const r of m.plan.references) for (const id of r.bookIds) { const b = project.books.find((x) => x.id === id); if (b) { b.refBookId = r.refBookId; patch('books', id, { refBookId: r.refBookId }); books.push(b); } }
+    for (const r of m.plan.references) for (const id of r.bookIds) { const b = project.books.find((x) => x.id === id); if (b) { Object.assign(b, { refBookId: r.refBookId, refMode: r.mode || 'style' }); patch('books', id, { refBookId: r.refBookId, refMode: r.mode || 'style' }); books.push(b); } }
     applyPlan(m.plan); m.applied = refsGen ? 'gen' : 'yes';
     if (refsGen) {
       chat.messages.push({ role: 'assistant', text: `Generating ${books.length} cover${books.length > 1 ? 's' : ''} based on that cover. They appear here as they finish; open any one to compare.`, books: books.map((b) => b.id) });

@@ -33,8 +33,10 @@ export function effectiveStyles(project, book) {
   return layers.map((l, i) => (i < cut ? { ...l, overridden: true } : l));
 }
 
-/** The full generation prompt for one book. */
-export function composePrompt(project, book) {
+/** The full generation prompt for one book. opts.styleFrom = another book whose STYLE layers to use ("similar to the
+ *  model": same recipe, fresh generation) — this book keeps its own title, byline and illustration. */
+export function composePrompt(project, book, opts = {}) {
+  const styleBook = opts.styleFrom || book;
   const k = keyColor(project);
   const bgName = `${k.name} (${k.hex})`;
   const out = [
@@ -43,16 +45,17 @@ export function composePrompt(project, book) {
       `the ${k.name.toLowerCase()} background. Leave a visible margin of ${k.name.toLowerCase()} around all edges of the book.`,
     '',
   ];
-  const active = effectiveStyles(project, book).filter((l) => !l.overridden && (l.style || l.level === 'collection'));
+  const active = effectiveStyles(project, styleBook).filter((l) => !l.overridden && (l.style || l.level === 'collection'));
   // Precedence, stated outright: a specific request ("cloth-bound" for one book or shelf) beats a general default
   // ("leather" for the library) even when nobody marked it as an override.
   if (active.length > 1) out.push('The style layers below go from general to specific. Where they disagree, the more specific layer wins: ' +
     'THIS BOOK over COLLECTION over BOOKSHELF over the general STYLE — follow it and drop the conflicting part of the more general layer.');
-  for (const layer of effectiveStyles(project, book).filter((l) => !l.overridden)) {
+  for (const layer of effectiveStyles(project, styleBook).filter((l) => !l.overridden)) {
     if (layer.level === 'application' && layer.style) out.push(`STYLE: ${layer.style}`);
     if (layer.level === 'bookshelf' && layer.style) out.push(`BOOKSHELF STYLE — ${layer.name}: ${layer.style}`);
     if (layer.level === 'collection') {
-      out.push(`COLLECTION STYLE — "${layer.name}": ${layer.style ? layer.style + ' ' : ''}` +
+      // Borrowed via styleFrom: only the look, not "this is a volume of that collection".
+      out.push(opts.styleFrom ? `COLLECTION STYLE: ${layer.style}` : `COLLECTION STYLE — "${layer.name}": ${layer.style ? layer.style + ' ' : ''}` +
         `This book is one volume of the collection "${layer.name}". It must match the other volumes exactly in ` +
         `leather, border, typography and layout, differing only in its title and centre illustration.`);
     }
@@ -87,9 +90,10 @@ export function composePrompt(project, book) {
 }
 
 /** Instruction wrapper for an img2img edit of an existing cover. */
-/** A book based on another: EDIT that cover's photograph for this book — same binding, wear, light and framing; only the
- *  title, byline and centre illustration change. The description guides the new illustration and is never printed. */
-export function composeBasedOnPrompt(project, book, refTitle) {
+/** A book based on another: EDIT that cover's photograph for this book — same binding, wear, light and framing. Style
+ *  mode replaces title, byline AND centre illustration (from the book's content/description, never printed); exact mode
+ *  changes only the title and byline and keeps the illustration as it is. */
+export function composeBasedOnPrompt(project, book, refTitle, { exact = false } = {}) {
   const k = keyColor(project);
   const about = (book?.content || '').trim()
     ? `a new centre illustration showing: ${book.content.trim()}`
@@ -97,7 +101,8 @@ export function composeBasedOnPrompt(project, book, refTitle) {
   return `Edit this exact photograph. It is the cover of "${refTitle}". Turn it into the cover of another volume of the same set:\n` +
     `1. Replace the title lettering with "${(book?.title || '').trim()}"${book?.subtitle ? ` and the subtitle "${book.subtitle.trim()}"` : ''}, in the same typeface, size, colour, finish and placement.\n` +
     `2. ${(book?.author || '').trim() ? `Replace the byline with "${book.author.trim()}", in the same style and place.` : 'Remove the byline.'}\n` +
-    `3. Replace the centre illustration with ${about}, in exactly the same technique, materials, size and frame.\n\n` +
+    (exact ? `3. Keep the centre illustration exactly as it is — the same image, unchanged.\n\n`
+      : `3. Replace the centre illustration with ${about}, in exactly the same technique, materials, size and frame.\n\n`) +
     `Change nothing else. Everything else stays pixel-for-pixel: the same book, leather colour and texture, wear and patina, ` +
     `border and corner ornaments, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +
     `crop or zoom. Do not print any other text. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, ` +
