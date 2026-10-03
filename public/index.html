@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=31" />
+  <link rel="stylesheet" href="/styles.css?v=32" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -235,6 +235,12 @@
     <button type="button" class="bench-chat" id="bench-chat" data-write><span class="roundel" aria-hidden="true">❦</span> Ask the Binder <small>· change this cover in plain words</small></button>
   </aside>
 
+  <!-- Full view of the current cover (click the editor preview): large rendition on the chosen backdrop. -->
+  <dialog id="lightbox" class="lightbox" aria-label="Full view">
+    <div class="lb-stage" id="lb-stage"></div>
+    <p class="lb-cap" id="lb-cap"></p>
+    <button type="button" class="lb-x" aria-label="Close full view"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </dialog>
   <dialog id="login" class="dlg login">
     <form method="dialog" id="login-form">
       <div class="mark big" aria-hidden="true">❦</div>
@@ -245,6 +251,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=30"></script>
+  <script type="module" src="/app.js?v=31"></script>
 </body>
 </html>

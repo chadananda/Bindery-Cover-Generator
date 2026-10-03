@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=30';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=31';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -637,6 +637,18 @@ function openManager(bookId) {
   renderManager();
   openPane('imgmgr');
 }
+// ---- Full view: the current cover large (sized to the screen, up to 1600px wide) on the editor's backdrop, with the
+// live Adjust filter so a tweak can be judged full size. Click anywhere or Esc to close.
+function openLightbox(b) {
+  const v = currentVersion(b); if (!v) return;
+  $('lb-stage').className = `lb-stage bd-${store.get('backdrop', 'sweep')}`;
+  $('lb-stage').style.setProperty('--adj', $('im-preview').style.getPropertyValue('--adj') || 'none');
+  $('lb-stage').innerHTML = pic(v.cover || v.raw, `${b.title} cover`, '90vh', [640, 960, 1280, 1600], true, v);
+  $('lb-cap').textContent = [b.title, b.author, verLabel(v), new Date(v.at).toLocaleDateString()].filter(Boolean).join(' · ');
+  $('lightbox').showModal();
+}
+$('lightbox').addEventListener('click', () => $('lightbox').close());
+
 // ---- Adjust: brightness/contrast/saturation/warmth. Live as a CSS filter on the preview; "Save" bakes the same
 // filter into the full-resolution cover on a canvas (alpha kept) and stores it as a new version. Free, no model call.
 // Shadows = a gamma lift (exponent < 1 raises dark tones most): CSS has no gamma, so the preview uses an SVG filter
@@ -725,6 +737,7 @@ $('im-override').addEventListener('change', (e) => { const b = imBook(); b.overr
 $('im-sample').addEventListener('change', (e) => { const b = imBook(); b.sample = e.target.checked; patch('books', b.id, { sample: b.sample }); });
 $('imgmgr').addEventListener('click', async (e) => {
   const b = imBook(); if (!b) return;
+  if (e.target.closest('#im-preview img')) { openLightbox(b); return; }
   const bd = e.target.closest('[data-bd]');
   if (bd) { store.set('backdrop', bd.dataset.bd); renderManager(); return; }
   const del = e.target.closest('[data-delver]');

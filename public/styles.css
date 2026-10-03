@@ -510,3 +510,12 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 /* The preview in the workbench is narrower: a compact backdrop switcher that fits under it. */
 .cover .backdrops { gap: 0; bottom: .35rem; padding: .15rem; }
 .cover .bd { font-size: 11px; padding: .15rem .45rem; }
+
+/* Full view of a cover (click the editor preview). */
+.cover .im-preview img { cursor: zoom-in; }
+.lightbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; }
+.lightbox::backdrop { background: rgb(8 6 4 / .78); }
+.lb-stage { position: absolute; inset: 0; cursor: zoom-out; }
+.lb-stage img { position: absolute; inset: 4vh 4vw 8vh; width: 92vw; height: 88vh; object-fit: contain; filter: var(--adj, none) drop-shadow(0 30px 40px rgb(0 0 0 / .55)); }
+.lb-cap { position: absolute; left: 50%; bottom: 2.2vh; transform: translateX(-50%); margin: 0; padding: .35rem .9rem; border-radius: 999px; font: 600 14px var(--sans); color: #f2e9d6; background: rgb(0 0 0 / .55); white-space: nowrap; }
+.lb-x { position: absolute; top: 1rem; right: 1rem; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: rgb(0 0 0 / .5); border: 1px solid rgb(255 255 255 / .3); cursor: pointer; }

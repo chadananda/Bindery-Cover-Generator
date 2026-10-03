@@ -43,6 +43,11 @@ export function composePrompt(project, book) {
       `the ${k.name.toLowerCase()} background. Leave a visible margin of ${k.name.toLowerCase()} around all edges of the book.`,
     '',
   ];
+  const active = effectiveStyles(project, book).filter((l) => !l.overridden && (l.style || l.level === 'collection'));
+  // Precedence, stated outright: a specific request ("cloth-bound" for one book or shelf) beats a general default
+  // ("leather" for the library) even when nobody marked it as an override.
+  if (active.length > 1) out.push('The style layers below go from general to specific. Where they disagree, the more specific layer wins: ' +
+    'THIS BOOK over COLLECTION over BOOKSHELF over the general STYLE — follow it and drop the conflicting part of the more general layer.');
   for (const layer of effectiveStyles(project, book).filter((l) => !l.overridden)) {
     if (layer.level === 'application' && layer.style) out.push(`STYLE: ${layer.style}`);
     if (layer.level === 'bookshelf' && layer.style) out.push(`BOOKSHELF STYLE — ${layer.name}: ${layer.style}`);

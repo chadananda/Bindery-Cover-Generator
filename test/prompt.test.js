@@ -138,5 +138,15 @@ describe('effectiveStyles', () => {
     const withContent = composeBasedOnPrompt({ app: {} }, { title: 'X', content: 'a nightingale on a rose' }, 'Y');
     expect(withContent).toContain('a nightingale on a rose');
   });
+
+  it('states that the more specific layer wins where layers disagree (cloth book under a leather library)', async () => {
+    const { composePrompt: compose } = await import('../core/prompt.js');
+    const proj = { app: { style: 'antique hand-tooled leather' }, shelves: [{ id: 's', name: 'Verse', style: 'pale linen' }] };
+    const p = compose(proj, { title: 'Odes', shelfId: 's', style: 'cloth-bound in dark green buckram' });
+    expect(p).toMatch(/more specific/i);
+    expect(p.lastIndexOf('THIS BOOK:')).toBeGreaterThan(p.lastIndexOf('BOOKSHELF STYLE —'));
+    // only one layer: no precedence line needed
+    expect(compose({ app: { style: 'leather' } }, { title: 'X' })).not.toMatch(/more specific/i);
+  });
 });
 
