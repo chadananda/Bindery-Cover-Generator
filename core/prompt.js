@@ -133,6 +133,9 @@ export function retitlePrompt(modelPrompt, project, book, { keepByline = false }
 /** Is this a full generation prompt (one Similar Style can reuse)? */
 export const isGenerationPrompt = (p) => /^Front cover of a book/.test(p || '');
 
+// "Sura LXXXI. The Folded up" → ["Sura LXXXI.", "The Folded up"]; "Book 3: The Road" → ["Book 3:", "The Road"]. One part otherwise.
+const titleParts = (t) => { const m = String(t || '').trim().match(/^(.{2,40}?[.:])\s+(\S.*)$/); return m ? [m[1], m[2]] : [String(t || '').trim()]; };
+
 /** A book based on another: EDIT that cover's photograph for this book — same binding, wear, light and framing. Style
  *  mode replaces title, byline AND centre illustration (from the book's content/description, never printed); exact mode
  *  changes only the title and byline and keeps the illustration as it is. */
@@ -145,8 +148,13 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
   // The book's own byline setting always wins ("" = none).
   const sameAuthor = book?.byline == null && refAuthor !== undefined && norm(refAuthor) === norm(author);
   const by = bylineOf(book);
+  // Series titles ("Sura LXXXI. The Folded up") are often set as two lines (a small number line over the name): map them
+  // part for part, or the model can't tell which line is which and prints the whole string in one place.
+  const a = titleParts(refTitle), t = titleParts(title);
   const lettering = [
-    `Replace the title lettering with "${title}"${sub ? ` and the subtitle "${sub}"` : ''}, in the same typeface, size, colour, finish and placement as the current title.`,
+    a.length === 2 && t.length === 2
+      ? `Change the title text part for part, wherever and however each part is set on the cover (its own line, size and case): "${a[0]}" → "${t[0]}", and "${a[1]}" → "${t[1]}". Each new part takes the same typeface, size, letter case, colour, finish and placement as the part it replaces${sub ? `; add the subtitle "${sub}" beneath in the same style` : ''}.`
+      : `Replace the title lettering with "${title}"${sub ? ` and the subtitle "${sub}"` : ''}, in the same typeface, size, colour, finish and placement as the current title.`,
     sameAuthor ? 'Keep the byline and any credit line exactly as they are — same words, same place.'
       : by && book?.byline == null ? `If the cover has a byline or author line, replace it with "${by}" in the same style and place; if it has none, do not add one.`
       : by ? `Replace the byline with "${by}", in the same style and place.`

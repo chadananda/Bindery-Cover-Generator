@@ -128,6 +128,9 @@ export function sanitizePlan(p, plan) {
     const ids = [...new Set((r.bookIds || []).filter((id) => books.has(id) && id !== r.refBookId))];
     return ref?.versions?.length && ids.length ? [{ refBookId: ref.id, refTitle: ref.title, bookIds: ids, generate: !!r.generate, mode: ['similar', 'exact'].includes(r.mode) ? r.mode : 'style' }] : [];
   });
+  // A book rebuilt from a reference gets a fresh cover — an edit of its old one in the same plan would be lost.
+  const rebuilt = new Set(references.filter((r) => r.generate).flatMap((r) => r.bookIds));
+  edits.splice(0, edits.length, ...edits.filter((e) => !rebuilt.has(e.bookId)));
   // The printed author line, per book ("" = none).
   const bylines = (plan?.bylines || []).flatMap((x) => {
     const ids = [...new Set((x.bookIds || []).filter((id) => books.has(id)))];
@@ -155,6 +158,8 @@ export function scopePlan(p, plan, selectedIds = [], text = '') {
   return { plan: out, scoped };
 }
 
+const FAKE_CALL = /<\/?function_calls?\b|<function_call\s+name=|<tool_code>|```tool_code/i;
+const stripFake = (t) => String(t || '').replace(/<function_calls>[\s\S]*?(<\/function_calls>|$)/gi, '').replace(/<function_call[\s\S]*?(<\/function_call>|$)/gi, '').trim();
 /** One chat turn. messages: [{role:'user'|'assistant', text}]. callModel(contents) → parts. */
 export async function runChat({ project, messages, focusBookId, selectedIds = [], callModel, describeCover }) {
   const focus = project.books.find((b) => b.id === focusBookId);
@@ -184,16 +189,21 @@ export async function runChat({ project, messages, focusBookId, selectedIds = []
     calls.forEach((c) => show(c.name === 'show_books' ? c.args?.bookIds || [] : c.name === 'describe_cover_style' ? [c.args?.bookId] : []));
     calls.filter((c) => c.name === 'switch_mode' && ['ask', 'edit'].includes(c.args?.mode)).forEach((c) => { mode = c.args.mode; });
     const extra = mode ? { mode } : {};
+    // Gemini sometimes WRITES the tool call as text ("<function_calls>…") instead of making it: never show that; ask again.
+    if (!calls.length && FAKE_CALL.test(text) && round < MAX_ROUNDS - 1) {
+      contents.push({ role: 'model', parts: [{ text }] }, { role: 'user', parts: [{ text: 'You wrote the tool call as text. Do not write it out — call the tool itself (propose_plan, show_books, …) now.' }] });
+      continue;
+    }
     const plan = calls.find((c) => c.name === 'propose_plan');
     if (plan) {
       const last = [...messages].reverse().find((m) => m.role === 'user')?.text || '';
       const proposed = sanitizePlan(project, plan.args);
       const { plan: scopedPlan, scoped } = scopePlan(project, proposed, selectedIds, last);
       const note = scoped ? `\n(Limited to the ${selectedIds.length} selected cover${selectedIds.length > 1 ? 's' : ''} — say “the whole collection” or “every …” to go wider.)` : '';
-      return { reply: (text || 'Here is what I would change.') + note, plan: scopedPlan, books: shown.slice(0, 12), ...extra, trace, ...(scoped ? { unscopedPlan: proposed } : {}) };
+      return { reply: (stripFake(text) || 'Here is what I would change.') + note, plan: scopedPlan, books: shown.slice(0, 12), ...extra, trace, ...(scoped ? { unscopedPlan: proposed } : {}) };
     }
     const tools = calls.filter((c) => !['show_books', 'switch_mode'].includes(c.name));
-    if (!tools.length && (text || !calls.length)) return { reply: text, plan: null, books: shown.slice(0, 12), ...extra, trace };
+    if (!tools.length && (text || !calls.length)) return { reply: stripFake(text) || "Sorry — I couldn't turn that into a proposal. Try rephrasing.", plan: null, books: shown.slice(0, 12), ...extra, trace };
     contents.push({ role: 'model', parts });
     const responses = [];
     for (const c of calls) {

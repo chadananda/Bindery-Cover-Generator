@@ -70,6 +70,13 @@ describe('sanitizePlan', () => {
     expect(c).toContain('byline: "Tr. X"');
   });
 
+  it('a book rebuilt from a reference is not also edited in the same plan (the edit was silently dropped)', () => {
+    const p2 = { ...project, books: project.books.map((b) => b.id === 'b2' ? { ...b, versions: [{ id: 'v2', cover: 'k2' }] } : b) };
+    const plan = sanitizePlan(p2, { changes: [], edits: [{ bookId: 'b1', change: 'x' }, { bookId: 'b2', change: 'y' }], references: [{ refBookId: 'b1', bookIds: ['b2'], generate: true }] });
+    expect(plan.edits.map((e) => e.bookId)).toEqual(['b1']);
+    expect(sanitizePlan(p2, { changes: [], edits: [{ bookId: 'b2', change: 'y' }] }).edits).toHaveLength(1);
+  });
+
   it('returns null for an empty plan', () => {
     expect(sanitizePlan(project, { changes: [], generateBookIds: [] })).toBeNull();
   });
@@ -213,6 +220,18 @@ describe('scopePlan', () => {
     expect(r.plan.edits.map((e) => e.bookId)).toEqual(['b1']);
     expect(r.reply).toMatch(/selected/i);
     expect(r.trace).toBeTruthy();                        // raw model calls, for the prompt log
+  });
+
+  it('a tool call written out as text is not shown: the model is asked again to call the tool', async () => {
+    const turns = [
+      [{ text: 'I\'ll start over.\n\n<function_calls>\n<function_call name="propose_plan"><arg name="changes">[]</arg></function_call>\n</function_calls>' }],
+      [{ functionCall: { name: 'propose_plan', args: { changes: [], edits: [{ bookId: 'b1', change: 'x' }] } } }],
+    ];
+    let i = 0; const seen = [];
+    const r = await runChat({ project, messages: [{ role: 'user', text: 'redo it' }], callModel: async (c) => { seen.push(JSON.stringify(c)); return turns[i++]; }, describeCover: async () => '' });
+    expect(r.plan.edits).toHaveLength(1);
+    expect(r.reply).not.toMatch(/<function_call/);
+    expect(seen[1]).toMatch(/call the tool/i);
   });
 });
 

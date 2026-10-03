@@ -294,5 +294,15 @@ describe('effectiveStyles', () => {
     for (const x of [compose(p, { title: 'A' }), composeEditPrompt(p, 'x'), composeBasedOnPrompt(p, { title: 'A' }, 'B'), composeBasedOnPrompt(p, { title: 'A' }, 'B', { exact: true })])
       expect(x).toMatch(/metallic surfaces reflect only neutral warm studio light.*no magenta/i);
   });
+
+  it('Same Cover maps a two-part title line by line ("SURA LXXXI" over "The Folded Up" → "SURA I" over "The Opening")', async () => {
+    const { composeBasedOnPrompt } = await import('../core/prompt.js');
+    const p = composeBasedOnPrompt({ app: {} }, { title: 'Sura I. The Opening', author: 'Muhammad' }, 'Sura LXXXI. The Folded up', { exact: true, refAuthor: 'Muhammad' });
+    expect(p).toContain('"Sura LXXXI." → "Sura I."');
+    expect(p).toContain('"The Folded up" → "The Opening"');
+    expect(p).toMatch(/same typeface, size, letter case/i);
+    // single-part titles keep the plain replacement
+    expect(composeBasedOnPrompt({ app: {} }, { title: 'Light' }, 'Dark', { exact: true })).toContain('Replace the title lettering with "Light"');
+  });
 });
 
