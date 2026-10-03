@@ -544,3 +544,6 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .libhead .nav-select { color: var(--ink); }
 body.bench-open .libhead { margin-right: var(--bench-w); }
 @media (max-width: 900px) { body.bench-open .libhead { margin-right: 0; } }
+
+/* Scrolling inside a panel never scrolls the shelves behind it (scroll chaining) */
+.bench, .chat-body, .drawer, .dlg, .dlg-body, .inherit pre, .chat-compose textarea, .lightbox { overscroll-behavior: contain; }

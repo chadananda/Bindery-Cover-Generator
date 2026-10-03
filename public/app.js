@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=80';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=81';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1280,6 +1280,22 @@ setInterval(checkVersion, 5 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
 
 // Keep the shelf headers just under the library bar, whatever height it wraps to.
+// The wheel over a panel scrolls that panel only: where nothing under the pointer can scroll further that way (a header,
+// the composer, the end of the chat), the page behind must not move instead.
+function trapWheel(panel) {
+  panel.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // pinch-zoom, sideways scrolling (thumbnail rows)
+    for (let n = e.target; n && n !== panel.parentNode; n = n.parentNode) {
+      if (n.nodeType !== 1) continue;
+      const oy = getComputedStyle(n).overflowY;
+      if (/(auto|scroll)/.test(oy) && n.scrollHeight > n.clientHeight + 1
+        && (e.deltaY < 0 ? n.scrollTop > 0 : n.scrollTop + n.clientHeight < n.scrollHeight - 1)) return; // it can scroll: let it
+      if (n === panel) break;
+    }
+    e.preventDefault();
+  }, { passive: false });
+}
+[$('bench'), ...document.querySelectorAll('dialog')].forEach(trapWheel);
 new ResizeObserver(([e]) => document.documentElement.style.setProperty('--libbar-h', `${e.target.offsetHeight}px`)).observe($('libbar'));
 new ResizeObserver(([e]) => document.documentElement.style.setProperty('--libhead-h', `${e.target.offsetHeight}px`)).observe($('libhead'));
 
