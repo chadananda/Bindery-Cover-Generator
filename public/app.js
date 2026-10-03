@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=79';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=80';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -241,6 +241,10 @@ function renderShelves() {
 const openColls = new Set(store.get('openColls', []));
 let lastPick = null; // anchor for ⇧-click range selection
 const isHead = (b) => b.type === 'Collection' && b.collectionId;
+// Where a collection cover takes its look from when no ★ model is set: its most recently made volume (not a site cover).
+const volumeSource = (head) => project.books.filter((x) => x.collectionId === head.collectionId && x.id !== head.id)
+  .map((x) => [x, currentVersion(x)]).filter(([, v]) => v && v.edit !== 'current site cover' && (v.raw || v.cover))
+  .sort((p, q) => q[1].at - p[1].at)[0]?.[0] || null;
 // Series stem: "Sahih Muslim (Book 13)" / "Revival … Vol-II" / "Pahlavi Texts, Part I" / "Sutra Collection (HIJK)" → stem.
 const seriesStem = (t) => {
   const s = String(t).trim();
@@ -370,7 +374,7 @@ function likeLabels(b, src) {
   const set = isHead(b) && !(selected.size > 1 && selected.has(b.id));
   $('im-model').querySelectorAll('[data-like]').forEach((x) => {
     x.hidden = set && x.dataset.like !== 'style';
-    x.textContent = set ? "✦ Match the model's style" : LIKE[x.dataset.like] + (n > 1 ? ` · ${n} selected` : '');
+    x.textContent = set ? `✦ Match ${src === project.books.find((y) => y.id === project.app.modelBookId) ? "the model's" : 'its volumes’'} style` : LIKE[x.dataset.like] + (n > 1 ? ` · ${n} selected` : '');
     x.dataset.tip ??= x.title; // the button's own tooltip, restored for ordinary books
     x.title = set ? "Keeps this boxed set (volumes, angle, framing) and gives it the model's binding, gold and ornament" : x.dataset.tip;
   });
@@ -651,11 +655,11 @@ async function produce(book, { removeBg = true, change = '', lookId = null, own 
   const refBook = !change && !own && book.refBookId && project.books.find((x) => x.id === book.refBookId);
   const refV = refBook && currentVersion(refBook);
   // 'similar' = fresh generation with the model's style layers; 'style'/'exact' = an edit of the model's photograph.
-  const similar = !!refBook && book.refMode === 'similar';
+  // A collection cover (its boxed-set photograph) based on a model — in ANY mode: edit ITS picture, taking the look from the
+  // model's (second image). Editing the model's single-book photograph, or a fresh single-book generation, lost the set.
+  const ownV = refBook && (refV?.cover || refV?.raw) && isHead(book) ? currentVersion(book) : null, asSet = !!(ownV?.raw || ownV?.cover);
+  const similar = !!refBook && book.refMode === 'similar' && !asSet;
   const basedOn = !similar && !!(refV?.cover || refV?.raw);
-  // A collection cover (its boxed-set photograph) based on the model: edit ITS picture, taking the look from the model's
-  // (second image) — editing the model's single-book photograph would lose the set.
-  const ownV = basedOn && isHead(book) ? currentVersion(book) : null, asSet = !!(ownV?.raw || ownV?.cover);
   const inputKey = change ? from.raw || await rawFromCover(book, from) : asSet ? ownV.raw || await rawFromCover(book, ownV) : basedOn ? await refRaw(refBook, refV) : undefined;
   const styleKey = asSet ? await refRaw(refBook, refV) : null;
   const sameAuthor = !!refBook && norm(refBook.author) === norm(book.author);
@@ -830,12 +834,13 @@ function renderManager() {
   // (Preferring the saved link sent a "Same Style from Divorce" to a previous source instead.)
   const refB = b.refBookId && project.books.find((x) => x.id === b.refBookId), refV = refB && currentVersion(refB);
   const libModel = project.books.find((x) => x.id === project.app.modelBookId);
-  const src = libModel && libModel.id !== b.id && currentVersion(libModel) ? libModel : refV ? refB : null, srcV = src && currentVersion(src);
+  const vol = isHead(b) && !(libModel && libModel.id !== b.id && currentVersion(libModel)) ? volumeSource(b) : null; // a set without a model: its newest volume
+  const src = libModel && libModel.id !== b.id && currentVersion(libModel) ? libModel : vol || (refV ? refB : null), srcV = src && currentVersion(src);
   $('im-ref').hidden = true;
   $('im-model').hidden = !src;
   if (src) {
     $('im-model-lab').innerHTML = `<button type="button" class="ref-img" data-open-ref="${src.id}" title="Open ${esc(src.title)}">${pic(srcV.cover || srcV.raw, src.title, '40px', [160], true, srcV)}</button>
-      <span>${src === libModel ? 'From the model' : 'Based on'} <b>“${esc(src.title)}”</b></span>${src !== libModel ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
+      <span>${src === libModel ? 'From the model' : src === vol ? 'Style from its volume' : 'Based on'} <b>“${esc(src.title)}”</b></span>${src !== libModel && src !== vol ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
       + (refV && src === libModel && refB.id !== libModel.id ? `<small class="prev-src">Previously based on “${esc(refB.title)}” — these buttons use the model.</small>` : '');
     $('im-model').querySelector('[data-like="similar"]').title = modelPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
       : "A fresh generation in its look (read from its image — it has no prompt to reuse), with this book's title, author and illustration";
@@ -843,7 +848,7 @@ function renderManager() {
   }
   const gen = document.querySelector('#imgmgr [data-act="generate"]');
   genLabel(b, src);
-  $('im-prompt').textContent = refV && isHead(b) && b.refMode !== 'similar' ? composeSetStylePrompt(project, b, refB.title) : !refV ? composePrompt(project, b) : b.refMode === 'similar'
+  $('im-prompt').textContent = isHead(b) && src && currentVersion(b) ? composeSetStylePrompt(project, b, src.title) : !refV ? composePrompt(project, b) : b.refMode === 'similar'
     ? (modelPrompt(refB) ? retitlePrompt(modelPrompt(refB), project, b, { keepByline: norm(refB.author) === norm(b.author) }) : `(The look of “${refB.title}” is read from its image when you generate, then:)\n\n` + composePrompt(project, b, { styleText: '…its described look…' }))
     : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact', refAuthor: refB.author, refByline: refB.byline });
   const v = currentVersion(b);
@@ -910,7 +915,7 @@ $('imgmgr').addEventListener('click', async (e) => {
   if (like && authed) {
     // the block's source: THE MODEL if one is set (and isn't this book), else this book's saved source
     const lm = project.books.find((x) => x.id === project.app.modelBookId);
-    const model = lm && lm.id !== b.id ? lm : project.books.find((x) => x.id === b.refBookId); if (!model) return;
+    const model = lm && lm.id !== b.id && currentVersion(lm) ? lm : (isHead(b) && volumeSource(b)) || project.books.find((x) => x.id === b.refBookId); if (!model) return;
     // Part of a multi-selection: the buttons act on every selected cover, like the bottom bar's Regenerate.
     const targets = likeTargets(b, model);
     uiLog('regen', { bookId: b.id, input: { from: 'editor', mode: like.dataset.like, model: `${model.id} “${model.title}”` }, output: { targets: targets.map((x) => `${x.id} “${x.title}”`) } });
