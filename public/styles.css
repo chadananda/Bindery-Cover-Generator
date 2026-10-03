@@ -441,7 +441,6 @@ body.bench-open .selbar { left: calc((100vw - var(--bench-w)) / 2); }
    tray of its volumes spanning the full row beneath. */
 .card .vols { justify-self: center; margin-top: .3rem; font: 600 12.5px var(--sans); color: var(--accent-hi); background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: .22rem .7rem; cursor: pointer; }
 .card .vols:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-.card.head.open .book img { outline: 2px solid var(--accent); outline-offset: 4px; }
 .tray { grid-column: 1 / -1; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--accent) 6%, var(--panel)); padding: .8rem 1rem 1.2rem; animation: arrive .3s cubic-bezier(.22, 1, .36, 1); }
 .tray-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .9rem; font-size: 14px; color: var(--ink-2); }
 .tray-head b { font: 700 19px var(--display); color: var(--ink); }
