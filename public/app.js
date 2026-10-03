@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=57';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=58';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -97,8 +97,34 @@ async function route() {
   focusShelf = g ? g.shelf?.id || '-' : '';
   renderAll();
   history.replaceState(null, '', pathFor());
+  if (!restored) { restored = true; restoreView(); }
 }
 addEventListener('popstate', () => route());
+// ---- Keep your place across reloads: the cover at the top of the screen (and its offset), the book open in the Binder,
+// and whether the chat was open — not a raw scrollY, which depends on window width and whether the Binder is open.
+let restored = false;
+const VIEW_KEY = 'view';
+function saveView() {
+  if (!lib || !restored) return;
+  const top = [...$('app').querySelectorAll('.card[data-book]')].find((c) => c.getBoundingClientRect().bottom > (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--libbar-h')) || 60) + 40);
+  store.set(VIEW_KEY, { lib, path: location.pathname, anchor: top?.dataset.book || null, offset: top ? Math.round(top.getBoundingClientRect().top) : 0, y: Math.round(scrollY), open: im?.bookId || null, chat: chatOpen() });
+}
+let saveT2;
+addEventListener('scroll', () => { clearTimeout(saveT2); saveT2 = setTimeout(saveView, 250); }, { passive: true });
+addEventListener('pagehide', saveView);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveView(); });
+function restoreView() {
+  const v = store.get(VIEW_KEY, null);
+  if (!v || v.lib !== lib || v.path !== location.pathname) return;
+  if (v.open && project.books.some((b) => b.id === v.open)) openManager(v.open);
+  if (v.chat && authed && !chatOpen()) openChat();
+  // after the Binder's layout change, put the anchor cover back at the same height
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const el = v.anchor && $('app').querySelector(`.card[data-book="${v.anchor}"]`);
+    if (el) scrollBy(0, el.getBoundingClientRect().top - v.offset); else scrollTo(0, v.y);
+    setTimeout(() => { const e2 = v.anchor && $('app').querySelector(`.card[data-book="${v.anchor}"]`); if (e2) scrollBy(0, e2.getBoundingClientRect().top - v.offset); }, 450); // after the margin transition
+  }));
+}
 async function openLib(id, push = true) {
   if (!libs.some((l) => l.id === id)) id = libs[0].id;
   lib = id; store.set('lib', id);
@@ -906,6 +932,7 @@ function layoutBench() {
   document.body.classList.toggle('bench-open', !bench.hidden);
   $('chat-fab').hidden = !bench.hidden;
   if (wasOpen !== !bench.hidden) keepInPlace(id, top0);
+  setTimeout(saveView, 600);
   if (im?.bookId) anchorId = im.bookId;
 }
 // The cover and the chat open together (one step to edit); logged-out visitors get the cover only.
