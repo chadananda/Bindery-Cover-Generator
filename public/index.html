@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=49" />
+  <link rel="stylesheet" href="/styles.css?v=51" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -57,8 +57,7 @@
   <div class="jobs" id="jobs" hidden role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span id="jobs-lab"></span><button type="button" class="btn small" id="jobs-stop">■ Stop the rest</button></div>
   <div class="selbar" id="selbar" hidden role="region" aria-label="Selected books">
     <span id="sel-count" class="sel-count"></span>
-    <button type="button" class="btn small gold" id="sel-generate" data-write>✦ Generate</button>
-    <span class="regen" id="sel-regen" data-write><span class="regen-lab">From model:</span><button type="button" class="btn small" data-regen="similar" title="The model's exact prompt with each book's title, author and illustration — fresh generations">Similar Style</button><button type="button" class="btn small" data-regen="style" title="Same binding as the model; each book gets its own centre illustration">Same Style</button><button type="button" class="btn small" data-regen="exact" title="Identical to the model; only the title and byline change">Same Cover</button></span>
+    <button type="button" class="btn small gold" id="sel-open" hidden title="Generate, edit or restyle the selected covers in the Binder">✎ Open in the Binder</button>
     <button type="button" class="btn small" id="sel-download">⇩ Download</button>
     <select id="sel-move" data-write aria-label="Move to bookshelf"></select>
     <button type="button" class="btn small ghost danger" id="sel-delete" data-write>Remove</button>
@@ -146,7 +145,7 @@
     <header class="bench-head">
       <span class="roundel" aria-hidden="true">❦</span>
       <span class="titles"><h2 class="title">The Binder</h2><span class="subtitle" id="bench-sub"><span id="im-title">Cover editor &amp; style chat</span></span></span>
-      <button type="button" class="chat-icon" id="chat-clear" title="New conversation" aria-label="New conversation"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"/></svg></button>
+      <button type="button" class="head-btn" id="chat-clear" title="Start a fresh conversation (covers and history are untouched)">Clear chat</button>
       <button type="button" class="chat-icon" id="bench-close" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </header>
     <div class="chat-rule"></div>
@@ -251,6 +250,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=81"></script>
+  <script type="module" src="/app.js?v=82"></script>
 </body>
 </html>

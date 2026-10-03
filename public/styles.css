@@ -373,8 +373,7 @@ body.has-selbar .fab { bottom: 5rem; }
 /* Docked right, non-modal: the shelves give up exactly its width. States: .has-cover (book loaded), .chat-on.
    Height budget (no scrolling the form): header + cover row (preview | actions + History) + tools bar; the chat or the
    open drawer takes the rest and scrolls inside itself. */
-:root { --bench-w: 620px; }
-@media (max-width: 1400px) { :root { --bench-w: 560px; } }
+:root { --bench-w: clamp(420px, 36vw, 720px); } /* desktop: grows with the screen, leaves the shelves room */
 body.bench-open main.shelves, body.bench-open .empty { margin-right: var(--bench-w); }
 main.shelves, .empty { transition: margin-right .3s cubic-bezier(.22, 1, .36, 1); }
 body.bench-open .selbar { left: calc((100vw - var(--bench-w)) / 2); }
@@ -513,7 +512,6 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 
 .regen { display: inline-flex; align-items: center; gap: .35rem; }
 .regen[hidden] { display: none !important; }
-.regen-lab { font: 600 12.5px var(--sans); color: rgb(234 231 228); margin-left: .3rem; }
 .refmode { display: inline-flex; gap: .15rem; padding: .12rem; border-radius: 999px; background: rgb(200 162 75 / .16); margin-left: .3rem; }
 .refmode button { font: 600 12px var(--sans); border: 0; border-radius: 999px; padding: .15rem .55rem; background: none; color: #5c5244; cursor: pointer; }
 .refmode button[aria-checked="true"] { background: #fff; color: #2a1d08; box-shadow: 0 1px 2px rgb(0 0 0 / .18); }
@@ -522,9 +520,9 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 /* From the model: Similar Style / Same Style / Same Cover in the Binder */
 .im-model { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .4rem; padding: .45rem .55rem; border: 1px solid rgb(200 162 75 / .55); border-radius: 10px; background: rgb(200 162 75 / .08); font-size: 12.5px; color: #5c5244; }
 .im-model[hidden] { display: none !important; }
-.im-model-head { flex-basis: 100%; display: flex; align-items: center; gap: .45rem; font-size: 13px; color: #3d352a; }
+.im-model-head { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .45rem; font-size: 13px; color: #3d352a; }
 .im-model-head .ref-x { margin-left: auto; }
-.prev-src { flex-basis: 100%; font-size: 12px; color: #6b6150; }
+.prev-src { flex-basis: 100%; font-size: 12px; color: #6b6150; } /* its own line under the source */
 .use-model { flex-basis: 100%; text-align: left; font: 600 12px var(--sans); color: #7a3a1c; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 .field.grow { flex: 1; min-width: 12rem; }
@@ -547,3 +545,21 @@ body.bench-open .libhead { margin-right: var(--bench-w); }
 
 /* Scrolling inside a panel never scrolls the shelves behind it (scroll chaining) */
 .bench, .chat-body, .drawer, .dlg, .dlg-body, .inherit pre, .chat-compose textarea, .lightbox { overscroll-behavior: contain; }
+
+/* The Binder adapts to its own width (container queries): narrow → cover above its tools; short screens → smaller preview */
+.bench { container-type: inline-size; }
+@container (max-width: 540px) {
+  .cover-top { grid-template-columns: minmax(0, 1fr); }
+  .cover .im-preview-wrap { justify-self: center; }
+  .cover-side .ver { flex-basis: 64px; grid-template-rows: 76px auto auto; }
+  .cover-side .ver img { height: 76px; }
+  .tool small { display: none; }
+}
+@container (min-width: 660px) { .cover { --pv-h: min(440px, 46vh); } .bench.chat-on .cover { --pv-h: min(340px, 36vh); } }
+@media (max-height: 820px) { .cover { --pv-h: min(300px, 38vh); } .bench.chat-on .cover { --pv-h: min(220px, 28vh); } }
+.head-btn { flex: none; font: 600 12.5px var(--sans); color: #fff; background: rgb(255 255 255 / .12); border: 1px solid rgb(255 255 255 / .35);
+  border-radius: 999px; padding: .32rem .8rem; cursor: pointer; }
+.head-btn:hover { background: rgb(255 255 255 / .22); }
+.head-btn[hidden] { display: none; }
+/* With the chat open, the cover editor scrolls within its share of the panel, so the conversation always keeps room */
+.bench.chat-on .cover { max-height: 62%; overflow-y: auto; overscroll-behavior: contain; }

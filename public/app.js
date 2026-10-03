@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=81';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=82';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -296,8 +296,7 @@ function renderSelbar() {
   $('sel-count').textContent = `${n} selected`;
   $('sel-clear').textContent = `✕ Clear ${n}`;
   const model = project.app.modelBookId, others = [...selected].filter((x) => x !== model).length;
-  $('sel-regen').hidden = !model || !others;
-  $('sel-regen').querySelector('.regen-lab').textContent = `Regenerate ${others} from model:`;
+  $('sel-open').hidden = !$('bench').hidden; // the editing tools live in the Binder
   $('sel-move').innerHTML = `<option value="" disabled selected>Move to shelf…</option>` + project.shelves.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
   document.body.classList.toggle('has-selbar', !!n);
 }
@@ -354,7 +353,7 @@ function syncSelection() {
 }
 const clearSelection = () => { selected.clear(); lastPick = null; setTimeout(saveView, 0); renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
 $('sel-clear').addEventListener('click', clearSelection);
-$('sel-generate').addEventListener('click', () => { uiLog('generate', { input: { from: 'selection bar' }, output: { targets: selBooks().map((x) => `${x.id} “${x.title}”`) } }); generate(selBooks(), { own: true }); });
+$('sel-open').addEventListener('click', () => { const b = selBooks()[0]; if (b) openManager(b.id); });
 // ONE model per library: ★ on a cover. Regenerate from model edits it into each selected book (based-on edit).
 // Per-user working state (this browser, per library) — not the shared database: one person's model mustn't change others'.
 function setModel(id) {
@@ -381,16 +380,7 @@ function likeLabels(b, src) {
 }
 // The editor's model buttons: every selected cover when the open one is part of a multi-selection, else just it.
 const likeTargets = (b, model) => selected.has(b.id) && selected.size > 1 ? selBooks().filter((x) => x.id !== model.id) : [b];
-$('sel-regen').addEventListener('click', (e) => {
-  const mode = e.target.closest('[data-regen]')?.dataset.regen; if (!mode) return;
-  const model = project.books.find((b) => b.id === project.app.modelBookId);
-  if (!model || !currentVersion(model)) return alert('Mark one cover as the model first (★ on its corner).');
-  const books = selBooks().filter((b) => b.id !== model.id);
-  uiLog('regen', { input: { from: 'selection bar', mode, model: `${model.id} “${model.title}”` }, output: { targets: books.map((x) => `${x.id} “${x.title}”`) } });
-  books.forEach((b) => { if (b.refBookId !== model.id || b.refMode !== mode) { Object.assign(b, { refBookId: model.id, refMode: mode }); patch('books', b.id, { refBookId: model.id, refMode: mode }); } });
-  if (books[0]) openManager(books[0].id);
-  generate(books);
-});
+
 $('sel-move').addEventListener('change', (e) => {
   const shelfId = e.target.value;
   selBooks().forEach((b) => { b.shelfId = shelfId; patch('books', b.id, { shelfId }); });
@@ -1000,6 +990,7 @@ function layoutBench() {
   bench.classList.toggle('has-cover', cover);
   $('chat').hidden = !on;
   $('chat-clear').hidden = !on;
+  $('sel-open').hidden = !bench.hidden || !selected.size;
   if (!cover) $('im-title').textContent = 'Cover editor & style chat';
   renderMode();
   document.body.classList.toggle('bench-open', !bench.hidden);
@@ -1178,7 +1169,8 @@ function applyPlan(plan) {
   renderAll();
 }
 $('chat-fab').addEventListener('click', () => openChat());
-$('chat-clear').addEventListener('click', () => { chat.messages = []; chat.focus = null; renderChat(); saveView(); });
+// Clear chat: a clean conversation (welcome + examples) — the draft and attached covers too. Covers are untouched.
+$('chat-clear').addEventListener('click', () => { chat.messages = []; chat.focus = null; chat.refs = []; $('chat-input').value = ''; autosize(); renderRefs(); renderChat(); saveView(); });
 $('chat-form').addEventListener('submit', (e) => {
   e.preventDefault(); const t = $('chat-input').value.trim(); if (!t && !chat.refs.length) return;
   $('chat-input').value = ''; autosize();
