@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=63';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=64';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -645,7 +645,7 @@ async function keyRaw(rawKey) {
 const storeImage = async (book, kind, base64) => (await api(`${base()}/store`, { method: 'POST', body: JSON.stringify({ bookId: book.id, kind, base64 }) })).key;
 // A new version row (append-only) that becomes the book's current cover.
 async function addVersion(book, v) {
-  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', aspect: null, edit: null, lookId: null, w: null, h: null, ...v };
+  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', basePrompt: null, aspect: null, edit: null, lookId: null, w: null, h: null, ...v };
   await insert('versions', [{ ...row, bookId: book.id }]);
   book.versions.push(row); book.selected = row.id;
   patch('books', book.id, { selected: row.id });
@@ -663,13 +663,16 @@ async function rawFromCover(book, v) {
   return storeImage(book, 'raw', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
 }
 
-// The prompt that generated the model's current look: its current version if that was a generation, else the latest
-// generation at or before it (an edit/adjust of a generation keeps that generation's style).
-function modelPrompt(book) {
-  const cur = currentVersion(book); if (!cur) return null;
-  if (isGenerationPrompt(cur.prompt)) return cur.prompt;
-  return [...book.versions].filter((v) => v.at <= cur.at && isGenerationPrompt(v.prompt)).sort((x, y) => y.at - x.at)[0]?.prompt || null;
+// The generation prompt a version's look descends from: its own (a generation), the one it carries (an edit, or a cover
+// made from the model, copies its source's prompt), else the latest one at or before it.
+const genPrompt = (v) => isGenerationPrompt(v?.prompt) ? v.prompt : isGenerationPrompt(v?.basePrompt) ? v.basePrompt : null;
+function basePromptOf(book, cur = currentVersion(book)) {
+  if (!cur) return null;
+  return genPrompt(cur) || genPrompt([...book.versions].filter((v) => v.at <= cur.at && genPrompt(v)).sort((x, y) => y.at - x.at)[0]);
 }
+// The prompt behind the model's current look, re-synced to the model's own title/byline/illustration lines (its byline
+// setting may have changed since it was generated).
+function modelPrompt(book) { const p = basePromptOf(book); return p && retitlePrompt(p, project, book); }
 // A model with no generation prompt (site cover, upload, or edits of one): Gemini describes its look once per version.
 const described = new Map();
 function describedStyle(book) {
@@ -692,18 +695,23 @@ async function produce(book, { removeBg = true, change = '', lookId = null } = {
   const similar = !!refBook && book.refMode === 'similar';
   const basedOn = !similar && !!(refV?.cover || refV?.raw);
   const inputKey = change ? from.raw || await rawFromCover(book, from) : basedOn ? await refRaw(refBook, refV) : undefined;
-  let prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact', refAuthor: refBook.author }) : null;
-  if (!prompt && similar) { // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
-    const mp = modelPrompt(refBook);
-    const keepByline = norm(refBook.author) === norm(book.author);
-    prompt = mp ? retitlePrompt(mp, project, book, { keepByline }) : composePrompt(project, keepByline ? { ...book, author: '' } : book, { styleText: await describedStyle(refBook) });
-  }
+  const sameAuthor = !!refBook && norm(refBook.author) === norm(book.author);
+    // A model with no author line passes that on to every book ("" = none); a credit only to books by the same author.
+  if (refBook && book.byline == null && (refBook.byline === '' || (sameAuthor && refBook.byline != null))) { book.byline = refBook.byline; patch('books', book.id, { byline: book.byline }); }
+  // The generation prompt this version descends from, copied forward (with this book's lines) so later regenerations and
+  // models reuse it instead of rebuilding from metadata — an author the user removed can't creep back.
+  const mp = refBook ? modelPrompt(refBook) : null;
+  const basePrompt = change ? (basePromptOf(book, from) && retitlePrompt(basePromptOf(book, from), project, book))
+    : mp ? retitlePrompt(mp, project, book, { keepByline: sameAuthor }) : null;
+  let prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact', refAuthor: refBook.author, refByline: refBook.byline }) : null;
+  if (!prompt && similar) // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
+    prompt = basePrompt || composePrompt(project, sameAuthor && book.byline == null ? { ...book, author: '' } : book, { styleText: await describedStyle(refBook) });
   prompt ||= composePrompt(project, book);
   const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
-  return addVersion(book, { raw: rawKey, cover, prompt, aspect, w, h, edit: change || (basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
+  return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: basePrompt && basePrompt !== prompt ? basePrompt : null, aspect, w, h, edit: change || (basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
 }
 
 async function generate(books) {
@@ -742,7 +750,7 @@ function openManager(bookId) {
   $('im-content').value = b.content || ''; resetAdjust();
   $('im-title').textContent = [b.title, b.author, shelfById(b.shelfId)?.name].filter(Boolean).join(' · ');
   $('im-style').value = b.style || '';
-  $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
+  $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || ''; showByline(b);
   imStatus(''); imBusy(status.get(bookId)?.state === 'busy', status.get(bookId)?.msg || 'Working…');
   renderManager();
   openPane('imgmgr');
@@ -824,8 +832,8 @@ function renderManager() {
   const gen = document.querySelector('#imgmgr [data-act="generate"]');
   gen.textContent = src ? '✦ Generate new · own style' : '✦ Generate new'; gen.classList.toggle('gold', !src);
   $('im-prompt').textContent = !refV ? composePrompt(project, b) : b.refMode === 'similar'
-    ? (modelPrompt(refB) ? retitlePrompt(modelPrompt(refB), project, b) : `(The look of “${refB.title}” is read from its image when you generate, then:)\n\n` + composePrompt(project, b, { styleText: '…its described look…' }))
-    : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact' });
+    ? (modelPrompt(refB) ? retitlePrompt(modelPrompt(refB), project, b, { keepByline: norm(refB.author) === norm(b.author) }) : `(The look of “${refB.title}” is read from its image when you generate, then:)\n\n` + composePrompt(project, b, { styleText: '…its described look…' }))
+    : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact', refAuthor: refB.author, refByline: refB.byline });
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
@@ -842,6 +850,14 @@ function renderManager() {
       <span class="ver-date">${new Date(x.at).toLocaleDateString()}</span>
       ${x.edit !== 'current site cover' ? `<span class="ver-del" role="button" tabindex="0" data-delver="${x.id}" data-write title="Delete this version (and its images)" aria-label="Delete version">×</span>` : ''}</button>`).join('');
 }
+// Printed byline: unset = the author; "None" = no author line; text = that credit instead.
+function showByline(b) {
+  $('im-noby').checked = b.byline === ''; $('im-byline').disabled = b.byline === '';
+  $('im-byline').value = b.byline || ''; $('im-byline').placeholder = b.author ? `the author: ${b.author}` : 'none';
+}
+function setByline(b, v) { b.byline = v; patch('books', b.id, { byline: v }); showByline(b); renderManager(); }
+$('im-byline').addEventListener('change', (e) => { const b = imBook(); if (b) setByline(b, e.target.value.trim() || null); });
+$('im-noby').addEventListener('change', (e) => { const b = imBook(); if (b) setByline(b, e.target.checked ? '' : null); });
 // Field edits persist as you type (they live on the book).
 const imFields = { 'im-content': 'content', 'im-style': 'style', 'im-t': 'title', 'im-sub': 'subtitle', 'im-by': 'author' };
 for (const [id, field] of Object.entries(imFields)) {
@@ -999,7 +1015,9 @@ async function editFromChat(text) {
     status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat(); imBusy(true, `Reading ${targets.length > 1 ? `cover ${done + failed + 1} of ${targets.length}` : 'the cover'}…`);
     try {
       // Feedback → one concrete instruction against THIS cover (vague feedback made the image model change ~nothing).
-      const { instruction } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text }) });
+      const { instruction, byline } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text }) });
+      // An author-line change is saved on the book too, so later regenerations keep it ("" = no author line).
+      if (byline !== undefined && byline !== null) { b.byline = byline; patch('books', b.id, { byline }); }
       if (/^NONE\b/i.test(instruction || '')) { status.delete(b.id); imBusy(false); renderCard(b.id); chat.messages.pop(); chat.messages.pop(); return sendChat(text); }
       const change = instruction || text; // a numbered list of commands — shown as-is, and sent as-is to the image model
       chat.messages.push({ role: 'assistant', text: `Applying to ${b.title}:\n${change}` }); renderChat();
@@ -1069,12 +1087,13 @@ const planHtml = (m, i) => {
   const p = m.plan, gen = planSamples(p);
   return `<div class="plan" data-plan="${i}">${p.changes.map((c) => `<div class="change"><span class="scope">${SCOPE[c.scope]}</span>${c.override ? ' <span class="scope over">Replaces inherited styles</span>' : ''} <b>${esc(c.name)}</b>
       <p class="after">${esc(c.style)}</p>${c.before ? `<details><summary>Current style</summary><p class="before">${esc(c.before)}</p></details>` : ''}</div>`).join('')}
+    ${(p.bylines || []).map((x) => `<div class="change"><span class="scope">Author line</span> <b>${esc(x.name)}</b><p class="after">${x.byline ? `Print “${esc(x.byline)}” instead of the author` : 'Print no author or byline'} — saved, so every later generation keeps it: ${esc(x.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${x.bookIds.length > 6 ? '…' : ''}</p></div>`).join('')}
     ${(p.edits || []).map((e) => `<div class="change"><span class="scope">Edit cover</span> <b>${esc(e.title)}</b><p class="after">${esc(e.change)}</p></div>`).join('')}
     ${(p.references || []).map((r) => `<div class="change"><span class="scope">Based on</span> <b>${esc(r.refTitle)}</b><p class="after">${r.bookIds.length} book${r.bookIds.length > 1 ? 's' : ''} made by editing this cover — ${r.mode === 'exact' ? '<b>same cover</b>: only title and byline change' : r.mode === 'similar' ? '<b>similar style</b>: fresh covers from its style prompt' : '<b>same style</b>: new title, byline and illustration'}: ${esc(r.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${r.bookIds.length > 6 ? '…' : ''}</p>${thumbsHtml([r.refBookId])}</div>`).join('')}
     ${m.applied ? `<p class="applied">Applied ✓${m.applied === 'gen' ? ` · generating ${gen.length}` : m.applied === 'edit' ? ` · editing ${p.edits.length}` : ''}</p>` : `<div class="plan-actions">
       ${p.references?.length ? `<button type="button" class="btn small gold" data-apply-refs>Base them on it &amp; generate ${p.references.reduce((n, r) => n + r.bookIds.length, 0)}</button><button type="button" class="btn small" data-apply-refs-only>Just link them</button>` : ''}
       ${p.edits?.length ? `<button type="button" class="btn small gold" data-apply-edits>✎ Edit ${p.edits.length > 1 ? `${p.edits.length} covers` : 'this cover'}</button>` : ''}
-      ${p.changes.length ? '<button type="button" class="btn small" data-apply>Apply</button>' : ''}
+      ${p.changes.length || p.bylines?.length ? '<button type="button" class="btn small" data-apply>Apply</button>' : ''}
       ${gen.length ? `<button type="button" class="btn small gold" data-apply-gen>${p.changes.length ? 'Apply &amp; ' : ''}generate ${gen.length} cover${gen.length > 1 ? 's' : ''}</button>` : ''}
       <button type="button" class="btn small ghost" data-dismiss>Not now</button></div>`}</div>`;
 };
@@ -1116,6 +1135,7 @@ function applyPlan(plan) {
     else if (c.scope === 'collection') { const x = collById(c.targetId); if (x) { Object.assign(x, { style: c.style, override: !!c.override }); patch('collections', x.id, { style: c.style, override: !!c.override }); } }
     else c.bookIds.forEach((id) => { const b = project.books.find((x) => x.id === id); if (b) { Object.assign(b, { style: c.style, override: !!c.override }); patch('books', id, { style: c.style, override: !!c.override }); } });
   }
+  for (const x of plan.bylines || []) for (const id of x.bookIds) { const b = project.books.find((y) => y.id === id); if (b) { b.byline = x.byline; patch('books', id, { byline: x.byline }); } }
   renderAll();
 }
 $('chat-fab').addEventListener('click', () => openChat());

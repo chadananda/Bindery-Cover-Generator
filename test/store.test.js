@@ -127,4 +127,15 @@ describe('store', () => {
   it('rejects unknown tables', async () => {
     await expect(insertRows(db, 'ocean', 'libraries; DROP', [{}])).rejects.toThrow();
   });
+
+  it('stores a book byline (null = author, "" = none) and a version basePrompt', async () => {
+    await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'A', author: 'M' }, { id: 'b2', title: 'B' }]);
+    await patchRow(db, 'ocean', 'books', 'b1', { byline: '' });
+    await insertRows(db, 'ocean', 'versions', [{ id: 'v1', bookId: 'b1', prompt: 'Edit this', basePrompt: 'Front cover of a book…', at: 1 }]);
+    const p = await loadLibrary(db, 'ocean');
+    expect(p.books[0].byline).toBe('');
+    expect(p.books[1].byline).toBeNull();
+    expect(p.books[0].versions[0].basePrompt).toBe('Front cover of a book…');
+  });
 });
+

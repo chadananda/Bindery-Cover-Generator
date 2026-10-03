@@ -236,5 +236,50 @@ describe('effectiveStyles', () => {
     expect(p).toContain('Translated by J.M. Rodwell');
     expect(p).not.toContain('"Muhammad"');
   });
+
+  it('byline: null prints the author, "" prints no author at all, text prints that credit instead', async () => {
+    const { composePrompt: compose, bylineOf } = await import('../core/prompt.js');
+    const p = { app: { style: 'leather' } };
+    expect(bylineOf({ author: 'Muhammad' })).toBe('Muhammad');
+    expect(bylineOf({ author: 'Muhammad', byline: '' })).toBe('');
+    const none = compose(p, { title: 'Sura XXIV', author: 'Muhammad', byline: '' });
+    expect(none).not.toContain('Muhammad');
+    expect(none).toMatch(/no author name, byline or credit/i);
+    const credit = compose(p, { title: 'Sura XXIV', author: 'Muhammad', byline: 'Translated by J.M. Rodwell' });
+    expect(credit).toContain('"Translated by J.M. Rodwell"');
+    expect(credit).not.toContain('Muhammad');
+  });
+
+  it('the book\'s byline setting wins over the model\'s in every regeneration level', async () => {
+    const { composePrompt: compose, retitlePrompt, composeBasedOnPrompt } = await import('../core/prompt.js');
+    const sura = { title: 'Sura XXIV', author: 'Muhammad', byline: '' };
+    const mp = compose({ app: { style: 'leather' } }, { title: 'Sura LXXXI', author: 'Muhammad' });
+    const sim = retitlePrompt(mp, { app: {} }, sura, { keepByline: true });
+    expect(sim).not.toContain('Muhammad');
+    expect(sim).toMatch(/no author name, byline or credit/i);
+    for (const exact of [false, true]) {
+      const e = composeBasedOnPrompt({ app: {} }, sura, 'Sura LXXXI', { exact, refAuthor: 'Muhammad' });
+      expect(e).toMatch(/remove the byline and any author or credit line/i);
+    }
+    const credit = composeBasedOnPrompt({ app: {} }, { ...sura, byline: 'Rodwell' }, 'Sura LXXXI', { refAuthor: 'Muhammad' });
+    expect(credit).toContain('Replace the byline with "Rodwell"');
+  });
+
+  it('a model with no author line: no regeneration level adds one (unless the book has its own byline)', async () => {
+    const { composePrompt: compose, retitlePrompt, composeBasedOnPrompt } = await import('../core/prompt.js');
+    const book = { title: 'Sura XXIV', author: 'Rumi' };
+    for (const exact of [false, true]) {
+      const e = composeBasedOnPrompt({ app: {} }, book, 'Model', { exact, refAuthor: 'Hafiz' });
+      expect(e).toMatch(/if it has none, do not add one/i);       // the photograph decides: no byline stays no byline
+      const none = composeBasedOnPrompt({ app: {} }, book, 'Model', { exact, refAuthor: 'Hafiz', refByline: '' });
+      expect(none).not.toContain('"Rumi"');
+      expect(none).toMatch(/print no author name/i);
+    }
+    const mp = compose({ app: { style: 'leather' } }, { title: 'Model', author: 'Hafiz', byline: '' });
+    expect(retitlePrompt(mp, { app: {} }, book)).not.toContain('"Rumi"');
+    const anon = compose({ app: { style: 'leather' } }, { title: 'Model' });
+    expect(retitlePrompt(anon, { app: {} }, book)).not.toContain('"Rumi"');
+    expect(retitlePrompt(mp, { app: {} }, { ...book, byline: 'Tr. X' })).toContain('"Tr. X"');
+  });
 });
 

@@ -10,8 +10,8 @@ export const catalogue = (p) => [
   ...(p.app.modelBookId ? [`MODEL COVER (the user's chosen edit source): ${p.app.modelBookId} “${p.books.find((b) => b.id === p.app.modelBookId)?.title || '?'}”`] : []),
   'SHELVES (id | name | style):', ...p.shelves.map((s) => `${s.id} | ${s.name} | ${s.style || '(none)'}`),
   'COLLECTIONS (id | name | shelf | style):', ...p.collections.map((c) => `${c.id} | ${c.name} | shelf ${c.shelfId || '-'} | ${c.style || '(none)'}`),
-  'BOOKS (id | title | author | shelfId | collectionId | cover? | own style):',
-  ...p.books.map((b) => `${b.id} | ${b.title} | ${b.author || ''} | ${b.shelfId || ''} | ${b.collectionId || ''} | ${b.versions?.length ? 'cover' : 'no cover'}${b.style ? ` | ${b.style}` : ''}`),
+  'BOOKS (id | title | author | shelfId | collectionId | cover? | byline setting | own style):',
+  ...p.books.map((b) => `${b.id} | ${b.title} | ${b.author || ''} | ${b.shelfId || ''} | ${b.collectionId || ''} | ${b.versions?.length ? 'cover' : 'no cover'}${b.byline == null ? '' : b.byline === '' ? ' | byline: none' : ` | byline: "${b.byline}"`}${b.style ? ` | ${b.style}` : ''}`),
 ].join('\n');
 
 const SYSTEM = `You help an art director set the cover styles of a book library. Covers are generated from layered style text:
@@ -58,6 +58,12 @@ should apply to a whole shelf/collection/author, which is a style change. When b
 "them", "the selected ones" — or any change that doesn't name one particular cover — applies to EVERY selected book:
 put all of their ids in the edits / bookIds, not just the book open in the editor. Otherwise attached covers and the
 cover open in the editor are the ones they mean. Rewrite vague requests into concrete visual terms (material, colour, finish, placement). Only include generateBookIds when the user asks to generate or regenerate covers.
+THE AUTHOR LINE is the user's call: by default a cover prints the book's author at the bottom, but for some books (chapters
+of a scripture, compilations, anonymous works) it is wrong or should be a credit instead ("Translated by J.M. Rodwell").
+When the user asks to leave out, drop, hide or change the author/byline/credit for some books, propose bylines (bookIds +
+byline: "" for none, or the exact credit text). That setting is saved on the books, so every later generation and
+regeneration respects it — never let a style or edit re-add an author the user removed. If they also want the existing
+covers changed now, add an edit per cover ("remove the author line at the bottom") as well.
 Resolve books, shelves, collections and authors from the catalogue by id; if a reference is ambiguous, ask instead.
 When the user asks to switch to editing directly / edit mode, or back to asking, call switch_mode and confirm in one line.
 Reply briefly in plain English (no markdown headings).`;
@@ -82,6 +88,8 @@ export const TOOLS = [{ functionDeclarations: [
         refBookId: { type: 'string', description: 'the book whose current cover is the reference' }, bookIds: { type: 'array', items: { type: 'string' } },
         generate: { type: 'boolean', description: 'also generate those books now' },
         mode: { type: 'string', enum: ['similar', 'style', 'exact'], description: "'similar' = a FRESH generation with the model's style prompt; 'style' = edit the model's photograph: same binding, NEW centre illustration; 'exact' = edit the model's photograph: only title and byline change" } }, required: ['refBookId', 'bookIds'] } },
+      bylines: { type: 'array', description: "Set what the covers print as their author line; saved on the books and respected by every later generation", items: { type: 'object', properties: {
+        bookIds: { type: 'array', items: { type: 'string' } }, byline: { type: 'string', description: '"" = print no author/byline at all; otherwise the exact text to print (e.g. "Translated by J.M. Rodwell")' } }, required: ['bookIds', 'byline'] } },
       edits: { type: 'array', description: "In-place edits of a book's current cover image", items: { type: 'object', properties: {
         bookId: { type: 'string' }, change: { type: 'string', description: 'one precise visual instruction, e.g. "make the leather a deeper forest green; keep everything else"' } }, required: ['bookId', 'change'] } } },
       required: ['changes'] } },
@@ -116,7 +124,12 @@ export function sanitizePlan(p, plan) {
     const ids = [...new Set((r.bookIds || []).filter((id) => books.has(id) && id !== r.refBookId))];
     return ref?.versions?.length && ids.length ? [{ refBookId: ref.id, refTitle: ref.title, bookIds: ids, generate: !!r.generate, mode: ['similar', 'exact'].includes(r.mode) ? r.mode : 'style' }] : [];
   });
-  return changes.length || generateBookIds.length || edits.length || references.length ? { changes, generateBookIds, edits, references } : null;
+  // The printed author line, per book ("" = none).
+  const bylines = (plan?.bylines || []).flatMap((x) => {
+    const ids = [...new Set((x.bookIds || []).filter((id) => books.has(id)))];
+    return ids.length && typeof x.byline === 'string' ? [{ bookIds: ids, byline: x.byline.trim().slice(0, 200), name: `${ids.length} book${ids.length > 1 ? 's' : ''}` }] : [];
+  });
+  return changes.length || generateBookIds.length || edits.length || references.length || bylines.length ? { changes, generateBookIds, edits, references, bylines } : null;
 }
 
 /** One chat turn. messages: [{role:'user'|'assistant', text}]. callModel(contents) → parts. */
@@ -196,10 +209,14 @@ export const refineRequest = (feedback, book = {}) =>
   `"Enlarge the title lettering by a third", "Make the byline twice as large"). Be decisive enough to be clearly visible at ` +
   `thumbnail size. Keep the book, material, lighting and framing; never ask to re-shoot or crop. Treat what they wrote as a ` +
   `direction to change the cover; only if it is plainly not about changing it (thanks, a question) reply exactly: NONE.\n` +
-  `Output ONLY a short numbered list, one command per line ("1. …"), usually 1–4 commands.`;
+  `Output ONLY a short numbered list, one command per line ("1. …"), usually 1–4 commands. If they want the author line ` +
+  `removed or changed (author, byline, credit), add a last line "BYLINE: NONE" (no author line) or "BYLINE: <exact new text>".`;
+const BYLINE_LINE = /^\s*BYLINE:\s*(.*)$/im;
+/** The author-line change a refined edit asks for: '' = none, text = new credit, undefined = no change. */
+export const bylineFrom = (text) => { const m = String(text || '').match(BYLINE_LINE); return m ? (/^none\b/i.test(m[1].trim()) ? '' : m[1].trim().replace(/^["“]|["”]$/g, '')) : undefined; };
 /** The refined edit as a list of commands (accepts "1." / "2)" / "-" bullets; a single sentence stays one command). */
 export const editSteps = (text) => /^\s*NONE\b/i.test(text || '') ? []
-  : String(text || '').split('\n').map((l) => l.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, '').trim()).filter(Boolean);
+  : String(text || '').split('\n').filter((l) => !BYLINE_LINE.test(l)).map((l) => l.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, '').trim()).filter(Boolean);
 export const geminiRefine = (apiKey, model = CHAT_MODEL) => async (imageB64, mimeType, feedback, book) => {
   const parts = await gemini(apiKey, model, { contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageB64 } }, { text: refineRequest(feedback, book) }] }] });
   return parts.filter((p) => p.text).map((p) => p.text).join(' ').trim();

@@ -89,8 +89,9 @@ function bookLines(project, book) {
   const out = [];
   const title = (book?.title || '').trim();
   if (title) out.push(`The title "${title}" is stamped on the cover${book?.subtitle ? `, with the subtitle "${book.subtitle}" smaller beneath it` : ''}.`);
-  const author = (book?.author || '').trim();
-  if (author) out.push(`The line "${author}" is stamped smaller at the bottom of the cover.`);
+  const by = bylineOf(book);
+  if (by) out.push(`The line "${by}" is stamped smaller at the bottom of the cover.`);
+  else if (book?.byline === '') out.push(NO_BYLINE);
   // Book metadata as CONTEXT: it informs the imagery, never the printed text. Capped so a long blurb
   // cannot outweigh the style layers.
   const about = (book?.description || '').replace(/\s+/g, ' ').trim();
@@ -105,13 +106,22 @@ function bookLines(project, book) {
   return out;
 }
 // Model prompts are recognised by these line openings (see bookLines).
-const BOOK_LINE = /^(The title "|The line "|ABOUT THIS BOOK|The embossed centre illustration shows|Choose a centre illustration)/;
+const NO_BYLINE = 'Print no author name, byline or credit line anywhere on the cover.';
+const BOOK_LINE = /^(The title "|The line "|Print no author name|ABOUT THIS BOOK|The embossed centre illustration shows|Choose a centre illustration)/;
+
+/** What the cover prints as its author line: the book's byline setting ("" = none) or, unset, its author. */
+export const bylineOf = (book) => (book?.byline != null ? String(book.byline) : book?.author || '').trim();
 
 /** Similar Style: the model's EXACT generation prompt with this book's title, byline and illustration brief swapped in —
  *  no library/shelf defaults consulted, so later default changes can't pull it away from the model. */
 export function retitlePrompt(modelPrompt, project, book, { keepByline = false } = {}) {
-  // keepByline (same author as the model): the model's byline/credit line stays, the book's author isn't swapped in.
-  const lines = String(modelPrompt).split('\n').filter((l) => !BOOK_LINE.test(l) || (keepByline && l.startsWith('The line "')));
+  // keepByline (same author as the model): the model's byline/credit line stays, the book's author isn't swapped in —
+  // unless the book has its own byline setting, which always wins.
+  keepByline &&= book?.byline == null;
+  // A model that prints no author line (a "no byline" line, or no byline line at all): the book follows it.
+  const modelNone = !/^The line "/m.test(String(modelPrompt));
+  if (book?.byline == null && modelNone) book = { ...book, byline: '' };
+  const lines = String(modelPrompt).split('\n').filter((l) => !BOOK_LINE.test(l) || (keepByline && /^(The line "|Print no author name)/.test(l)));
   const at = lines.findIndex((l) => l.startsWith('Flat, even studio lighting'));
   lines.splice(at >= 0 ? at : lines.length, 0, ...bookLines(project, keepByline ? { ...book, author: '' } : book));
   return lines.join('\n');
@@ -122,15 +132,21 @@ export const isGenerationPrompt = (p) => /^Front cover of a book/.test(p || '');
 /** A book based on another: EDIT that cover's photograph for this book — same binding, wear, light and framing. Style
  *  mode replaces title, byline AND centre illustration (from the book's content/description, never printed); exact mode
  *  changes only the title and byline and keeps the illustration as it is. */
-export function composeBasedOnPrompt(project, book, refTitle, { exact = false, refAuthor } = {}) {
+export function composeBasedOnPrompt(project, book, refTitle, { exact = false, refAuthor, refByline } = {}) {
+  // The model prints no author line: neither does this book, unless it has its own byline.
+  if (book?.byline == null && refByline === '') book = { ...book, byline: '' };
   const k = keyColor(project);
   const title = (book?.title || '').trim(), sub = (book?.subtitle || '').trim(), author = (book?.author || '').trim();
   // Same author as the model (every sura is "Muhammad"): its byline/credit ("TRANSLATION BY J.M. RODWELL") is right as it is.
-  const sameAuthor = refAuthor !== undefined && norm(refAuthor) === norm(author);
+  // The book's own byline setting always wins ("" = none).
+  const sameAuthor = book?.byline == null && refAuthor !== undefined && norm(refAuthor) === norm(author);
+  const by = bylineOf(book);
   const lettering = [
     `Replace the title lettering with "${title}"${sub ? ` and the subtitle "${sub}"` : ''}, in the same typeface, size, colour, finish and placement as the current title.`,
     sameAuthor ? 'Keep the byline and any credit line exactly as they are — same words, same place.'
-      : author ? `Replace the byline with "${author}", in the same style and place.` : 'Remove the byline.',
+      : by && book?.byline == null ? `If the cover has a byline or author line, replace it with "${by}" in the same style and place; if it has none, do not add one.`
+      : by ? `Replace the byline with "${by}", in the same style and place.`
+      : 'Remove the byline and any author or credit line completely; print no author name.',
   ];
   const keep = `Keep the book itself exactly as it is: the same binding and material, colour and texture, wear and patina, border and ` +
     `ornaments, typeface and layout, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +

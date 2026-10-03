@@ -45,7 +45,7 @@ describe('sanitizePlan', () => {
   });
   it('keeps cover edits for books that have a cover; drops the rest', () => {
     const plan = sanitizePlan(project, { changes: [], edits: [{ bookId: 'b1', change: ' darker leather ' }, { bookId: 'b2', change: 'x' }, { bookId: 'zzz', change: 'x' }, { bookId: 'b1', change: '' }] });
-    expect(plan).toEqual({ changes: [], generateBookIds: [], edits: [{ bookId: 'b1', title: 'The Masnavi', change: 'darker leather' }], references: [] });
+    expect(plan).toEqual({ changes: [], generateBookIds: [], edits: [{ bookId: 'b1', title: 'The Masnavi', change: 'darker leather' }], references: [], bylines: [] });
   });
 
   it('carries the override flag on shelf/collection/book changes (never on the library)', () => {
@@ -56,6 +56,18 @@ describe('sanitizePlan', () => {
   it('keeps references: a reference book with a cover, and other existing books to base on it', () => {
     const plan = sanitizePlan(project, { changes: [], references: [{ refBookId: 'b1', bookIds: ['b2', 'b3', 'b1', 'zzz'], generate: true }, { refBookId: 'b2', bookIds: ['b3'] }] });
     expect(plan.references).toEqual([{ refBookId: 'b1', refTitle: 'The Masnavi', bookIds: ['b2', 'b3'], generate: true, mode: 'style' }]);
+  });
+
+  it('keeps byline settings: "" = print no author, text = that credit; unknown ids dropped', () => {
+    const plan = sanitizePlan(project, { changes: [], bylines: [{ bookIds: ['b1', 'zzz'], byline: '' }, { bookIds: ['b2'], byline: ' Tr. Rodwell ' }, { bookIds: ['zzz'], byline: 'x' }] });
+    expect(plan.bylines).toEqual([{ bookIds: ['b1'], byline: '', name: '1 book' }, { bookIds: ['b2'], byline: 'Tr. Rodwell', name: '1 book' }]);
+  });
+
+  it('shows each book\'s byline setting in the catalogue', () => {
+    const p = { ...project, books: [{ ...project.books[0], byline: '' }, { ...project.books[1], byline: 'Tr. X' }] };
+    const c = catalogue(p);
+    expect(c).toContain('byline: none');
+    expect(c).toContain('byline: "Tr. X"');
   });
 
   it('returns null for an empty plan', () => {
@@ -145,6 +157,7 @@ describe('refineRequest', () => {
     expect(r).toMatch(/never invent|do not invent/i);
     expect(r).not.toContain('Muhammad');                         // no forced author: bylines/credits stay unless asked
     expect(r).toMatch(/keep existing text/i);
+    expect(r).toMatch(/BYLINE:/);                               // asks to report a byline change so it persists
     expect(r).toContain('good but a bit too busy for thumbnail visibility');
     expect(r).toMatch(/concrete/i);
     expect(r).toMatch(/what to remove|remove|enlarge|simplify/i);
@@ -153,6 +166,15 @@ describe('refineRequest', () => {
 });
 
 describe('editSteps', () => {
+  it('pulls a BYLINE: line out of the refined commands (NONE = no byline)', async () => {
+    const { editSteps, bylineFrom } = await import('../src/chat.js');
+    const text = '1. Remove the author line at the bottom\nBYLINE: NONE';
+    expect(editSteps(text)).toEqual(['Remove the author line at the bottom']);
+    expect(bylineFrom(text)).toBe('');
+    expect(bylineFrom('1. x\nBYLINE: Translated by J.M. Rodwell')).toBe('Translated by J.M. Rodwell');
+    expect(bylineFrom('1. x')).toBeUndefined();
+  });
+
   it('normalises the refined edit into numbered commands', async () => {
     const { editSteps } = await import('../src/chat.js');
     expect(editSteps('1. Remove the outer border\n2) Enlarge the title by 50%\n- Make the byline twice as large')).toEqual(['Remove the outer border', 'Enlarge the title by 50%', 'Make the byline twice as large']);
