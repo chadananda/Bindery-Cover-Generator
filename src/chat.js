@@ -21,10 +21,18 @@ When the user points at a cover they like, call describe_cover_style for it, the
 Choose the narrowest layer that covers exactly the books the user means:
 - "the rest of the shelf" / "this shelf" → that shelf's style;  "this collection/series" → the collection's style;
 - an arbitrary set (same author, a list of titles) → scope "books" with their ids;  everything → the library style.
+By default a shelf/collection/book style ADDS to the layers above it. When the user wants a layer to depart from the base
+look ("cloth instead of leather", "ignore the library style for this shelf", "a completely different look"), set
+override: true so it REPLACES the inherited layers, and write that layer as a complete style on its own. To change the base
+look for everyone, change the library style itself (scope library).
 Write style text as concrete visual instructions for an image model, never the book's title or its specific centre
 illustration (those come from each book). Keep the existing layer text when the user asks to "add" or "also".
 Use show_books to put thumbnails of the books you are talking about in front of the user (examples, matches, the
 books a change will affect — up to 12); they can open any of them. Finish with propose_plan when changes are wanted.
+When the user wants other books based ON a particular cover ("make the others like this one", "base the Rumi books on
+The Masnavi", "use this cover for the whole collection"), propose references: refBookId = that book, bookIds = the others
+(resolve shelves/collections/authors to book ids), generate: true if they want them made now. This shows the model the
+reference image itself — prefer it over describing the style when the user points at a cover.
 When the user wants a specific cover's PICTURE changed ("darker leather", "add a clasp", "fix the lettering", "less shiny"),
 propose an edit of that cover (edits: bookId + one precise visual instruction) — not a style change — unless they say it
 should apply to a whole shelf/collection/author, which is a style change. Attached covers and the cover open in the
@@ -43,8 +51,12 @@ export const TOOLS = [{ functionDeclarations: [
         scope: { type: 'string', enum: ['library', 'shelf', 'collection', 'books'] },
         targetId: { type: 'string', description: 'shelf or collection id' },
         bookIds: { type: 'array', items: { type: 'string' } },
-        style: { type: 'string', description: 'the complete new style text for that layer' } }, required: ['scope', 'style'] } },
+        style: { type: 'string', description: 'the complete new style text for that layer' },
+        override: { type: 'boolean', description: 'true = this layer REPLACES the inherited styles above it (library, and shelf for a collection) instead of adding to them' } }, required: ['scope', 'style'] } },
       generateBookIds: { type: 'array', items: { type: 'string' } },
+      references: { type: 'array', description: 'Base books on a reference cover: when they are generated, the model is shown that cover and matches it exactly (not just a description).', items: { type: 'object', properties: {
+        refBookId: { type: 'string', description: 'the book whose current cover is the reference' }, bookIds: { type: 'array', items: { type: 'string' } },
+        generate: { type: 'boolean', description: 'also generate those books now' } }, required: ['refBookId', 'bookIds'] } },
       edits: { type: 'array', description: "In-place edits of a book's current cover image", items: { type: 'object', properties: {
         bookId: { type: 'string' }, change: { type: 'string', description: 'one precise visual instruction, e.g. "make the leather a deeper forest green; keep everything else"' } }, required: ['bookId', 'change'] } } },
       required: ['changes'] } },
@@ -56,14 +68,14 @@ export function sanitizePlan(p, plan) {
   const changes = (plan?.changes || []).flatMap((c) => {
     const style = String(c.style || '').trim().slice(0, 3000);
     if (!style) return [];
-    if (c.scope === 'library') return [{ scope: 'library', targetId: null, name: p.app.name, before: p.app.style || '', style }];
+    if (c.scope === 'library') return [{ scope: 'library', targetId: null, name: p.app.name, before: p.app.style || '', style, override: false }];
     if (c.scope === 'shelf' || c.scope === 'collection') {
       const t = (c.scope === 'shelf' ? p.shelves : p.collections).find((x) => x.id === c.targetId);
-      return t ? [{ scope: c.scope, targetId: t.id, name: t.name, before: t.style || '', style }] : [];
+      return t ? [{ scope: c.scope, targetId: t.id, name: t.name, before: t.style || '', style, override: !!c.override }] : [];
     }
     if (c.scope === 'books') {
       const ids = (c.bookIds || []).filter((id) => books.has(id));
-      return ids.length ? [{ scope: 'books', bookIds: ids, name: `${ids.length} book${ids.length > 1 ? 's' : ''}`, before: '', style }] : [];
+      return ids.length ? [{ scope: 'books', bookIds: ids, name: `${ids.length} book${ids.length > 1 ? 's' : ''}`, before: '', style, override: !!c.override }] : [];
     }
     return [];
   });
@@ -73,7 +85,13 @@ export function sanitizePlan(p, plan) {
     const b = p.books.find((x) => x.id === e.bookId), change = String(e.change || '').trim().slice(0, 1000);
     return b && change && b.versions?.length ? [{ bookId: b.id, title: b.title, change }] : [];
   });
-  return changes.length || generateBookIds.length || edits.length ? { changes, generateBookIds, edits } : null;
+  // Base books on a reference cover (the model sees that image when generating them).
+  const references = (plan?.references || []).flatMap((r) => {
+    const ref = p.books.find((b) => b.id === r.refBookId);
+    const ids = [...new Set((r.bookIds || []).filter((id) => books.has(id) && id !== r.refBookId))];
+    return ref?.versions?.length && ids.length ? [{ refBookId: ref.id, refTitle: ref.title, bookIds: ids, generate: !!r.generate }] : [];
+  });
+  return changes.length || generateBookIds.length || edits.length || references.length ? { changes, generateBookIds, edits, references } : null;
 }
 
 /** One chat turn. messages: [{role:'user'|'assistant', text}]. callModel(contents) → parts. */

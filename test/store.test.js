@@ -20,7 +20,7 @@ describe('store', () => {
     await insertRows(db, 'ocean', 'versions', [{ id: 'v1', bookId: 'b1', cover: 'sets/ocean/covers/b1/1.png', prompt: 'p', at: 1 }]);
     const p = await loadLibrary(db, 'ocean');
     expect(p.app).toEqual({ name: 'Ocean', style: 'leather', keyColor: 'magenta', lookId: null });
-    expect(p.shelves).toEqual([{ id: 's1', name: 'Islam', style: 'green' }]);
+    expect(p.shelves).toEqual([{ id: 's1', name: 'Islam', style: 'green', override: false }]);
     const b = p.books[0];
     expect(b).toMatchObject({ id: 'b1', title: 'Quran', shelfId: 's1', sample: true, author: '' });
     expect(b.junk).toBeUndefined();
@@ -46,6 +46,23 @@ describe('store', () => {
     expect((await loadLibrary(db, 'other')).books[0].title).toBe('A');
     await patchRow(db, 'ocean', 'libraries', 'ocean', { style: 'cloth', lookId: 'L1' });
     expect((await loadLibrary(db, 'ocean')).app).toMatchObject({ style: 'cloth', lookId: 'L1' });
+  });
+
+  it('stores the override flag on shelves, collections and books', async () => {
+    await insertRows(db, 'ocean', 'shelves', [{ id: 's1', name: 'S' }]);
+    await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'A' }]);
+    await patchRow(db, 'ocean', 'shelves', 's1', { override: true });
+    await patchRow(db, 'ocean', 'books', 'b1', { override: true });
+    const p = await loadLibrary(db, 'ocean');
+    expect(p.shelves[0].override).toBe(true);
+    expect(p.books[0].override).toBe(true);
+  });
+
+  it('a book can point at a reference book (refBookId)', async () => {
+    await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'A' }, { id: 'b2', title: 'B', refBookId: 'b1' }]);
+    expect((await loadLibrary(db, 'ocean')).books[1].refBookId).toBe('b1');
+    await patchRow(db, 'ocean', 'books', 'b2', { refBookId: '' });
+    expect((await loadLibrary(db, 'ocean')).books[1].refBookId).toBe('');
   });
 
   it('round-trips looks with parsed styles, newest first', async () => {

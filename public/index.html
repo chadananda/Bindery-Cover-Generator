@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=23" />
+  <link rel="stylesheet" href="/styles.css?v=26" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -102,6 +102,7 @@
     <div class="dlg-body">
       <label class="field"><span>Name</span><input id="shelf-name" /></label>
       <label class="field"><span>How covers on this shelf differ</span><textarea id="shelf-style" rows="6" placeholder="Leather colour, motifs, border…"></textarea></label>
+      <label class="check" data-write><input type="checkbox" id="shelf-override" /> Replace the library style <small>· this shelf's style stands alone instead of adding to it</small></label>
       <details class="inherit"><summary>Library style it builds on</summary><p id="shelf-inherit"></p></details>
       <h3>Collections on this shelf</h3>
       <p class="hint">Volumes that must match one another, such as the four Gospels.</p>
@@ -175,6 +176,7 @@
           <button type="button" class="btn small gold" id="adj-save" data-write>Save as new version</button>
         </div>
       </details>
+      <div class="im-ref" id="im-ref" hidden></div>
       <div id="im-versions" hidden>
         <h3>History <small>· every version is kept · click one to use it</small></h3>
         <div id="im-strip" class="strip"></div>
@@ -203,6 +205,7 @@
       <details class="inherit"><summary>Inherited style</summary><div id="im-layers"></div></details>
       <label class="field"><span>This book only <small>· optional, applied last</small></span>
         <textarea id="im-style" rows="2" placeholder="e.g. add an ornate silver clasp"></textarea></label>
+      <label class="check" data-write><input type="checkbox" id="im-override" /> Replace the inherited styles <small>· this book's style alone, not library + shelf</small></label>
       <div class="cover-grid">
         <label class="field"><span>Title</span><input id="im-t" /></label>
         <label class="field"><span>Subtitle</span><input id="im-sub" /></label>
@@ -241,6 +244,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=24"></script>
+  <script type="module" src="/app.js?v=26"></script>
 </body>
 </html>

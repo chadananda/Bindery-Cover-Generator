@@ -36,6 +36,14 @@ describe('generateImage', () => {
     expect(parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'SU1H' } }, { text: 'make it red' }]);
   });
 
+  it('a generation with a STYLE REFERENCE sends the reference cover before the prompt, still at 3:4', async () => {
+    const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
+    await generateImage({ apiKey: 'k', prompt: 'match it', refImage: 'UkVG', fetch });
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.contents[0].parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'UkVG' } }, { text: 'match it' }]);
+    expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: '3:4' });
+  });
+
   it('an edit keeps the input image\'s shape: no forced aspect ratio (3:4 made the model re-frame the cover)', async () => {
     const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
     await generateImage({ apiKey: 'k', prompt: 'add a clasp', inputImage: 'SU1H', fetch });

@@ -470,3 +470,14 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .sliders label { display: grid; grid-template-columns: 6.5rem 1fr 2.5rem; align-items: center; gap: .6rem; font-size: 13.5px; color: var(--ink-2); }
 .sliders input[type=range] { width: 100%; accent-color: var(--accent); padding: 0; border: 0; background: none; box-shadow: none; }
 .sliders output { font: 12.5px var(--mono); color: var(--ink-3); text-align: right; }
+
+/* Override: a layer that replaces the styles above it. */
+.layer-line.overridden { opacity: .55; text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--ink-3) 70%, transparent); }
+.layer-line em { font-style: normal; font-size: 12px; color: var(--accent-hi); text-decoration: none; }
+.change .scope.over { color: #7a3a1c; background: rgb(200 162 75 / .22); }
+
+/* "Based on <reference cover>" in the editor */
+.im-ref { display: flex; align-items: center; gap: .5rem; margin: .2rem 0 .7rem; padding: .4rem .6rem; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 7%, var(--panel)); font-size: 14px; }
+.im-ref .ref-lab { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); }
+.im-ref small { color: var(--ink-3); }
+.im-ref .ref-x { margin-left: auto; }

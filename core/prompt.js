@@ -18,21 +18,23 @@ export const DEFAULT_APP_STYLE =
 
 const find = (list, id) => (list || []).find((x) => x.id === id);
 
-/** The style layers that apply to a book, most general first. */
+/** The style layers that apply to a book, most general first. A layer with `override` REPLACES every layer above it
+ *  (those come back marked `overridden`, for display) — e.g. a cloth shelf under a leather library. */
 export function effectiveStyles(project, book) {
   const layers = [];
   const app = project?.app || {};
   layers.push({ level: 'application', name: app.name || 'Application', style: (app.style || '').trim() });
   const shelf = find(project?.shelves, book?.shelfId);
-  if (shelf) layers.push({ level: 'bookshelf', name: shelf.name, style: (shelf.style || '').trim() });
+  if (shelf) layers.push({ level: 'bookshelf', name: shelf.name, style: (shelf.style || '').trim(), override: !!shelf.override });
   const coll = find(project?.collections, book?.collectionId);
-  if (coll) layers.push({ level: 'collection', name: coll.name, style: (coll.style || '').trim() });
-  if ((book?.style || '').trim()) layers.push({ level: 'book', name: book.title, style: book.style.trim() });
-  return layers;
+  if (coll) layers.push({ level: 'collection', name: coll.name, style: (coll.style || '').trim(), override: !!coll.override });
+  if ((book?.style || '').trim()) layers.push({ level: 'book', name: book.title, style: book.style.trim(), override: !!book.override });
+  const cut = layers.findLastIndex((l) => l.override && l.style);
+  return layers.map((l, i) => (i < cut ? { ...l, overridden: true } : l));
 }
 
-/** The full generation prompt for one book. */
-export function composePrompt(project, book) {
+/** The full generation prompt for one book. opts.reference = the title of a reference cover sent with the prompt. */
+export function composePrompt(project, book, opts = {}) {
   const k = keyColor(project);
   const bgName = `${k.name} (${k.hex})`;
   const out = [
@@ -41,7 +43,12 @@ export function composePrompt(project, book) {
       `the ${k.name.toLowerCase()} background. Leave a visible margin of ${k.name.toLowerCase()} around all edges of the book.`,
     '',
   ];
-  for (const layer of effectiveStyles(project, book)) {
+  if (opts.reference) out.push(`STYLE REFERENCE: The attached image is the cover of "${opts.reference}", from this same set. ` +
+    `Make this cover match it exactly, as if bound by the same bindery: the same material, colour and texture, the same wear ` +
+    `and patina, the same border and corner ornaments, the same typeface, size, colour and placement of the lettering, and ` +
+    `the same overall layout and proportions. Only the title, the byline and the centre illustration differ. The styles ` +
+    `below describe the set; where they disagree with the reference image, follow the image.`, '');
+  for (const layer of effectiveStyles(project, book).filter((l) => !l.overridden)) {
     if (layer.level === 'application' && layer.style) out.push(`STYLE: ${layer.style}`);
     if (layer.level === 'bookshelf' && layer.style) out.push(`BOOKSHELF STYLE — ${layer.name}: ${layer.style}`);
     if (layer.level === 'collection') {

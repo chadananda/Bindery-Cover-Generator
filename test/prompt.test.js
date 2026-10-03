@@ -105,4 +105,34 @@ describe('effectiveStyles', () => {
     expect(p).toMatch(/lettering/i);
     expect(p).toContain('#FF00FF');
   });
+
+  it('an OVERRIDE layer replaces everything above it instead of adding to it', async () => {
+    const { effectiveStyles: eff, composePrompt: compose } = await import('../core/prompt.js');
+    const proj = { app: { name: 'Ocean', style: 'antique leather' },
+      shelves: [{ id: 's', name: 'Islam', style: 'green book-cloth, no leather', override: true }],
+      collections: [{ id: 'c', name: 'Hadith', shelfId: 's', style: 'numbered spines' }] };
+    const bk = { title: 'Sahih Muslim 1', shelfId: 's', collectionId: 'c' };
+    expect(eff(proj, bk).map((l) => [l.level, !!l.overridden])).toEqual([['application', true], ['bookshelf', false], ['collection', false]]);
+    const prompt = compose(proj, bk);
+    expect(prompt).not.toContain('antique leather');
+    expect(prompt).toContain('green book-cloth');
+    expect(prompt).toContain('numbered spines');
+    // a book override drops every layer above it
+    const own = compose(proj, { ...bk, style: 'plain vellum', override: true });
+    expect(own).not.toContain('green book-cloth');
+    expect(own).not.toContain('numbered spines');
+    expect(own).toContain('plain vellum');
+  });
+
+  it('a book based on a reference cover is told to match that image exactly; only title, byline, illustration differ', async () => {
+    const { composePrompt: compose } = await import('../core/prompt.js');
+    const plain = compose({ app: { style: 'leather' } }, { title: 'Diwan' });
+    const ref = compose({ app: { style: 'leather' } }, { title: 'Diwan' }, { reference: 'The Masnavi' });
+    expect(plain).not.toMatch(/STYLE REFERENCE/);
+    expect(ref).toMatch(/STYLE REFERENCE/);
+    expect(ref).toContain('The Masnavi');
+    expect(ref).toMatch(/typeface/i);
+    expect(ref).toMatch(/only the title/i);
+  });
 });
+

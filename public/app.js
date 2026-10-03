@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=24';
+import { composePrompt, composeEditPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=26';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -351,6 +351,7 @@ const collCard = (c) => `<div class="layer-card" data-coll="${c.id}">
       <span class="count">${project.books.filter((b) => b.collectionId === c.id).length} books</span>
       <button type="button" class="x" data-del-coll aria-label="Delete collection">&times;</button></div>
     <textarea rows="3" data-f="style" placeholder="What every volume shares — identical border, numbered spine label…">${esc(c.style)}</textarea>
+    <label class="check"><input type="checkbox" data-f="override" ${c.override ? 'checked' : ''} /> Replace the library and shelf styles</label>
   </div>`;
 function renderLibDialog() {
   queueMicrotask(() => setAuthed(authed));
@@ -390,7 +391,8 @@ $('add-shelf').addEventListener('click', async () => {
 function bindCollections(box) {
   box.addEventListener('input', (e) => {
     const id = e.target.closest('[data-coll]')?.dataset.coll; const c = collById(id); if (!c || !e.target.dataset.f) return;
-    c[e.target.dataset.f] = e.target.value; patch('collections', id, { [e.target.dataset.f]: e.target.value }); renderLookState();
+    const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    c[e.target.dataset.f] = val; patch('collections', id, { [e.target.dataset.f]: val }); renderLookState();
   });
   box.addEventListener('click', async (e) => {
     if (!e.target.closest('[data-del-coll]')) return;
@@ -419,7 +421,7 @@ function openShelfDialog(id) {
   dlgShelf = id;
   $('shelf-title').textContent = s.name;
   $('shelf-name').value = s.name;
-  $('shelf-style').value = s.style || '';
+  $('shelf-style').value = s.style || ''; $('shelf-override').checked = !!s.override;
   $('shelf-inherit').textContent = project.app.style || '(no library style)';
   $('shelf-colls').innerHTML = project.collections.filter((c) => c.shelfId === id).map(collCard).join('') || '<p class="hint">None.</p>';
   setAuthed(authed);
@@ -427,6 +429,7 @@ function openShelfDialog(id) {
 }
 $('shelf-name').addEventListener('input', (e) => { const s = shelfById(dlgShelf); s.name = e.target.value; $('shelf-title').textContent = s.name; patch('shelves', s.id, { name: s.name }); });
 $('shelf-style').addEventListener('input', (e) => { const s = shelfById(dlgShelf); s.style = e.target.value; patch('shelves', s.id, { style: s.style }); renderLookState(); });
+$('shelf-override').addEventListener('change', (e) => { const s = shelfById(dlgShelf); s.override = e.target.checked; patch('shelves', s.id, { override: s.override }); renderLookState(); });
 $('shelf-add-coll').addEventListener('click', () => addCollection(dlgShelf, $('shelf-colls')));
 $('shelf-delete').addEventListener('click', async () => {
   const id = dlgShelf, used = project.books.filter((b) => b.shelfId === id).length;
@@ -567,13 +570,21 @@ async function rawFromCover(book, v) {
   return storeImage(book, 'raw', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
 }
 
+// A reference version's cover on the key colour, made once per version (a batch of 20 books shares it).
+const refRaws = new Map();
+const refRaw = (book, v) => v.raw ? Promise.resolve(v.raw) : refRaws.get(v.id) || (refRaws.set(v.id, rawFromCover(book, v)), refRaws.get(v.id));
+
 /** Generate (or img2img-edit) one cover, key it, store it, record a version stamped with its look. */
 async function produce(book, { removeBg = true, change = '', lookId = null } = {}) {
   const from = change ? currentVersion(book) : null;
   if (change && !from?.raw && !from?.cover) throw new Error('No cover to edit — Generate one first');
   const inputKey = change ? from.raw || await rawFromCover(book, from) : undefined;
-  const prompt = change ? composeEditPrompt(project, change) : composePrompt(project, book);
-  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey }) });
+  // Based on another book: send that book's current cover (on the key colour) as the style reference.
+  const refBook = !change && book.refBookId && project.books.find((x) => x.id === book.refBookId);
+  const refV = refBook && currentVersion(refBook);
+  const refKey = refV?.cover || refV?.raw ? await refRaw(refBook, refV) : undefined;
+  const prompt = change ? composeEditPrompt(project, change) : composePrompt(project, book, refKey ? { reference: refBook.title } : {});
+  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, refKey }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
@@ -589,9 +600,10 @@ async function generate(books) {
   const worker = async () => {
     for (let b; (b = queue.shift());) {
       status.set(b.id, { state: 'busy', msg: 'Generating…' }); renderCard(b.id); if (!$('chat').hidden) renderChat();
-      try { await produce(b, { lookId }); status.delete(b.id); }
-      catch (e) { status.set(b.id, { state: 'err', msg: e.message }); }
-      renderCard(b.id); if (!$('chat').hidden) renderChat();
+      if (im?.bookId === b.id) { imBusy(true, 'Generating… (~20–40s)'); imStatus('Generating…'); }
+      try { await produce(b, { lookId }); status.delete(b.id); if (im?.bookId === b.id) imStatus('Generated ✓', 'ok'); }
+      catch (e) { status.set(b.id, { state: 'err', msg: e.message }); if (im?.bookId === b.id) imStatus(e.message, 'err'); }
+      renderCard(b.id); if (!$('chat').hidden) renderChat(); if (im?.bookId === b.id) { imBusy(false); renderManager(); }
     }
   };
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
@@ -617,7 +629,7 @@ function openManager(bookId) {
   $('im-style').value = b.style || '';
   $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
   $('im-sample').checked = !!b.sample;
-  imStatus('');
+  imStatus(''); imBusy(status.get(bookId)?.state === 'busy', status.get(bookId)?.msg || 'Working…');
   renderManager();
   openPane('imgmgr');
 }
@@ -667,8 +679,13 @@ const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit 
 function renderManager() {
   const b = imBook(); if (!b) return;
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')
-    .map((l) => `<p class="layer-line"><b>${l.level}</b> ${esc(l.name)} — ${esc(l.style || '(no style text)')}</p>`).join('');
-  $('im-prompt').textContent = composePrompt(project, b);
+    .map((l) => `<p class="layer-line ${l.overridden ? 'overridden' : ''}"><b>${l.level}</b> ${esc(l.name)}${l.override ? ' <em>(replaces the styles above)</em>' : ''} — ${esc(l.style || '(no style text)')}${l.overridden ? ' <em>(replaced)</em>' : ''}</p>`).join('');
+  $('im-override').checked = !!b.override;
+  const refB = b.refBookId && project.books.find((x) => x.id === b.refBookId), refV = refB && currentVersion(refB);
+  $('im-prompt').textContent = composePrompt(project, b, refV ? { reference: refB.title } : {});
+  $('im-ref').hidden = !refB;
+  if (refB) $('im-ref').innerHTML = `<span class="ref-lab">Based on</span><button type="button" class="ref-img" data-open-ref="${refB.id}" title="Open ${esc(refB.title)}">${refV ? pic(refV.cover || refV.raw, refB.title, '40px', [160], true, refV) : ''}</button><b>${esc(refB.title)}</b>
+    <small>· generations match this cover</small><button type="button" class="ref-x" data-unref-book data-write title="Stop basing this cover on ${esc(refB.title)}" aria-label="Unlink reference">×</button>`;
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
@@ -695,6 +712,12 @@ for (const [id, field] of Object.entries(imFields)) {
     if (field === 'title') $('im-title').textContent = b.title;
   });
 }
+$('im-ref').addEventListener('click', (e) => {
+  const b = imBook(); if (!b) return;
+  if (e.target.closest('[data-unref-book]') && authed) { b.refBookId = ''; patch('books', b.id, { refBookId: '' }); renderManager(); return; }
+  const o = e.target.closest('[data-open-ref]'); if (o) openManager(o.dataset.openRef);
+});
+$('im-override').addEventListener('change', (e) => { const b = imBook(); b.override = e.target.checked; patch('books', b.id, { override: b.override }); renderManager(); });
 $('im-sample').addEventListener('change', (e) => { const b = imBook(); b.sample = e.target.checked; patch('books', b.id, { sample: b.sample }); });
 $('imgmgr').addEventListener('click', async (e) => {
   const b = imBook(); if (!b) return;
@@ -814,10 +837,12 @@ function planSamples(plan) {
 const SCOPE = { library: 'Library', shelf: 'Shelf', collection: 'Collection', books: 'Books' };
 const planHtml = (m, i) => {
   const p = m.plan, gen = planSamples(p);
-  return `<div class="plan" data-plan="${i}">${p.changes.map((c) => `<div class="change"><span class="scope">${SCOPE[c.scope]}</span> <b>${esc(c.name)}</b>
+  return `<div class="plan" data-plan="${i}">${p.changes.map((c) => `<div class="change"><span class="scope">${SCOPE[c.scope]}</span>${c.override ? ' <span class="scope over">Replaces inherited styles</span>' : ''} <b>${esc(c.name)}</b>
       <p class="after">${esc(c.style)}</p>${c.before ? `<details><summary>Current style</summary><p class="before">${esc(c.before)}</p></details>` : ''}</div>`).join('')}
     ${(p.edits || []).map((e) => `<div class="change"><span class="scope">Edit cover</span> <b>${esc(e.title)}</b><p class="after">${esc(e.change)}</p></div>`).join('')}
+    ${(p.references || []).map((r) => `<div class="change"><span class="scope">Based on</span> <b>${esc(r.refTitle)}</b><p class="after">${r.bookIds.length} book${r.bookIds.length > 1 ? 's' : ''} will match this cover exactly: ${esc(r.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${r.bookIds.length > 6 ? '…' : ''}</p>${thumbsHtml([r.refBookId])}</div>`).join('')}
     ${m.applied ? `<p class="applied">Applied ✓${m.applied === 'gen' ? ` · generating ${gen.length}` : m.applied === 'edit' ? ` · editing ${p.edits.length}` : ''}</p>` : `<div class="plan-actions">
+      ${p.references?.length ? `<button type="button" class="btn small gold" data-apply-refs>Base them on it &amp; generate ${p.references.reduce((n, r) => n + r.bookIds.length, 0)}</button><button type="button" class="btn small" data-apply-refs-only>Just link them</button>` : ''}
       ${p.edits?.length ? `<button type="button" class="btn small gold" data-apply-edits>✎ Edit ${p.edits.length > 1 ? `${p.edits.length} covers` : 'this cover'}</button>` : ''}
       ${p.changes.length ? '<button type="button" class="btn small" data-apply>Apply</button>' : ''}
       ${gen.length ? `<button type="button" class="btn small gold" data-apply-gen>${p.changes.length ? 'Apply &amp; ' : ''}generate ${gen.length} ${p.generateBookIds.length ? 'cover' : '★ sample'}${gen.length > 1 ? 's' : ''}</button>` : ''}
@@ -855,9 +880,9 @@ async function sendChat(text) {
 function applyPlan(plan) {
   for (const c of plan.changes) {
     if (c.scope === 'library') { project.app.style = c.style; patch('libraries', lib, { style: c.style }); }
-    else if (c.scope === 'shelf') { const s = shelfById(c.targetId); if (s) { s.style = c.style; patch('shelves', s.id, { style: c.style }); } }
-    else if (c.scope === 'collection') { const x = collById(c.targetId); if (x) { x.style = c.style; patch('collections', x.id, { style: c.style }); } }
-    else c.bookIds.forEach((id) => { const b = project.books.find((x) => x.id === id); if (b) { b.style = c.style; patch('books', id, { style: c.style }); } });
+    else if (c.scope === 'shelf') { const s = shelfById(c.targetId); if (s) { Object.assign(s, { style: c.style, override: !!c.override }); patch('shelves', s.id, { style: c.style, override: !!c.override }); } }
+    else if (c.scope === 'collection') { const x = collById(c.targetId); if (x) { Object.assign(x, { style: c.style, override: !!c.override }); patch('collections', x.id, { style: c.style, override: !!c.override }); } }
+    else c.bookIds.forEach((id) => { const b = project.books.find((x) => x.id === id); if (b) { Object.assign(b, { style: c.style, override: !!c.override }); patch('books', id, { style: c.style, override: !!c.override }); } });
   }
   renderAll();
 }
@@ -881,20 +906,33 @@ $('chat-body').addEventListener('click', (e) => {
   const m = chat.messages[+card.dataset.plan];
   if (e.target.closest('[data-dismiss]')) { m.plan = null; m.text += '\n(Not applied.)'; renderChat(); return; }
   if (e.target.closest('[data-apply]')) { applyPlan(m.plan); m.applied = 'yes'; renderChat(); return; }
+  const refsGen = e.target.closest('[data-apply-refs]'), refsOnly = e.target.closest('[data-apply-refs-only]');
+  if (refsGen || refsOnly) {
+    // Link each book to its reference cover; generating them sends that cover to the model as the style reference.
+    const books = [];
+    for (const r of m.plan.references) for (const id of r.bookIds) { const b = project.books.find((x) => x.id === id); if (b) { b.refBookId = r.refBookId; patch('books', id, { refBookId: r.refBookId }); books.push(b); } }
+    applyPlan(m.plan); m.applied = refsGen ? 'gen' : 'yes';
+    if (refsGen) {
+      chat.messages.push({ role: 'assistant', text: `Generating ${books.length} cover${books.length > 1 ? 's' : ''} based on that cover. They appear here as they finish; open any one to compare.`, books: books.map((b) => b.id) });
+      renderChat(); if (books[0]) openManager(books[0].id); generate(books);
+    } else { chat.messages.push({ role: 'assistant', text: `Linked ${books.length} book${books.length > 1 ? 's' : ''}. Their next generation will match the reference cover.` }); renderChat(); }
+    return;
+  }
   if (e.target.closest('[data-apply-edits]')) {
     // In-place edits of each book's current cover; each saves a new version and shows up here as it finishes.
     const edits = m.plan.edits.filter((x) => project.books.some((b) => b.id === x.bookId));
     if (edits.length > 3 && !confirm(`Edit ${edits.length} covers? Each one is a paid Gemini image call.`)) return;
     applyPlan(m.plan); m.applied = 'edit';
     chat.messages.push({ role: 'assistant', text: `Editing ${edits.length > 1 ? `${edits.length} covers` : 'the cover'}. The result appears here and in its History; open it to compare or delete it.`, books: edits.map((x) => x.bookId) });
-    renderChat();
+    renderChat(); openManager(edits[0].bookId);
     (async () => {
       for (const x of edits) {
         const b = project.books.find((y) => y.id === x.bookId);
         status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat();
-        try { await produce(b, { removeBg: true, change: x.change }); status.delete(b.id); }
+        if (im?.bookId === b.id) { imBusy(true, 'Editing… (~20–40s)'); imStatus('Editing from the chat…'); }
+        try { await produce(b, { removeBg: true, change: x.change }); status.delete(b.id); if (im?.bookId === b.id) imStatus('Edited ✓ — saved as a new version', 'ok'); }
         catch (err) { status.set(b.id, { state: 'err', msg: err.message }); chat.messages.push({ role: 'assistant', text: `Couldn't edit ${b.title}: ${err.message}`, error: true }); }
-        renderCard(b.id); renderChat(); if (im?.bookId === b.id) renderManager();
+        renderCard(b.id); renderChat(); if (im?.bookId === b.id) { imBusy(false); renderManager(); }
       }
     })();
     return;
@@ -902,7 +940,7 @@ $('chat-body').addEventListener('click', (e) => {
   if (e.target.closest('[data-apply-gen]')) {
     const books = planSamples(m.plan); applyPlan(m.plan); m.applied = 'gen';
     chat.messages.push({ role: 'assistant', text: `Generating ${books.length} cover${books.length > 1 ? 's' : ''} with the new style. They'll appear here as they finish; open any one to refine it.`, books: books.map((b) => b.id) });
-    renderChat(); generate(books);
+    renderChat(); if (books[0]) openManager(books[0].id); generate(books);
   }
 });
 

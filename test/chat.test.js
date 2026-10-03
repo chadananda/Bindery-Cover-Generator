@@ -36,16 +36,26 @@ describe('sanitizePlan', () => {
       generateBookIds: ['b2', 'zzz'],
     });
     expect(plan.changes).toEqual([
-      { scope: 'shelf', targetId: 's1', name: 'Islam', before: 'green', style: 'emerald' },
-      { scope: 'books', bookIds: ['b1', 'b2'], name: '2 books', before: '', style: 'gilt' },
-      { scope: 'library', targetId: null, name: 'Ocean', before: 'leather', style: 'cloth' },
+      { scope: 'shelf', targetId: 's1', name: 'Islam', before: 'green', style: 'emerald', override: false },
+      { scope: 'books', bookIds: ['b1', 'b2'], name: '2 books', before: '', style: 'gilt', override: false },
+      { scope: 'library', targetId: null, name: 'Ocean', before: 'leather', style: 'cloth', override: false },
     ]);
     expect(plan.generateBookIds).toEqual(['b2']);
     expect(plan.edits).toEqual([]);
   });
   it('keeps cover edits for books that have a cover; drops the rest', () => {
     const plan = sanitizePlan(project, { changes: [], edits: [{ bookId: 'b1', change: ' darker leather ' }, { bookId: 'b2', change: 'x' }, { bookId: 'zzz', change: 'x' }, { bookId: 'b1', change: '' }] });
-    expect(plan).toEqual({ changes: [], generateBookIds: [], edits: [{ bookId: 'b1', title: 'The Masnavi', change: 'darker leather' }] });
+    expect(plan).toEqual({ changes: [], generateBookIds: [], edits: [{ bookId: 'b1', title: 'The Masnavi', change: 'darker leather' }], references: [] });
+  });
+
+  it('carries the override flag on shelf/collection/book changes (never on the library)', () => {
+    const plan = sanitizePlan(project, { changes: [{ scope: 'shelf', targetId: 's1', style: 'cloth', override: true }, { scope: 'library', style: 'x', override: true }] });
+    expect(plan.changes.map((c) => [c.scope, c.override])).toEqual([['shelf', true], ['library', false]]);
+  });
+
+  it('keeps references: a reference book with a cover, and other existing books to base on it', () => {
+    const plan = sanitizePlan(project, { changes: [], references: [{ refBookId: 'b1', bookIds: ['b2', 'b3', 'b1', 'zzz'], generate: true }, { refBookId: 'b2', bookIds: ['b3'] }] });
+    expect(plan.references).toEqual([{ refBookId: 'b1', refTitle: 'The Masnavi', bookIds: ['b2', 'b3'], generate: true }]);
   });
 
   it('returns null for an empty plan', () => {

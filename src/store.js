@@ -4,13 +4,13 @@
 // (failed iterations), site covers never. Deleting a book keeps its versions.
 const COLS = {
   libraries: ['name', 'style', 'keyColor', 'lookId'],
-  shelves: ['id', 'name', 'style'],
-  collections: ['id', 'shelfId', 'name', 'style'],
-  books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample'],
+  shelves: ['id', 'name', 'style', 'override'],
+  collections: ['id', 'shelfId', 'name', 'style', 'override'],
+  books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample', 'override', 'refBookId'],
   versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'aspect', 'edit', 'lookId', 'at', 'w', 'h'],
   looks: ['id', 'name', 'styles', 'notes', 'at'],
 };
-const PATCHABLE = { libraries: COLS.libraries, shelves: ['name', 'style'], collections: ['shelfId', 'name', 'style'], books: COLS.books.slice(1), looks: ['name', 'notes'], versions: ['w', 'h'] };
+const PATCHABLE = { libraries: COLS.libraries, shelves: ['name', 'style', 'override'], collections: ['shelfId', 'name', 'style', 'override'], books: COLS.books.slice(1), looks: ['name', 'notes'], versions: ['w', 'h'] };
 const DELETABLE = new Set(['shelves', 'collections', 'books']);
 const cols = (table, map = COLS) => map[table] || (() => { throw new Error(`Unknown table: ${table}`); })();
 // JS → SQL values: booleans as 0/1, objects as JSON, undefined dropped by the caller.
@@ -31,8 +31,8 @@ export async function loadLibrary(db, lib) {
   const q = (sql) => db.prepare(sql).bind(lib).all().then((r) => r.results);
   const strip = ({ lib: _, ...row }) => row;
   const [shelves, collections, books, versions, looks] = await Promise.all([
-    q('SELECT id, name, style FROM shelves WHERE lib = ? ORDER BY rowid'),
-    q('SELECT id, shelfId, name, style FROM collections WHERE lib = ? ORDER BY rowid'),
+    q('SELECT id, name, style, override FROM shelves WHERE lib = ? ORDER BY rowid'),
+    q('SELECT id, shelfId, name, style, override FROM collections WHERE lib = ? ORDER BY rowid'),
     q('SELECT * FROM books WHERE lib = ? ORDER BY rowid'),
     q('SELECT * FROM versions WHERE lib = ? ORDER BY at, rowid'),
     q('SELECT * FROM looks WHERE lib = ? ORDER BY at DESC, rowid DESC'),
@@ -40,8 +40,8 @@ export async function loadLibrary(db, lib) {
   const byBook = Map.groupBy(versions.map(strip), (v) => v.bookId);
   return {
     app,
-    shelves, collections,
-    books: books.map((b) => ({ ...strip(b), sample: !!b.sample, versions: (byBook.get(b.id) || []).map(({ bookId: _, ...v }) => v) })),
+    shelves: shelves.map((s) => ({ ...s, override: !!s.override })), collections: collections.map((c) => ({ ...c, override: !!c.override })),
+    books: books.map((b) => ({ ...strip(b), sample: !!b.sample, override: !!b.override, versions: (byBook.get(b.id) || []).map(({ bookId: _, ...v }) => v) })),
     looks: looks.map((l) => ({ ...strip(l), styles: JSON.parse(l.styles) })),
   };
 }
