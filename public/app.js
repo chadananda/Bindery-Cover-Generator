@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=78';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=79';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -366,7 +366,14 @@ function genLabel(b, src) {
 // The model buttons say how many covers they'll make ("Same Cover · 2 selected"); refreshed as the selection changes.
 function likeLabels(b, src) {
   const n = likeTargets(b, src).length, LIKE = { similar: 'Similar Style', style: 'Same Style', exact: 'Same Cover' };
-  $('im-model').querySelectorAll('[data-like]').forEach((x) => { x.textContent = LIKE[x.dataset.like] + (n > 1 ? ` · ${n} selected` : ''); });
+  // A collection cover is a boxed set: one action — restyle the set like the model (the others would make a single book).
+  const set = isHead(b) && !(selected.size > 1 && selected.has(b.id));
+  $('im-model').querySelectorAll('[data-like]').forEach((x) => {
+    x.hidden = set && x.dataset.like !== 'style';
+    x.textContent = set ? "✦ Match the model's style" : LIKE[x.dataset.like] + (n > 1 ? ` · ${n} selected` : '');
+    x.dataset.tip ??= x.title; // the button's own tooltip, restored for ordinary books
+    x.title = set ? "Keeps this boxed set (volumes, angle, framing) and gives it the model's binding, gold and ornament" : x.dataset.tip;
+  });
 }
 // The editor's model buttons: every selected cover when the open one is part of a multi-selection, else just it.
 const likeTargets = (b, model) => selected.has(b.id) && selected.size > 1 ? selBooks().filter((x) => x.id !== model.id) : [b];
@@ -596,7 +603,7 @@ async function keyRaw(rawKey) {
 const storeImage = async (book, kind, base64) => (await api(`${base()}/store`, { method: 'POST', body: JSON.stringify({ bookId: book.id, kind, base64 }) })).key;
 // A new version row (append-only) that becomes the book's current cover.
 async function addVersion(book, v) {
-  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', basePrompt: null, inputKey: null, aspect: null, edit: null, lookId: null, w: null, h: null, ...v };
+  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', basePrompt: null, inputKey: null, styleKey: null, aspect: null, edit: null, lookId: null, w: null, h: null, ...v };
   await insert('versions', [{ ...row, bookId: book.id }]);
   book.versions.push(row); book.selected = row.id;
   patch('books', book.id, { selected: row.id });
@@ -646,41 +653,45 @@ async function produce(book, { removeBg = true, change = '', lookId = null, own 
   // 'similar' = fresh generation with the model's style layers; 'style'/'exact' = an edit of the model's photograph.
   const similar = !!refBook && book.refMode === 'similar';
   const basedOn = !similar && !!(refV?.cover || refV?.raw);
-  const inputKey = change ? from.raw || await rawFromCover(book, from) : basedOn ? await refRaw(refBook, refV) : undefined;
+  // A collection cover (its boxed-set photograph) based on the model: edit ITS picture, taking the look from the model's
+  // (second image) — editing the model's single-book photograph would lose the set.
+  const ownV = basedOn && isHead(book) ? currentVersion(book) : null, asSet = !!(ownV?.raw || ownV?.cover);
+  const inputKey = change ? from.raw || await rawFromCover(book, from) : asSet ? ownV.raw || await rawFromCover(book, ownV) : basedOn ? await refRaw(refBook, refV) : undefined;
+  const styleKey = asSet ? await refRaw(refBook, refV) : null;
   const sameAuthor = !!refBook && norm(refBook.author) === norm(book.author);
     // A model with no author line passes that on to every book ("" = none); a credit only to books by the same author.
-  if (refBook && book.byline == null && (refBook.byline === '' || (sameAuthor && refBook.byline != null))) { book.byline = refBook.byline; patch('books', book.id, { byline: book.byline }); }
+  if (refBook && !asSet && book.byline == null && (refBook.byline === '' || (sameAuthor && refBook.byline != null))) { book.byline = refBook.byline; patch('books', book.id, { byline: book.byline }); }
   // The generation prompt this version descends from, copied forward (with this book's lines) so later regenerations and
   // models reuse it instead of rebuilding from metadata — an author the user removed can't creep back.
   const mp = refBook ? modelPrompt(refBook) : null;
   const basePrompt = change ? (basePromptOf(book, from) && retitlePrompt(basePromptOf(book, from), project, book))
-    : mp ? retitlePrompt(mp, project, book, { keepByline: sameAuthor }) : null;
-  let prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact', refAuthor: refBook.author, refByline: refBook.byline }) : null;
+    : mp && !asSet ? retitlePrompt(mp, project, book, { keepByline: sameAuthor }) : null;
+  let prompt = change ? composeEditPrompt(project, change) : asSet ? composeSetStylePrompt(project, book, refBook.title) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact', refAuthor: refBook.author, refByline: refBook.byline }) : null;
   if (!prompt && similar) // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
     prompt = basePrompt || composePrompt(project, sameAuthor && book.byline == null ? { ...book, author: '' } : book, { styleText: await describedStyle(refBook) });
   prompt ||= composePrompt(project, book);
-  const why = change ? `edit: ${change}` : basedOn ? `${book.refMode === 'exact' ? 'same cover' : 'same style'} from ${refBook.title}` : similar ? `similar style from ${refBook.title}` : 'generate (own style layers)';
-  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, why }) });
+  const why = change ? `edit: ${change}` : asSet ? `set restyled like ${refBook.title}` : basedOn ? `${book.refMode === 'exact' ? 'same cover' : 'same style'} from ${refBook.title}` : similar ? `similar style from ${refBook.title}` : 'generate (own style layers)';
+  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, styleKey, why }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
-  return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: basePrompt && basePrompt !== prompt ? basePrompt : null, inputKey: inputKey || null, aspect, w, h, edit: change || (basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
+  return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: basePrompt && basePrompt !== prompt ? basePrompt : null, inputKey: inputKey || null, styleKey, aspect, w, h, edit: change || (asSet ? `set restyled like ${refBook.title}` : basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
 }
 
 // "Try again": the SAME request that made the current version — same prompt, same input image (the one that edit
 // started from, not its result) — as a new version. Gemini just gets another roll.
 async function retryRequest(v) {
   if (!v?.raw || !v.prompt || ['current site cover', 'upload'].includes(v.edit) || v.edit?.startsWith('adjust')) throw new Error("This version wasn't generated here — nothing to try again");
-  if (v.inputKey || isGenerationPrompt(v.prompt)) return { prompt: v.prompt, inputKey: v.inputKey || null };
+  if (v.inputKey || isGenerationPrompt(v.prompt)) return { prompt: v.prompt, inputKey: v.inputKey || null, styleKey: v.styleKey || null };
   return (await api(`${base()}/retrysource`, { method: 'POST', body: JSON.stringify({ rawKey: v.raw }) })).request; // older versions: from the log
 }
 async function tryAgain(book, removeBg = true, extra = '') {
-  const v = currentVersion(book), req = await retryRequest(v), inputKey = req.inputKey, prompt = retryPrompt(req.prompt, extra);
-  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, why: `try again${extra ? ` + ${extra}` : ''}: ${v.edit || 'generate'}` }) });
+  const v = currentVersion(book), req = await retryRequest(v), inputKey = req.inputKey, styleKey = req.styleKey || null, prompt = retryPrompt(req.prompt, extra);
+  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, styleKey, why: `try again${extra ? ` + ${extra}` : ''}: ${v.edit || 'generate'}` }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
-  return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: v.basePrompt || null, inputKey: inputKey || null, aspect, w, h, edit: extra ? `${v.edit || 'generate'} + ${extra}` : v.edit, lookId: v.lookId });
+  return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: v.basePrompt || null, inputKey: inputKey || null, styleKey, aspect, w, h, edit: extra ? `${v.edit || 'generate'} + ${extra}` : v.edit, lookId: v.lookId });
 }
 async function tryAgainAll(books, extra = '') {
   if (books.length > 3 && !confirm(`Try ${books.length} covers again? Each one is a paid Gemini image call.`)) return;
@@ -832,7 +843,7 @@ function renderManager() {
   }
   const gen = document.querySelector('#imgmgr [data-act="generate"]');
   genLabel(b, src);
-  $('im-prompt').textContent = !refV ? composePrompt(project, b) : b.refMode === 'similar'
+  $('im-prompt').textContent = refV && isHead(b) && b.refMode !== 'similar' ? composeSetStylePrompt(project, b, refB.title) : !refV ? composePrompt(project, b) : b.refMode === 'similar'
     ? (modelPrompt(refB) ? retitlePrompt(modelPrompt(refB), project, b, { keepByline: norm(refB.author) === norm(b.author) }) : `(The look of “${refB.title}” is read from its image when you generate, then:)\n\n` + composePrompt(project, b, { styleText: '…its described look…' }))
     : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact', refAuthor: refB.author, refByline: refB.byline });
   const v = currentVersion(b);

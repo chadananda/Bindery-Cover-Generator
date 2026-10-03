@@ -51,4 +51,12 @@ describe('generateImage', () => {
     const fetch = vi.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'API key not valid' } }) }));
     await expect(generateImage({ apiKey: 'k', prompt: 'p', fetch })).rejects.toThrow(/400.*API key not valid/);
   });
+
+  it('sends a style reference image after the image being edited (collection set restyled like the model)', async () => {
+    const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
+    await generateImage({ apiKey: 'k', prompt: 'restyle', inputImage: 'U0VU', styleImage: 'TU9E', fetch });
+    const parts = JSON.parse(fetch.mock.calls[0][1].body).contents[0].parts;
+    expect(parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'U0VU' } }, { inlineData: { mimeType: 'image/png', data: 'TU9E' } }, { text: 'restyle' }]);
+  });
 });
+

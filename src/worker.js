@@ -118,23 +118,26 @@ export default {
       // stored in R2. inputKey = img2img edit of that raw. Keying happens in the browser; the prompt goes to D1
       // with the version row the client writes next.
       if (part === 'generate' && req.method === 'POST') {
-        const { bookId, prompt, inputKey, why = null } = await body(); // why: the client's reason (edit text, Same Style from …)
+        const { bookId, prompt, inputKey, styleKey, why = null } = await body(); // why: the client's reason (edit text, Same Style from …)
         if (!ID.test(bookId || '') || !prompt) return fail(400, 'bookId and prompt required');
-        let inputImage;
-        if (inputKey) {
-          if (!KEY.test(inputKey) || !inputKey.startsWith(`sets/${lib}/`)) return fail(400, 'Bad inputKey');
-          const src = await env.COVERS.get(inputKey);
-          if (!src) return fail(404, 'Input image not found');
-          inputImage = bytesToB64(new Uint8Array(await src.arrayBuffer()));
-        }
+        // inputKey: the image to edit; styleKey: a second image it takes its look from (a set restyled like the model).
+        const load = async (k) => {
+          if (!KEY.test(k) || !k.startsWith(`sets/${lib}/`)) throw Object.assign(new Error('Bad image key'), { status: 400 });
+          const src = await env.COVERS.get(k);
+          if (!src) throw Object.assign(new Error('Input image not found'), { status: 404 });
+          return bytesToB64(new Uint8Array(await src.arrayBuffer()));
+        };
+        let inputImage, styleImage;
+        try { if (inputKey) inputImage = await load(inputKey); if (inputKey && styleKey) styleImage = await load(styleKey); }
+        catch (e) { return fail(e.status || 400, e.message); }
         try {
-          const r = await generateImage({ apiKey: env.GEMINI_API_KEY, prompt, inputImage, model: env.GEMINI_MODEL || undefined });
+          const r = await generateImage({ apiKey: env.GEMINI_API_KEY, prompt, inputImage, styleImage, model: env.GEMINI_MODEL || undefined });
           const rawKey = `sets/${lib}/raw/${bookId}/${Date.now()}.png`;
           await env.COVERS.put(rawKey, b64ToBytes(r.base64), { httpMetadata: { contentType: r.mimeType } });
-          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null }, output: { rawKey, text: r.text || '' } });
+          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null }, output: { rawKey, text: r.text || '' } });
           return json({ ok: true, rawKey, text: r.text });
         } catch (e) {
-          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null }, output: { error: String(e.message || e) } });
+          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null }, output: { error: String(e.message || e) } });
           return fail(502, String(e.message || e));
         }
       }

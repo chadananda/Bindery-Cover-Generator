@@ -8,15 +8,17 @@ const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
  * @param {{apiKey: string, prompt: string, inputImage?: string, inputMime?: string, model?: string,
  *          aspectRatio?: string, imageSize?: '1K'|'2K'|'4K', fetch?: typeof fetch, retries?: number}} o
  *   inputImage: base64 (no data: prefix) — present means an img2img edit of that image.
+ *   styleImage: a second image the edit takes its look from (sent after inputImage).
  * @returns {Promise<{base64: string, mimeType: string, text: string}>}
  */
 export async function generateImage({
-  apiKey, prompt, inputImage, inputMime = 'image/png', model = DEFAULT_MODEL,
+  apiKey, prompt, inputImage, styleImage, inputMime = 'image/png', model = DEFAULT_MODEL,
   aspectRatio = '3:4', imageSize = '2K', fetch: f = globalThis.fetch, retries = 2,
 }) {
   if (!apiKey) throw new Error('No Gemini API key');
   const parts = [];
   if (inputImage) parts.push({ inlineData: { mimeType: inputMime, data: inputImage } });
+  if (inputImage && styleImage) parts.push({ inlineData: { mimeType: 'image/png', data: styleImage } });
   parts.push({ text: prompt });
   const init = {
     method: 'POST',

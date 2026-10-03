@@ -178,6 +178,25 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
     `the illustration it replaces, so it clearly belongs to the same set.\n2. ${lettering[0]}\n3. ${lettering[1]}\n\n` + keep;
 }
 
+/** A collection cover (a photograph of the boxed set) in the model's style: edit the FIRST image — the set itself stays
+ *  (its shape, number of volumes, angle, framing) — so its books look like the SECOND image (the model volume).
+ *  "Same Style" on a set edited the model's single-book photograph instead and lost the set. */
+export function composeSetStylePrompt(project, book, refTitle) {
+  const k = keyColor(project);
+  const title = (book?.title || '').trim();
+  // The set's own credit ("J.M. Rodwell translation") stays unless the book has a byline setting.
+  const credit = book?.byline == null ? 'keep any author or translator line already on the set, restyled to match'
+    : book.byline ? `with "${book.byline}" smaller beneath` : "print no author's name";
+  return `The first image is a photograph of "${title}", a boxed set of books. The second image is "${refTitle}", one volume ` +
+    `of that set as it now looks. Edit the FIRST image so the set matches the second image's binding: the same leather or ` +
+    `cloth, colour, grain, gold tooling, borders, ornaments and lettering style, on the front cover and the spines.\n` +
+    `Keep the first image's set exactly as it is: the boxed set, the number of volumes, their arrangement, the camera angle, ` +
+    `scale and position in the frame. The front cover reads "${title}"; ${credit}. Do not ` +
+    `copy the second image's title, number or centre illustration onto it — choose a fitting emblem for the whole set in the ` +
+    `same technique. Do not re-shoot, crop or zoom. ${metal(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, ` +
+    `with NO shadow, and keep the same ${k.name.toLowerCase()} margin around the set.`;
+}
+
 export function composeEditPrompt(project, change) {
   const k = keyColor(project);
   // In-place, but VISIBLE: "pixel-for-pixel" wording made the model change almost nothing (3–9/255 average difference), and

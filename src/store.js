@@ -7,7 +7,7 @@ const COLS = {
   shelves: ['id', 'name', 'style', 'override'],
   collections: ['id', 'shelfId', 'name', 'style', 'override'],
   books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample', 'override', 'refBookId', 'refMode', 'byline'],
-  versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'basePrompt', 'inputKey', 'aspect', 'edit', 'lookId', 'at', 'w', 'h'],
+  versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'basePrompt', 'inputKey', 'styleKey', 'aspect', 'edit', 'lookId', 'at', 'w', 'h'],
   looks: ['id', 'name', 'styles', 'notes', 'at'],
 };
 const PATCHABLE = { libraries: COLS.libraries, shelves: ['name', 'style', 'override'], collections: ['shelfId', 'name', 'style', 'override'], books: COLS.books.slice(1), looks: ['name', 'notes'], versions: ['w', 'h'] };
