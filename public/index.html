@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=46" />
+  <link rel="stylesheet" href="/styles.css?v=47" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -20,15 +20,7 @@
     <nav class="nav-inner" aria-label="Main navigation">
       <a href="/" class="brand"><span class="brand-mark"><span class="brand-fleuron" aria-hidden="true">❦</span>Bindery</span><span class="brand-divider"></span></a>
       <select id="lib-select" class="nav-select lib-select" aria-label="Library"></select>
-      <span id="lib-stats" class="nav-meta"></span>
-      <span id="look-state" class="nav-meta look-state"></span>
       <span class="spacer"></span>
-      <div class="nav-links">
-        <button type="button" class="nav-link" id="open-libstyle">Library style</button>
-        <button type="button" class="nav-link" id="open-looks">Looks</button>
-        <select id="shelf-jump" class="nav-select" aria-label="Show bookshelf"></select>
-        <button type="button" class="nav-link" id="open-add" data-write>+ Books</button>
-      </div>
       <button type="button" class="nav-link gold" id="login-nav" data-read>Log in to edit</button>
       <span id="save-state" class="save-state" aria-live="polite"></span>
       <button type="button" class="nav-icon" id="theme-btn" title="Light / dark — covers must read on both" aria-label="Switch light or dark">
@@ -49,6 +41,15 @@
   <!-- Shadow lift for the Adjust preview (CSS has no gamma filter); exponent set from the Shadows slider. -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="adj-gamma" color-interpolation-filters="sRGB"><feComponentTransfer>
     <feFuncR type="gamma" exponent="1" /><feFuncG type="gamma" exponent="1" /><feFuncB type="gamma" exponent="1" /></feComponentTransfer></filter></svg>
+  <!-- Library header: this library's own controls, sticky under the navbar (global) and above the shelf headers. -->
+  <header class="libhead" id="libhead" hidden>
+    <h1 id="lib-name" class="lib-name"></h1>
+    <span id="lib-stats" class="lib-stats"></span>
+    <span class="spacer"></span>
+    <select id="shelf-jump" class="nav-select" aria-label="Show bookshelf"></select>
+    <button type="button" class="btn small" id="open-libstyle">Library style</button>
+    <button type="button" class="btn small" id="open-add" data-write>+ Books</button>
+  </header>
   <main id="app" class="shelves" hidden></main>
   <p id="empty" class="empty" hidden>This library is empty. Use <b>+ Books</b> to paste a CSV or add one.</p>
 
@@ -112,15 +113,6 @@
         <span class="spacer"></span>
         <button type="button" class="btn small ghost danger" id="shelf-delete" data-write>Delete bookshelf</button>
       </div>
-    </div>
-  </dialog>
-
-  <!-- Looks: every style snapshot that produced covers, side by side. -->
-  <dialog id="dlg-looks" class="dlg wide">
-    <header class="dlg-head"><h2>Looks</h2><button type="button" class="x" data-close aria-label="Close">&times;</button></header>
-    <div class="dlg-body">
-      <p class="hint">A look is saved automatically the first time you generate with new styles. Rows are looks, newest first; columns are the books generated under them. <b>Restore</b> puts a look's styles back.</p>
-      <div id="looks-body" class="looks"></div>
     </div>
   </dialog>
 
@@ -258,6 +250,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=71"></script>
+  <script type="module" src="/app.js?v=72"></script>
 </body>
 </html>

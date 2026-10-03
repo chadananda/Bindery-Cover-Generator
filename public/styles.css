@@ -33,7 +33,7 @@
   --display: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   --sans: 'Instrument Sans', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
-  --libbar-h: 56px;
+  --libbar-h: 56px; --libhead-h: 0px;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -135,7 +135,7 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 /* ---------------------------------------------------------------- shelves */
 .shelves { padding: 0 0 2rem; }
 .shelf-head {
-  position: sticky; top: var(--libbar-h); z-index: 10; display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .8rem;
+  position: sticky; top: calc(var(--libbar-h) + var(--libhead-h)); z-index: 10; display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .8rem;
   padding: .55rem 1rem; background: var(--head); border-bottom: 1px solid var(--edge); border-top: 1px solid var(--edge);
 }
 .shelf-toggle { display: flex; align-items: center; gap: .45rem; border: 0; background: none; color: inherit; cursor: pointer; padding: 0; }
@@ -226,16 +226,6 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 .tab.on { color: var(--ink); border-bottom-color: var(--accent); }
 #csv-in { font: 13px/1.5 var(--mono); }
 
-/* Looks matrix: rows = looks, columns = books */
-.looks { overflow: auto; }
-.looks table { border-collapse: separate; border-spacing: .5rem; }
-.looks thead th { font-size: 12px; font-weight: 600; color: var(--ink-2); max-width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-.looks tbody th { width: 260px; min-width: 220px; text-align: left; vertical-align: top; font-weight: 400; position: sticky; left: 0; background: var(--panel); z-index: 1; }
-.looks .look-name { width: 100%; font-weight: 700; margin-bottom: .2rem; }
-.looks .look-notes { margin: .3rem 0; font-size: 14px; }
-.looks td { vertical-align: bottom; }
-.look-cell { border: 0; padding: .3rem; background: var(--wall); border-radius: 4px; cursor: pointer; width: 130px; height: 170px; display: grid; place-items: end center; }
-.look-cell img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; filter: drop-shadow(0 4px 4px var(--shadow)); }
 
 /* ---------------------------------------------------------------- Image Manager */
 
@@ -545,3 +535,13 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .jobs[hidden] { display: none; }
 .jobs .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-top-color: var(--accent); animation: jobs-spin 1s linear infinite; }
 @keyframes jobs-spin { to { transform: rotate(360deg); } }
+
+/* Library header: this library's controls, sticky between the global navbar and the shelf headers */
+.libhead { position: sticky; top: var(--libbar-h); z-index: 15; display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .8rem;
+  padding: .5rem 1rem; background: var(--panel); border-bottom: 1px solid var(--line-2); }
+.libhead[hidden] { display: none; }
+.lib-name { margin: 0; font: 700 22px/1.1 var(--display); color: var(--ink); }
+.lib-stats { font: 13px var(--sans); color: var(--ink-3); }
+.libhead .nav-select { color: var(--ink); }
+body.bench-open .libhead { margin-right: var(--bench-w); }
+@media (max-width: 900px) { body.bench-open .libhead { margin-right: 0; } }

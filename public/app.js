@@ -1,7 +1,7 @@
-// Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
+// Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=71';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=72';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -119,7 +119,7 @@ let restored = false;
 const VIEW_KEY = 'view';
 function saveView() {
   if (!lib || !restored) return;
-  const top = [...$('app').querySelectorAll('.card[data-book]')].find((c) => c.getBoundingClientRect().bottom > (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--libbar-h')) || 60) + 40);
+  const top = [...$('app').querySelectorAll('.card[data-book]')].find((c) => c.getBoundingClientRect().bottom > (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--libbar-h')) || 60) + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--libhead-h')) || 0) + 40);
   store.set(VIEW_KEY, { lib, path: location.pathname, anchor: top?.dataset.book || null, offset: top ? Math.round(top.getBoundingClientRect().top) : 0, y: Math.round(scrollY), open: im?.bookId || null, chat: chatOpen(), selected: [...selected], lastPick,
     // the rest of the working state: the conversation (last 40), composer mode and draft, the open drawer
     messages: chat.messages.slice(-40), mode: chatMode, draft: $('chat-input').value,
@@ -177,7 +177,6 @@ $('new-lib').addEventListener('click', async () => {
 const shelfById = (id) => project.shelves.find((s) => s.id === id);
 const collById = (id) => project.collections.find((c) => c.id === id);
 const currentVersion = (b) => b.versions?.find((v) => v.id === b.selected) || b.versions?.at(-1) || null;
-const lookById = (id) => project.looks.find((l) => l.id === id);
 const shelfOptions = (cur, none = '(no shelf)') => `<option value="">${none}</option>` + project.shelves.map((s) => `<option value="${s.id}" ${s.id === cur ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 const collOptions = (cur, shelfId) => '<option value="">(no collection)</option>' + project.collections.filter((c) => !shelfId || !c.shelfId || c.shelfId === shelfId)
   .map((c) => `<option value="${c.id}" ${c.id === cur ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
@@ -190,31 +189,12 @@ const groups = () => {
   return [...g, loose].filter((x) => x.shelf || x.books.length);
 };
 
-// ---------------------------------------------------------------- looks
-// The look the next generation belongs to: an existing look with identical styles, else a new one.
-async function ensureLook() {
-  const snap = snapshotStyles(project);
-  let look = project.looks.find((l) => sameStyles(l.styles, snap));
-  if (!look) {
-    look = { id: rid(), name: nextLookName(project.looks), styles: snap, notes: '', at: Date.now() };
-    await insert('looks', [look]);
-    project.looks.unshift(look);
-  }
-  if (project.app.lookId !== look.id) { project.app.lookId = look.id; patch('libraries', lib, { lookId: look.id }); }
-  renderLookState();
-  return look;
-}
-function renderLookState() {
-  const snap = snapshotStyles(project);
-  const match = project.looks.find((l) => sameStyles(l.styles, snap));
-  $('look-state').innerHTML = match ? `Look: <b>${esc(match.name)}</b>` : project.looks.length ? `Look: <b>edited</b> <small>· next generation saves ${esc(nextLookName(project.looks))}</small>` : '';
-}
-
 // ---------------------------------------------------------------- rendering
-function renderAll() { renderBar(); renderShelves(); renderSelbar(); renderLookState(); }
+function renderAll() { renderBar(); renderShelves(); renderSelbar(); }
 
 function renderBar() {
   const covers = project.books.filter((b) => b.versions.length).length;
+  $('libhead').hidden = false; $('lib-name').textContent = project.app.name || lib;
   $('lib-stats').textContent = `${project.books.length.toLocaleString()} books · ${covers.toLocaleString()} with covers`;
   $('shelf-jump').innerHTML = `<option value="">All shelves</option>` + groups().map((g) => `<option value="${g.shelf?.id || '-'}" ${(g.shelf?.id || '-') === focusShelf ? 'selected' : ''}>${esc(g.shelf?.name || 'No shelf')} (${g.books.length})</option>`).join('');
   $('empty').hidden = project.books.length > 0;
@@ -420,7 +400,7 @@ $('sel-download').addEventListener('click', async () => {
   const btn = $('sel-download'); btn.disabled = true; btn.textContent = 'Zipping…';
   try {
     const { zipSync, strToU8 } = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
-    const files = {}, used = new Set(), manifest = [['file', 'title', 'author', 'bookshelf', 'collection', 'look']];
+    const files = {}, used = new Set(), manifest = [['file', 'title', 'author', 'bookshelf', 'collection']];
     for (const b of books) {
       const v = currentVersion(b);
       let name = slug(b.author ? `${b.title}-${b.author}` : b.title);
@@ -428,7 +408,7 @@ $('sel-download').addEventListener('click', async () => {
       used.add(name);
       files[`${name}.png`] = new Uint8Array(await (await fetch(img(v.cover || v.raw))).arrayBuffer());
       files[`${name}.txt`] = strToU8(v.prompt || '');
-      manifest.push([`${name}.png`, b.title, b.author, shelfById(b.shelfId)?.name || '', collById(b.collectionId)?.name || '', lookById(v.lookId)?.name || '']);
+      manifest.push([`${name}.png`, b.title, b.author, shelfById(b.shelfId)?.name || '', collById(b.collectionId)?.name || '']);
     }
     files['manifest.csv'] = strToU8(manifest.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'));
     const blob = new Blob([zipSync(files, { level: 0 })], { type: 'application/zip' });
@@ -469,9 +449,9 @@ $('lib-name').addEventListener('input', (e) => {
   const l = libs.find((x) => x.id === lib); if (l) l.name = e.target.value;
   $('lib-select').querySelector(`option[value="${lib}"]`).textContent = e.target.value;
 });
-$('lib-style').addEventListener('input', (e) => { project.app.style = e.target.value; patch('libraries', lib, { style: e.target.value }); renderLookState(); });
-$('lib-key').addEventListener('change', (e) => { project.app.keyColor = e.target.value; patch('libraries', lib, { keyColor: e.target.value }); renderLookState(); });
-$('lib-style-reset').addEventListener('click', () => { project.app.style = DEFAULT_APP_STYLE; $('lib-style').value = DEFAULT_APP_STYLE; patch('libraries', lib, { style: DEFAULT_APP_STYLE }); renderLookState(); });
+$('lib-style').addEventListener('input', (e) => { project.app.style = e.target.value; patch('libraries', lib, { style: e.target.value }); });
+$('lib-key').addEventListener('change', (e) => { project.app.keyColor = e.target.value; patch('libraries', lib, { keyColor: e.target.value }); });
+$('lib-style-reset').addEventListener('click', () => { project.app.style = DEFAULT_APP_STYLE; $('lib-style').value = DEFAULT_APP_STYLE; patch('libraries', lib, { style: DEFAULT_APP_STYLE }); });
 $('lib-shelves').addEventListener('input', (e) => {
   const id = e.target.closest('[data-shelf-row]')?.dataset.shelfRow; const s = shelfById(id); if (!s) return;
   s.name = e.target.value; patch('shelves', id, { name: s.name });
@@ -491,7 +471,7 @@ function bindCollections(box) {
   box.addEventListener('input', (e) => {
     const id = e.target.closest('[data-coll]')?.dataset.coll; const c = collById(id); if (!c || !e.target.dataset.f) return;
     const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-    c[e.target.dataset.f] = val; patch('collections', id, { [e.target.dataset.f]: val }); renderLookState();
+    c[e.target.dataset.f] = val; patch('collections', id, { [e.target.dataset.f]: val });
   });
   box.addEventListener('click', async (e) => {
     if (!e.target.closest('[data-del-coll]')) return;
@@ -527,8 +507,8 @@ function openShelfDialog(id) {
   $('dlg-shelf').showModal();
 }
 $('shelf-name').addEventListener('input', (e) => { const s = shelfById(dlgShelf); s.name = e.target.value; $('shelf-title').textContent = s.name; patch('shelves', s.id, { name: s.name }); });
-$('shelf-style').addEventListener('input', (e) => { const s = shelfById(dlgShelf); s.style = e.target.value; patch('shelves', s.id, { style: s.style }); renderLookState(); });
-$('shelf-override').addEventListener('change', (e) => { const s = shelfById(dlgShelf); s.override = e.target.checked; patch('shelves', s.id, { override: s.override }); renderLookState(); });
+$('shelf-style').addEventListener('input', (e) => { const s = shelfById(dlgShelf); s.style = e.target.value; patch('shelves', s.id, { style: s.style }); });
+$('shelf-override').addEventListener('change', (e) => { const s = shelfById(dlgShelf); s.override = e.target.checked; patch('shelves', s.id, { override: s.override }); });
 $('shelf-add-coll').addEventListener('click', () => addCollection(dlgShelf, $('shelf-colls')));
 $('shelf-delete').addEventListener('click', async () => {
   const id = dlgShelf, used = project.books.filter((b) => b.shelfId === id).length;
@@ -540,41 +520,6 @@ $('shelf-delete').addEventListener('click', async () => {
   await remove('shelves', [id]);
 });
 
-// Looks: rows = looks (newest first), columns = books generated under any look.
-function renderLooks() {
-  const books = project.books.filter((b) => b.versions.some((v) => v.lookId));
-  if (!project.looks.length) { $('looks-body').innerHTML = '<p class="hint">No looks yet. Star (★) a few books on each shelf, set the styles, then ✦ Try look.</p>'; return; }
-  const cur = project.looks.find((l) => sameStyles(l.styles, snapshotStyles(project)));
-  $('looks-body').innerHTML = `<table><thead><tr><th>Look</th>${books.map((b) => `<th title="${esc(b.title)}">${esc(b.title)}</th>`).join('')}</tr></thead><tbody>${project.looks.map((l) => {
-    const cells = books.map((b) => { const v = b.versions.findLast((x) => x.lookId === l.id); return `<td>${v ? `<button type="button" class="look-cell" data-open-book="${b.id}" data-ver="${v.id}">${pic(v.cover || v.raw, `${b.title}, ${l.name}`, '120px', THUMB, false, v)}</button>` : ''}</td>`; }).join('');
-    const shelfLines = Object.entries(l.styles.shelves || {}).filter(([, s]) => s).map(([id, s]) => `<p><b>${esc(shelfById(id)?.name || 'deleted shelf')}</b> ${esc(s)}</p>`).join('');
-    return `<tr data-look="${l.id}"><th>
-      <input class="look-name" value="${esc(l.name)}" aria-label="Look name" />
-      <span class="hint">${new Date(l.at).toLocaleString()}${l.id === cur?.id ? ' · <b>current</b>' : ''}</span>
-      <textarea class="look-notes" rows="2" placeholder="Notes: what changed, what worked…">${esc(l.notes)}</textarea>
-      <details class="inherit"><summary>Styles</summary><p><b>Library</b> ${esc(l.styles.app)}</p>${shelfLines}</details>
-      <button type="button" class="btn small" data-write data-restore ${l.id === cur?.id ? 'disabled' : ''}>Restore</button>
-    </th>${cells}</tr>`;
-  }).join('')}</tbody></table>`;
-}
-$('open-looks').addEventListener('click', () => { renderLooks(); setAuthed(authed); $('dlg-looks').showModal(); });
-$('looks-body').addEventListener('input', (e) => {
-  const id = e.target.closest('[data-look]')?.dataset.look; const l = lookById(id); if (!l) return;
-  const f = e.target.matches('.look-name') ? 'name' : 'notes';
-  l[f] = e.target.value; patch('looks', id, { [f]: e.target.value }); renderLookState();
-});
-$('looks-body').addEventListener('click', (e) => {
-  const cell = e.target.closest('[data-open-book]');
-  if (cell) { const b = project.books.find((x) => x.id === cell.dataset.openBook); if (authed) { b.selected = cell.dataset.ver; patch('books', b.id, { selected: b.selected }); } $('dlg-looks').close(); openManager(b.id); return; }
-  if (!e.target.closest('[data-restore]')) return;
-  const l = lookById(e.target.closest('[data-look]').dataset.look);
-  const changed = applyStyles(project, l.styles);
-  if (changed.app) patch('libraries', lib, { style: project.app.style, keyColor: project.app.keyColor });
-  changed.shelves.forEach((id) => patch('shelves', id, { style: shelfById(id).style }));
-  changed.collections.forEach((id) => patch('collections', id, { style: collById(id).style }));
-  project.app.lookId = l.id; patch('libraries', lib, { lookId: l.id });
-  renderLooks(); renderLookState();
-});
 
 // Add books
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
@@ -725,7 +670,7 @@ async function produce(book, { removeBg = true, change = '', lookId = null, own 
 async function generate(books, { own = false } = {}) {
   if (!books.length) return;
   if (books.length > 3 && !confirm(`Generate ${books.length} covers? Each one is a paid Gemini image call.`)) return;
-  const { id: lookId } = await ensureLook();
+  const lookId = null; // looks retired; versions keep old lookIds as history
   const queue = [...books], run = { queue, active: 0, done: 0, total: books.length };
   runs.add(run); renderJobs();
   books.forEach((b) => { status.set(b.id, { state: 'busy', msg: 'Queued' }); renderCard(b.id); });
@@ -836,7 +781,7 @@ $('adj-save').addEventListener('click', async () => {
 });
 
 // What a version is, for the History strip: site cover, upload, edit (of what), or the look that generated it.
-const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit?.startsWith('adjust') ? 'adjusted' : /^(based on|like) /.test(x.edit || '') ? x.edit : x.edit ? 'edit' : x.lookId ? lookById(x.lookId)?.name || 'look' : 'generated';
+const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit?.startsWith('adjust') ? 'adjusted' : /^(based on|like) /.test(x.edit || '') ? x.edit : x.edit ? 'edit' : 'generated';
 function renderManager() {
   const b = imBook(); if (!b) return;
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')
@@ -950,8 +895,7 @@ $('imgmgr').addEventListener('click', async (e) => {
       uiLog('generate', { bookId: b.id, input: { from: 'editor' }, output: { targets: targets.map((x) => `${x.id} “${x.title}”`) } });
       if (targets.length > 1) { generate(targets, { own: true }); return; }
       imBusy(true, 'Generating… (~20–40s)'); imStatus('Generating…');
-      const { id: lookId } = await ensureLook();
-      await produce(b, { removeBg, lookId, own: true }); imStatus('Generated ✓', 'ok');
+      await produce(b, { removeBg, own: true }); imStatus('Generated ✓', 'ok');
     } else if (act === 'rekey') {
       const v = currentVersion(b);
       if (!v?.raw) return imStatus('This version has no raw image to key.', 'err');
@@ -1282,5 +1226,6 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 
 // Keep the shelf headers just under the library bar, whatever height it wraps to.
 new ResizeObserver(([e]) => document.documentElement.style.setProperty('--libbar-h', `${e.target.offsetHeight}px`)).observe($('libbar'));
+new ResizeObserver(([e]) => document.documentElement.style.setProperty('--libhead-h', `${e.target.offsetHeight}px`)).observe($('libhead'));
 
 boot().catch((e) => { if (!/Passcode/.test(e.message)) document.body.insertAdjacentHTML('beforeend', `<p class="status err" style="padding:1rem">${esc(e.message)}</p>`); });
