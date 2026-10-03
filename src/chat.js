@@ -64,6 +64,10 @@ When the user asks to leave out, drop, hide or change the author/byline/credit f
 byline: "" for none, or the exact credit text). That setting is saved on the books, so every later generation and
 regeneration respects it — never let a style or edit re-add an author the user removed. If they also want the existing
 covers changed now, add an edit per cover ("remove the author line at the bottom") as well.
+SCOPE: when books are SELECTED, everything you propose touches ONLY those books — edits of them, or scope "books" with
+their ids — unless the user names a wider scope in words (the whole collection, the shelf, all the suras, every book, the
+default). Never widen a request about the selected cover to its collection or shelf on your own. Propose bylines only
+when the user talks about the author line.
 Resolve books, shelves, collections and authors from the catalogue by id; if a reference is ambiguous, ask instead.
 When the user asks to switch to editing directly / edit mode, or back to asking, call switch_mode and confirm in one line.
 Reply briefly in plain English (no markdown headings).`;
@@ -132,6 +136,25 @@ export function sanitizePlan(p, plan) {
   return changes.length || generateBookIds.length || edits.length || references.length || bylines.length ? { changes, generateBookIds, edits, references, bylines } : null;
 }
 
+// Words that name a scope wider than the selection.
+const WIDE = /\b(all|every|everything|whole|entire|shelf|shelves|collection|collections|library|series|rest|others|default|defaults)\b/i;
+/** With books selected, a plan may only touch them unless the user named a wider scope. Shelf/collection/library style
+ *  changes are dropped; if nothing is left, the request becomes an edit of each selected cover. → {plan, scoped} */
+export function scopePlan(p, plan, selectedIds = [], text = '') {
+  if (!plan || !selectedIds.length || WIDE.test(text)) return { plan, scoped: false };
+  const sel = new Set(selectedIds), only = (ids = []) => ids.filter((id) => sel.has(id));
+  const name = (ids) => `${ids.length} book${ids.length > 1 ? 's' : ''}`;
+  const changes = plan.changes.flatMap((c) => c.scope !== 'books' ? [] : only(c.bookIds).length ? [{ ...c, bookIds: only(c.bookIds), name: name(only(c.bookIds)) }] : []);
+  const edits = plan.edits.filter((e) => sel.has(e.bookId));
+  const references = plan.references.flatMap((r) => only(r.bookIds).length ? [{ ...r, bookIds: only(r.bookIds) }] : []);
+  const bylines = (plan.bylines || []).flatMap((x) => only(x.bookIds).length ? [{ ...x, bookIds: only(x.bookIds), name: name(only(x.bookIds)) }] : []);
+  const out = { changes, generateBookIds: only(plan.generateBookIds), edits, references, bylines };
+  if (!changes.length && !edits.length && !references.length && !bylines.length && text.trim())
+    out.edits = selectedIds.map((id) => p.books.find((b) => b.id === id)).filter((b) => b?.versions?.length).map((b) => ({ bookId: b.id, title: b.title, change: text.trim() }));
+  const scoped = JSON.stringify(out) !== JSON.stringify({ ...plan, bylines: plan.bylines || [] });
+  return { plan: out, scoped };
+}
+
 /** One chat turn. messages: [{role:'user'|'assistant', text}]. callModel(contents) → parts. */
 export async function runChat({ project, messages, focusBookId, selectedIds = [], callModel, describeCover }) {
   const focus = project.books.find((b) => b.id === focusBookId);
@@ -150,19 +173,27 @@ export async function runChat({ project, messages, focusBookId, selectedIds = []
   ];
   // Books to show as thumbnails: every cover the model looked at, plus what it asked to show. Known ids, in order.
   const shown = [];
+  const trace = []; // every round's raw model output (text + tool calls), for the prompt log
   let mode; // set by switch_mode
   const show = (ids) => ids.forEach((id) => { if (!shown.includes(id) && project.books.some((b) => b.id === id)) shown.push(id); });
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const parts = await callModel(contents);
     const text = parts.filter((x) => x.text).map((x) => x.text).join('\n').trim();
     const calls = parts.filter((x) => x.functionCall).map((x) => x.functionCall);
+    trace.push({ text, calls });
     calls.forEach((c) => show(c.name === 'show_books' ? c.args?.bookIds || [] : c.name === 'describe_cover_style' ? [c.args?.bookId] : []));
     calls.filter((c) => c.name === 'switch_mode' && ['ask', 'edit'].includes(c.args?.mode)).forEach((c) => { mode = c.args.mode; });
     const extra = mode ? { mode } : {};
     const plan = calls.find((c) => c.name === 'propose_plan');
-    if (plan) return { reply: text || 'Here is what I would change.', plan: sanitizePlan(project, plan.args), books: shown.slice(0, 12), ...extra };
+    if (plan) {
+      const last = [...messages].reverse().find((m) => m.role === 'user')?.text || '';
+      const proposed = sanitizePlan(project, plan.args);
+      const { plan: scopedPlan, scoped } = scopePlan(project, proposed, selectedIds, last);
+      const note = scoped ? `\n(Limited to the ${selectedIds.length} selected cover${selectedIds.length > 1 ? 's' : ''} — say “the whole collection” or “every …” to go wider.)` : '';
+      return { reply: (text || 'Here is what I would change.') + note, plan: scopedPlan, books: shown.slice(0, 12), ...extra, trace, ...(scoped ? { unscopedPlan: proposed } : {}) };
+    }
     const tools = calls.filter((c) => !['show_books', 'switch_mode'].includes(c.name));
-    if (!tools.length && (text || !calls.length)) return { reply: text, plan: null, books: shown.slice(0, 12), ...extra };
+    if (!tools.length && (text || !calls.length)) return { reply: text, plan: null, books: shown.slice(0, 12), ...extra, trace };
     contents.push({ role: 'model', parts });
     const responses = [];
     for (const c of calls) {
@@ -175,7 +206,7 @@ export async function runChat({ project, messages, focusBookId, selectedIds = []
     }
     contents.push({ role: 'user', parts: responses });
   }
-  return { reply: "Sorry, I couldn't finish that — try asking more specifically.", plan: null, books: shown.slice(0, 12), ...(mode ? { mode } : {}) };
+  return { reply: "Sorry, I couldn't finish that — try asking more specifically.", plan: null, books: shown.slice(0, 12), ...(mode ? { mode } : {}), trace };
 }
 
 // ---- Gemini adapters (REST, no SDK) ----

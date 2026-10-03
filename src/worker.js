@@ -3,7 +3,7 @@
 // R2 layout: sets/<lib>/raw/<book>/<ts>.png · sets/<lib>/covers/<book>/<ts>.png · fx/v<N>/<key>/<recipe> (resized
 // renditions, generate-once). Only a deleted generated version's own images are ever removed from R2.
 import { generateImage } from '../core/gemini.js';
-import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows } from './store.js';
+import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
 import { renderImage, initCodecs } from './render.js';
 import { runChat, geminiChat, geminiDescribe, geminiRefine, editSteps, bylineFrom } from './chat.js';
@@ -18,6 +18,8 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
+// Audit trail: every model call and plan decision goes to the D1 logs table (scripts/logs.mjs reads it). Never blocks.
+const audit = (env, ctx, lib, entry) => ctx.waitUntil(addLog(env.DB, lib, entry).catch((e) => console.error('log failed', e)));
 const fail = (status, error) => json({ ok: false, error }, status);
 
 async function sha256(text) {
@@ -116,7 +118,7 @@ export default {
       // stored in R2. inputKey = img2img edit of that raw. Keying happens in the browser; the prompt goes to D1
       // with the version row the client writes next.
       if (part === 'generate' && req.method === 'POST') {
-        const { bookId, prompt, inputKey } = await body();
+        const { bookId, prompt, inputKey, why = null } = await body(); // why: the client's reason (edit text, Same Style from …)
         if (!ID.test(bookId || '') || !prompt) return fail(400, 'bookId and prompt required');
         let inputImage;
         if (inputKey) {
@@ -129,8 +131,10 @@ export default {
           const r = await generateImage({ apiKey: env.GEMINI_API_KEY, prompt, inputImage, model: env.GEMINI_MODEL || undefined });
           const rawKey = `sets/${lib}/raw/${bookId}/${Date.now()}.png`;
           await env.COVERS.put(rawKey, b64ToBytes(r.base64), { httpMetadata: { contentType: r.mimeType } });
+          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null }, output: { rawKey, text: r.text || '' } });
           return json({ ok: true, rawKey, text: r.text });
         } catch (e) {
+          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null }, output: { error: String(e.message || e) } });
           return fail(502, String(e.message || e));
         }
       }
@@ -158,8 +162,13 @@ export default {
         if (!obj) return fail(404, 'Cover image missing');
         await initCodecs(webpEncWasm);
         const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
-        try { const out = await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', text, { title: b.title, subtitle: b.subtitle, author: b.author }); const steps = editSteps(out); return json({ ok: true, steps, byline: bylineFrom(out) ?? null, instruction: steps.length ? steps.map((x, i) => `${i + 1}. ${x}`).join('\n') : 'NONE' }); }
-        catch (e) { return fail(502, String(e.message || e)); }
+        const input = { feedback: text, title: b.title, versionId: v.id };
+        try {
+          const out = await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', text, { title: b.title, subtitle: b.subtitle, author: b.author });
+          const steps = editSteps(out), byline = bylineFrom(out) ?? null;
+          audit(env, ctx, lib, { kind: 'refine', bookId, input, output: { raw: out, steps, byline } });
+          return json({ ok: true, steps, byline, instruction: steps.length ? steps.map((x, i) => `${i + 1}. ${x}`).join('\n') : 'NONE' });
+        } catch (e) { audit(env, ctx, lib, { kind: 'refine', bookId, input, output: { error: String(e.message || e) } }); return fail(502, String(e.message || e)); }
       }
 
       // POST /api/libraries/<lib>/describe {bookId} → {style}: the visual style of that book's current cover, in words
@@ -174,8 +183,11 @@ export default {
         if (!obj) return fail(404, 'Cover image missing');
         await initCodecs(webpEncWasm);
         const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
-        try { return json({ ok: true, style: await geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', v.prompt), versionId: v.id }); }
-        catch (e) { return fail(502, String(e.message || e)); }
+        try {
+          const style = await geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', v.prompt);
+          audit(env, ctx, lib, { kind: 'describe', bookId, input: { versionId: v.id }, output: style });
+          return json({ ok: true, style, versionId: v.id });
+        } catch (e) { return fail(502, String(e.message || e)); }
       }
 
       // POST /api/libraries/<lib>/chat {messages, focusBookId?} → {reply, plan}. The plan is a proposal the client
@@ -194,8 +206,20 @@ export default {
           return describe(bytesToB64(webp), 'image/webp', v.prompt);
         };
         try {
-          return json({ ok: true, ...(await runChat({ project, messages, focusBookId, selectedIds, callModel: geminiChat(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined), describeCover })) });
-        } catch (e) { return fail(502, String(e.message || e)); }
+          const { trace, unscopedPlan, ...r } = await runChat({ project, messages, focusBookId, selectedIds, callModel: geminiChat(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined), describeCover });
+          const titled = (ids) => ids.map((x) => `${x} “${project.books.find((b) => b.id === x)?.title || '?'}”`);
+          audit(env, ctx, lib, { kind: 'chat', bookId: focusBookId || null,
+            input: { message: messages.at(-1)?.text, refs: titled(messages.at(-1)?.refs || []), selected: titled(selectedIds), focus: focusBookId || null, model: modelBookId || null, history: messages.length },
+            output: { reply: r.reply, trace, plan: r.plan, ...(unscopedPlan ? { unscopedPlan } : {}), mode: r.mode || null } });
+          return json({ ok: true, ...r });
+        } catch (e) { audit(env, ctx, lib, { kind: 'chat', input: { message: messages.at(-1)?.text }, output: { error: String(e.message || e) } }); return fail(502, String(e.message || e)); }
+      }
+
+      // GET /api/libraries/<lib>/log?limit=&kind= → the audit trail (logged in only). POST log {kind, bookId, input, output}:
+      // the client records what the user did with a proposal (applied, generated, dismissed), as kind 'ui:…'.
+      if (part === 'log') {
+        if (req.method === 'GET') { if (!isAuthed) return fail(401, 'Passcode required'); const q = url.searchParams; return json({ ok: true, logs: await listLogs(env.DB, lib, q.get('limit'), q.get('kind')) }); }
+        if (req.method === 'POST') { const { kind = '', bookId = null, input = null, output = null } = await body(); audit(env, ctx, lib, { kind: `ui:${String(kind).slice(0, 30)}`, bookId, input, output }); return json({ ok: true }); }
       }
 
       // Rows: POST <table> {rows} · PATCH <table>/<id> {fields} · DELETE <table> {ids}. store.js whitelists

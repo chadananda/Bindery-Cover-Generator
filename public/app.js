@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=64';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=65';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -707,7 +707,8 @@ async function produce(book, { removeBg = true, change = '', lookId = null } = {
   if (!prompt && similar) // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
     prompt = basePrompt || composePrompt(project, sameAuthor && book.byline == null ? { ...book, author: '' } : book, { styleText: await describedStyle(refBook) });
   prompt ||= composePrompt(project, book);
-  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey }) });
+  const why = change ? `edit: ${change}` : basedOn ? `${book.refMode === 'exact' ? 'same cover' : 'same style'} from ${refBook.title}` : similar ? `similar style from ${refBook.title}` : 'generate (own style layers)';
+  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, why }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
@@ -1007,6 +1008,7 @@ async function editFromChat(text) {
   if (!targets.length) return sendChat(text);
   if (targets.length > 3 && !confirm(`Edit ${targets.length} covers? Each one is a paid Gemini image call.`)) return;
   // Name every target up front, so a missing one is obvious before any paid call finishes.
+  uiLog('edit-mode', { input: { message: text }, output: { targets: targets.map((b) => `${b.id} “${b.title}”`) } });
   chat.messages.push({ role: 'user', text: `✎ ${text}` }, { role: 'assistant', text: `Editing ${targets.length > 1 ? `these ${targets.length} covers: ${targets.map((b) => b.title).join(' · ')}` : targets[0].title}…`, books: targets.map((b) => b.id) });
   const msg = chat.messages.at(-1); renderChat();
   let done = 0, failed = 0;
@@ -1128,6 +1130,8 @@ async function sendChat(text) {
   } catch (e) { chat.messages.push({ role: 'assistant', text: `Something went wrong: ${e.message}`, error: true }); }
   finally { clearInterval(tick); chat.busy = false; renderChat(); }
 }
+// Audit trail: what the user did with the Binder's proposals (server logs model calls itself). Fire-and-forget.
+const uiLog = (kind, data = {}) => api(`${base()}/log`, { method: 'POST', body: JSON.stringify({ kind, ...data }) }).catch(() => {});
 function applyPlan(plan) {
   for (const c of plan.changes) {
     if (c.scope === 'library') { project.app.style = c.style; patch('libraries', lib, { style: c.style }); }
@@ -1174,6 +1178,8 @@ $('chat-body').addEventListener('click', (e) => {
   if (thumb) { openManager(thumb.dataset.openBook); return; }
   const card = e.target.closest('[data-plan]'); if (!card) return;
   const m = chat.messages[+card.dataset.plan];
+  const act = e.target.closest('[data-dismiss],[data-apply],[data-apply-refs],[data-apply-refs-only],[data-apply-edits],[data-apply-gen]');
+  if (act) uiLog('plan', { input: { message: chat.messages.slice(0, +card.dataset.plan).reverse().find((x) => x.role === 'user')?.text, selected: [...selected] }, output: { action: Object.keys(act.dataset)[0], plan: m.plan } });
   if (e.target.closest('[data-dismiss]')) { m.plan = null; m.text += '\n(Not applied.)'; renderChat(); return; }
   if (e.target.closest('[data-apply]')) { applyPlan(m.plan); m.applied = 'yes'; renderChat(); return; }
   const refsGen = e.target.closest('[data-apply-refs]'), refsOnly = e.target.closest('[data-apply-refs-only]');

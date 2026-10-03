@@ -91,3 +91,17 @@ export async function deleteRows(db, lib, table, ids) {
   if (stmts.length) await db.batch(stmts);
   return ids.length;
 }
+
+// Prompt log (audit trail of every model call and plan decision). input/output: text, or objects stored as JSON.
+const enc = (x) => (x == null ? null : typeof x === 'string' ? x : JSON.stringify(x));
+const dec = (x) => { if (x == null) return null; try { return /^[[{]/.test(x) ? JSON.parse(x) : x; } catch { return x; } };
+export async function addLog(db, lib, { kind, bookId = null, input = null, output = null }) {
+  await db.prepare('INSERT INTO logs (lib, at, kind, bookId, input, output) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(lib, Date.now(), String(kind).slice(0, 40), bookId, enc(input), enc(output)).run();
+}
+export async function listLogs(db, lib, limit = 50, kind = null) {
+  const { results } = await db.prepare(`SELECT rowid AS id, at, kind, bookId, input, output FROM logs WHERE lib = ?${kind ? ' AND kind = ?' : ''} ORDER BY at DESC, rowid DESC LIMIT ?`)
+    .bind(...[lib, kind, Math.min(+limit || 50, 500)].filter((x) => x !== null)).all();
+  return results.map((r) => ({ ...r, input: dec(r.input), output: dec(r.output) }));
+}
+

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { d1 } from './d1-shim.js';
-import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows } from '../src/store.js';
+import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs } from '../src/store.js';
 
 let db;
 beforeEach(async () => {
@@ -136,6 +136,16 @@ describe('store', () => {
     expect(p.books[0].byline).toBe('');
     expect(p.books[1].byline).toBeNull();
     expect(p.books[0].versions[0].basePrompt).toBe('Front cover of a book…');
+  });
+
+  it('logs prompts per library, newest first', async () => {
+    await addLog(db, 'ocean', { kind: 'chat', bookId: 'b1', input: { text: 'hi' }, output: { reply: 'yo' } });
+    await addLog(db, 'ocean', { kind: 'generate', input: 'Front cover…', output: { rawKey: 'k' } });
+    await addLog(db, 'other', { kind: 'chat', input: 'x' });
+    const logs = await listLogs(db, 'ocean', 10);
+    expect(logs.map((l) => l.kind)).toEqual(['generate', 'chat']);
+    expect(logs[1]).toMatchObject({ bookId: 'b1', input: { text: 'hi' }, output: { reply: 'yo' } });
+    expect(logs[0].input).toBe('Front cover…');
   });
 });
 

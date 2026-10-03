@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { catalogue, sanitizePlan, runChat, refineRequest } from '../src/chat.js';
+import { catalogue, sanitizePlan, runChat, refineRequest, scopePlan } from '../src/chat.js';
 
 const project = {
   app: { name: 'Ocean', style: 'leather' },
@@ -133,7 +133,7 @@ describe('runChat', () => {
 
   it('answers plain questions without a plan', async () => {
     const m = script([[{ text: 'There are 3 books.' }]]);
-    expect(await runChat({ project, messages: [{ role: 'user', text: 'how many?' }], callModel: m.call })).toEqual({ reply: 'There are 3 books.', plan: null, books: [] });
+    expect(await runChat({ project, messages: [{ role: 'user', text: 'how many?' }], callModel: m.call })).toMatchObject({ reply: 'There are 3 books.', plan: null, books: [] });
   });
 
   it('reports an unknown book to the model instead of crashing', async () => {
@@ -180,6 +180,39 @@ describe('editSteps', () => {
     expect(editSteps('1. Remove the outer border\n2) Enlarge the title by 50%\n- Make the byline twice as large')).toEqual(['Remove the outer border', 'Enlarge the title by 50%', 'Make the byline twice as large']);
     expect(editSteps('Remove the border; enlarge the title by a third.')).toEqual(['Remove the border; enlarge the title by a third.']);
     expect(editSteps('NONE')).toEqual([]);
+  });
+});
+
+describe('scopePlan', () => {
+  const wide = {
+    changes: [{ scope: 'collection', targetId: 'c1', name: 'Sahih Muslim', before: '', style: 'blue', override: true }, { scope: 'books', bookIds: ['b1', 'b2'], name: '2 books', before: '', style: 'x', override: false }],
+    generateBookIds: ['b1', 'b2'], edits: [{ bookId: 'b2', title: 'Diwan', change: 'x' }],
+    references: [{ refBookId: 'b3', refTitle: 'S', bookIds: ['b1', 'b2'], generate: true, mode: 'style' }],
+    bylines: [{ bookIds: ['b1', 'b2', 'b3'], byline: '', name: '3 books' }],
+  };
+  it('with books selected and no wider scope named, touches only the selected books', () => {
+    const { plan, scoped } = scopePlan(project, wide, ['b1'], 'try a different font for the title');
+    expect(scoped).toBe(true);
+    expect(plan.changes).toEqual([{ scope: 'books', bookIds: ['b1'], name: '1 book', before: '', style: 'x', override: false }]);
+    expect(plan.generateBookIds).toEqual(['b1']);
+    expect(plan.references[0].bookIds).toEqual(['b1']);
+    expect(plan.bylines[0].bookIds).toEqual(['b1']);
+  });
+  it('turns a dropped wide style change into an edit of the selected cover', () => {
+    const { plan } = scopePlan(project, { changes: [wide.changes[0]], generateBookIds: [], edits: [], references: [], bylines: [] }, ['b1'], 'try a different font for the title');
+    expect(plan.edits).toEqual([{ bookId: 'b1', title: 'The Masnavi', change: 'try a different font for the title' }]);
+    expect(plan.changes).toEqual([]);
+  });
+  it('leaves the plan alone when the user names a wider scope, or nothing is selected', () => {
+    expect(scopePlan(project, wide, ['b1'], 'do this for the whole collection').scoped).toBe(false);
+    expect(scopePlan(project, wide, [], 'try a different font').plan).toBe(wide);
+  });
+  it('runChat applies it and says so in the reply', async () => {
+    const r = await runChat({ project, messages: [{ role: 'user', text: 'a different title font' }], selectedIds: ['b1'],
+      callModel: async () => [{ functionCall: { name: 'propose_plan', args: { changes: [{ scope: 'collection', targetId: 'c1', style: 'serif', override: true }] } } }], describeCover: async () => '' });
+    expect(r.plan.edits.map((e) => e.bookId)).toEqual(['b1']);
+    expect(r.reply).toMatch(/selected/i);
+    expect(r.trace).toBeTruthy();                        // raw model calls, for the prompt log
   });
 });
 
