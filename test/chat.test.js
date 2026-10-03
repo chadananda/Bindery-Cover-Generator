@@ -144,7 +144,16 @@ describe('refineRequest', () => {
     expect(r).toContain('good but a bit too busy for thumbnail visibility');
     expect(r).toMatch(/concrete/i);
     expect(r).toMatch(/what to remove|remove|enlarge|simplify/i);
-    expect(r).toMatch(/only the instruction/i);
+    expect(r).toMatch(/numbered list/i);
+  });
+});
+
+describe('editSteps', () => {
+  it('normalises the refined edit into numbered commands', async () => {
+    const { editSteps } = await import('../src/chat.js');
+    expect(editSteps('1. Remove the outer border\n2) Enlarge the title by 50%\n- Make the byline twice as large')).toEqual(['Remove the outer border', 'Enlarge the title by 50%', 'Make the byline twice as large']);
+    expect(editSteps('Remove the border; enlarge the title by a third.')).toEqual(['Remove the border; enlarge the title by a third.']);
+    expect(editSteps('NONE')).toEqual([]);
   });
 });
 

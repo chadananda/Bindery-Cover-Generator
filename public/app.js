@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=56';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=57';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -944,8 +944,8 @@ async function editFromChat(text) {
       // Feedback → one concrete instruction against THIS cover (vague feedback made the image model change ~nothing).
       const { instruction } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text }) });
       if (/^NONE\b/i.test(instruction || '')) { status.delete(b.id); imBusy(false); renderCard(b.id); chat.messages.pop(); chat.messages.pop(); return sendChat(text); }
-      const change = instruction || text;
-      chat.messages.push({ role: 'assistant', text: `Applying to ${b.title}: ${change}` }); renderChat();
+      const change = instruction || text; // a numbered list of commands — shown as-is, and sent as-is to the image model
+      chat.messages.push({ role: 'assistant', text: `Applying to ${b.title}:\n${change}` }); renderChat();
       imBusy(true, `Editing${targets.length > 1 ? ` ${done + failed + 1} of ${targets.length}` : ''}… (~20–40s)`);
       await produce(b, { removeBg: $('im-removebg').checked, change }); status.delete(b.id); done++;
     }

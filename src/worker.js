@@ -6,7 +6,7 @@ import { generateImage } from '../core/gemini.js';
 import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
 import { renderImage, initCodecs } from './render.js';
-import { runChat, geminiChat, geminiDescribe, geminiRefine } from './chat.js';
+import { runChat, geminiChat, geminiDescribe, geminiRefine, editSteps } from './chat.js';
 import webpEncWasm from '@jsquash/webp/codec/enc/webp_enc_simd.wasm';
 
 const COOKIE = 'cg_auth';
@@ -158,7 +158,7 @@ export default {
         if (!obj) return fail(404, 'Cover image missing');
         await initCodecs(webpEncWasm);
         const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
-        try { return json({ ok: true, instruction: await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', text) }); }
+        try { const steps = editSteps(await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', text)); return json({ ok: true, steps, instruction: steps.length ? steps.map((x, i) => `${i + 1}. ${x}`).join('\n') : 'NONE' }); }
         catch (e) { return fail(502, String(e.message || e)); }
       }
 
