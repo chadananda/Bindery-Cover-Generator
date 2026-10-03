@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=85';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=86';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1062,11 +1062,15 @@ async function editFromChat(text) {
   imStatus(done ? 'Edited ✓ — saved as a new version' : 'Edit failed', done ? 'ok' : 'err'); renderChat();
 }
 // The Ask / Edit switch shows whenever there's something to edit: a cover in the editor, or ticked books.
+// A new selection defaults the composer to ✎ Edit (what you type changes those covers); Ask stays chosen if you pick it
+// for the same selection. Nothing selected → Ask.
+let modeSel = null;
 function renderMode() {
-  const n = selected.size;
+  const n = selected.size, key = [...selected].sort().join(',');
   $('chat-mode').hidden = $('imgmgr').hidden && !n;
   document.querySelector('#chat-mode [data-mode="edit"]').textContent = n ? `✎ Edit ${n} selected` : '✎ Edit cover';
-  if ($('chat-mode').hidden) setMode('ask');
+  if ($('chat-mode').hidden || !n) { setMode('ask'); modeSel = null; }
+  else if (key !== modeSel) { setMode('edit'); modeSel = key; }
 }
 // Cover tools: one drawer open at a time (Adjust, Details) keeps the panel from scrolling.
 document.querySelector('#imgmgr .tools').addEventListener('click', (e) => {
