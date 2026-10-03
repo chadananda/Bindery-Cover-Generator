@@ -37,6 +37,10 @@ for (const group of Object.values(Object.groupBy(p.books.filter((b) => b.source)
     sql.push(`UPDATE books SET refBookId = ${q(keep.id)} WHERE lib = ${q(LIB)} AND refBookId = ${q(d.id)};`);
     sql.push(`DELETE FROM books WHERE lib = ${q(LIB)} AND id = ${q(d.id)};`);
     if (d.sample && !keep.sample) sql.push(`UPDATE books SET sample = 1 WHERE lib = ${q(LIB)} AND id = ${q(keep.id)};`);
+    // Keep the user's choice: if the duplicate's current cover is their work (not a site cover), it stays current.
+    const cur = d.versions.find((v) => v.id === d.selected);
+    if (cur && cur.edit !== 'current site cover') sql.push(`UPDATE books SET selected = ${q(cur.id)} WHERE lib = ${q(LIB)} AND id = ${q(keep.id)};`);
+    for (const f of ['content', 'style', 'refBookId']) if (d[f] && !keep[f]) sql.push(`UPDATE books SET ${f} = ${q(d[f])} WHERE lib = ${q(LIB)} AND id = ${q(keep.id)};`);
     report.push(`merge  ${d.title} | ${d.author} (${d.versions.length}v) → ${keep.title} | ${keep.author}`);
   }
   for (const b of group) if (b !== keep) b.merged = true;
@@ -49,7 +53,7 @@ for (const b of p.books.filter((x) => x.source && !x.merged)) {
   const pg = pages.get(b.source); if (!pg) continue;
   const og = [pg.author, pg.title].filter(Boolean).join(', ');
   const set = [];
-  if (!norm(b.title) || /^\\?$/.test(b.title.trim())) set.push(`title = ${q(pg.title)}`);
+  if (!norm(b.title) || /^\\?$/.test(b.title.trim())) set.push(`title = ${q(pg.title.replace(/["“”]/g, '').trim())}`); // the site wraps some titles in quotes
   const tail = new URL(b.source).pathname.replace(/\/$/, '').split('_').slice(1).filter((t) => t !== 'adapted').join('-');
   const pageAuthor = og.endsWith(', ' + (b.title || pg.title)) ? og.slice(0, -(', ' + (b.title || pg.title)).length) : pg.author;
   const first = slug(b.author).split('-').filter((t) => t.length > 2);
