@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=84';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=85';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -136,7 +136,7 @@ function restoreView() {
   (v.selected || []).filter((id) => known.has(id)).forEach((id) => selected.add(id)); lastPick = known.has(v.lastPick) ? v.lastPick : null;
   if (selected.size) syncSelection();
   if (Array.isArray(v.messages)) chat.messages = v.messages;
-  if (v.open && known.has(v.open)) openManager(v.open);
+  if (v.open && selected.has(v.open)) openManager(v.open); // only a cover that is still selected
   if (v.chat && authed && !chatOpen()) openChat();
   if (chatOpen()) {
     if (v.draft) { $('chat-input').value = v.draft; autosize(); }
@@ -299,6 +299,8 @@ function renderSelbar() {
   $('sel-open').hidden = !$('bench').hidden; // the editing tools live in the Binder
   $('sel-move').innerHTML = `<option value="" disabled selected>Move to shelf…</option>` + project.shelves.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
   document.body.classList.toggle('has-selbar', !!n);
+  // The open cover left the selection: show another selected one, or close the editor (the chat stays).
+  if (im && !$('imgmgr').hidden && !selected.has(im.bookId)) { const next = selBooks()[0]; next ? openManager(next.id) : closePane('imgmgr'); }
 }
 
 // ---------------------------------------------------------------- shelves: interaction
@@ -351,7 +353,7 @@ function syncSelection() {
   const b = imBook(), m = project.books.find((x) => x.id === project.app.modelBookId);
   if (b && !$('imgmgr').hidden) { genLabel(b, m && m.id !== b.id); if (m) likeLabels(b, m.id === b.id ? project.books.find((x) => x.id === b.refBookId) || m : m); }
 }
-const clearSelection = () => { selected.clear(); lastPick = null; setTimeout(saveView, 0); renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
+const clearSelection = () => { selected.clear(); lastPick = null; setTimeout(saveView, 0); if (!$('imgmgr').hidden) closePane('imgmgr'); renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
 $('sel-clear').addEventListener('click', clearSelection);
 $('sel-open').addEventListener('click', () => { const b = selBooks()[0]; if (b) openManager(b.id); });
 // ONE model per library: ★ on a cover. Regenerate from model edits it into each selected book (based-on edit).
@@ -747,8 +749,13 @@ const imBusy = (on, label = 'Working…') => { $('im-spin').hidden = !on; $('im-
 const BACKDROPS = ['sweep', 'dark', 'light', 'checker'];
 const backdropBar = () => `<div class="backdrops" role="group" aria-label="Preview backdrop">${BACKDROPS.map((b) => `<button type="button" class="bd ${b}" data-bd="${b}" aria-pressed="${store.get('backdrop', 'sweep') === b}" title="${b}">${b}</button>`).join('')}</div>`;
 
-function openManager(bookId) {
+// The editor only ever shows a SELECTED cover (an unselected one open in it invited edits to the wrong book). Opening a
+// cover from anywhere selects it; follow: true (the editor following a running job) opens only covers already selected.
+function openManager(bookId, { follow = false } = {}) {
+  if (follow && !selected.has(bookId)) return;
+  const pick = !selected.has(bookId);
   im = { bookId };
+  if (pick) { selected.clear(); selected.add(bookId); lastPick = bookId; syncSelection(); }
   const b = imBook();
   $('im-about-wrap').hidden = !b.description;
   $('im-about').textContent = b.description || '';
@@ -1040,7 +1047,7 @@ async function editFromChat(text) {
   const msg = chat.messages.at(-1); renderChat();
   let done = 0, failed = 0;
   for (const b of targets) {
-    if (im?.bookId !== b.id) openManager(b.id);
+    if (im?.bookId !== b.id) openManager(b.id, { follow: true });
     status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat(); imBusy(true, `Reading ${targets.length > 1 ? `cover ${done + failed + 1} of ${targets.length}` : 'the cover'}…`);
     try {
       const change = await refineEdit(b, text);
@@ -1224,7 +1231,7 @@ $('chat-body').addEventListener('click', (e) => {
     applyPlan(m.plan); m.applied = refsGen ? 'gen' : 'yes';
     if (refsGen) {
       chat.messages.push({ role: 'assistant', text: `Generating ${books.length} cover${books.length > 1 ? 's' : ''} based on that cover. They appear here as they finish; open any one to compare.`, books: books.map((b) => b.id) });
-      renderChat(); if (books[0]) openManager(books[0].id); generate(books);
+      renderChat(); if (books[0]) openManager(books[0].id, { follow: true }); generate(books);
     } else { chat.messages.push({ role: 'assistant', text: `Linked ${books.length} book${books.length > 1 ? 's' : ''}. Their next generation will match the reference cover.` }); renderChat(); }
     return;
   }
@@ -1234,7 +1241,7 @@ $('chat-body').addEventListener('click', (e) => {
     if (edits.length > 3 && !confirm(`Edit ${edits.length} covers? Each one is a paid Gemini image call.`)) return;
     applyPlan(m.plan); m.applied = 'edit';
     chat.messages.push({ role: 'assistant', text: `Editing ${edits.length > 1 ? `${edits.length} covers` : 'the cover'}. The result appears here and in its History; open it to compare or delete it.`, books: edits.map((x) => x.bookId) });
-    renderChat(); openManager(edits[0].bookId);
+    renderChat(); openManager(edits[0].bookId, { follow: true });
     (async () => {
       for (const x of edits) {
         const b = project.books.find((y) => y.id === x.bookId);
@@ -1253,7 +1260,7 @@ $('chat-body').addEventListener('click', (e) => {
   if (e.target.closest('[data-apply-gen]')) {
     const books = planSamples(m.plan); applyPlan(m.plan); m.applied = 'gen'; const own = true;
     chat.messages.push({ role: 'assistant', text: `Generating ${books.length} cover${books.length > 1 ? 's' : ''} with the new style. They'll appear here as they finish; open any one to refine it.`, books: books.map((b) => b.id) });
-    renderChat(); if (books[0]) openManager(books[0].id); generate(books, { own });
+    renderChat(); if (books[0]) openManager(books[0].id, { follow: true }); generate(books, { own });
   }
 });
 

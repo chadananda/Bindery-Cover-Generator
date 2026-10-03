@@ -11,7 +11,7 @@ export const catalogue = (p) => [
   'SHELVES (id | name | style):', ...p.shelves.map((s) => `${s.id} | ${s.name} | ${s.style || '(none)'}`),
   'COLLECTIONS (id | name | shelf | style):', ...p.collections.map((c) => `${c.id} | ${c.name} | shelf ${c.shelfId || '-'} | ${c.style || '(none)'}`),
   'BOOKS (id | title | author | shelfId | collectionId | cover? | byline setting | own style):',
-  ...p.books.map((b) => `${b.id} | ${b.title} | ${b.author || ''} | ${b.shelfId || ''} | ${b.collectionId || ''} | ${b.versions?.length ? 'cover' : 'no cover'}${b.byline == null ? '' : b.byline === '' ? ' | byline: none' : ` | byline: "${b.byline}"`}${b.style ? ` | ${b.style}` : ''}`),
+  ...p.books.map((b) => `${b.id} | ${b.title} | ${b.author || ''} | ${b.shelfId || ''} | ${b.collectionId || ''} | ${b.versions?.length ? 'cover' : 'no cover'}${b.type === 'Collection' ? ' | COLLECTION COVER (one picture of the boxed set)' : ''}${b.byline == null ? '' : b.byline === '' ? ' | byline: none' : ` | byline: "${b.byline}"`}${b.style ? ` | ${b.style}` : ''}`),
 ].join('\n');
 
 export const SYSTEM = `You help an art director set the cover styles of a book library. Covers are generated from layered style text:
@@ -46,6 +46,9 @@ cover, just change the title") edits it changing only title and byline. If uncle
 When the user asks to make selected covers like the model (in any words), ALWAYS answer with propose_plan references:
 refBookId = the MODEL COVER, bookIds = the selected books (minus the model), generate: true, and the mode that fits their
 words (default 'style'). Never turn such a request into in-place edits of each cover.
+COLLECTION COVERS (marked in the catalogue) are ONE picture of the boxed set. Requests about it — "this collection", "the
+box", "the container", "the documents inside" — are edits of THAT cover, never the collection style layer or the
+volumes' styles, unless the user explicitly names the volumes or every cover in the collection.
 COVER TEXT: when the user dictates what a cover should say ("title is 'The Opening', sura line is 'Sura I'"), propose
 titles: the book's full title in the SAME PATTERN as the model's title (model "Sura LXXXI. The Folded up" + "Sura I" +
 "The Opening" → "Sura I. The Opening"). The title is what every generation prints, so fix it there — never only in an
@@ -159,8 +162,11 @@ export function sanitizePlan(p, plan) {
 const WIDE = /\b(all|every|everything|whole|entire|shelf|shelves|collection|collections|library|series|rest|others|default|defaults)\b/i;
 /** With books selected, a plan may only touch them unless the user named a wider scope. Shelf/collection/library style
  *  changes are dropped; if nothing is left, the request becomes an edit of each selected cover. → {plan, scoped} */
+// On a collection's own cover, "this collection" / "the set" mean that picture; only words naming the volumes widen it.
+const WIDE_ON_SET = /\b(all|every|everything|whole|entire|shelf|shelves|library|rest|others|default|defaults|volumes|suras|members|inside covers)\b/i;
 export function scopePlan(p, plan, selectedIds = [], text = '') {
-  if (!plan || !selectedIds.length || WIDE.test(text)) return { plan, scoped: false };
+  const onSets = selectedIds.length && selectedIds.every((id) => { const b = p.books.find((x) => x.id === id); return b?.type === 'Collection'; });
+  if (!plan || !selectedIds.length || (onSets ? WIDE_ON_SET : WIDE).test(text)) return { plan, scoped: false };
   const sel = new Set(selectedIds), only = (ids = []) => ids.filter((id) => sel.has(id));
   const name = (ids) => `${ids.length} book${ids.length > 1 ? 's' : ''}`;
   const changes = plan.changes.flatMap((c) => c.scope !== 'books' ? [] : only(c.bookIds).length ? [{ ...c, bookIds: only(c.bookIds), name: name(only(c.bookIds)) }] : []);
@@ -218,8 +224,10 @@ export async function runChat({ project, messages, focusBookId, selectedIds = []
       const proposed = sanitizePlan(project, plan.args);
       // Author-line settings are saved and reused by every later generation: only when the user talked about it.
       if (proposed && !AUTHOR_TALK.test(last)) proposed.bylines = [];
-      const { plan: scopedPlan, scoped } = scopePlan(project, proposed, selectedIds, last);
-      const note = scoped ? `\n(Limited to the ${selectedIds.length} selected cover${selectedIds.length > 1 ? 's' : ''} — say “the whole collection” or “every …” to go wider.)` : '';
+      // The scope: the selection, or with nothing selected the cover open in the editor (a selection of one).
+      const scope = selectedIds.length ? selectedIds : focus ? [focus.id] : [];
+      const { plan: scopedPlan, scoped } = scopePlan(project, proposed, scope, last);
+      const note = scoped ? `\n(Limited to ${selectedIds.length ? `the ${scope.length} selected cover${scope.length > 1 ? 's' : ''}` : 'the open cover'} — say “every volume”, “the whole shelf” or “all …” to go wider.)` : '';
       return { reply: (stripFake(text) || 'Here is what I would change.') + note, plan: scopedPlan, books: shown.slice(0, 12), ...extra, trace, ...(scoped ? { unscopedPlan: proposed } : {}) };
     }
     const tools = calls.filter((c) => !['show_books', 'switch_mode'].includes(c.name));

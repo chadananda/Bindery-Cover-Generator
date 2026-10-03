@@ -259,5 +259,25 @@ describe('scopePlan', () => {
     expect((await call('copy and edit the model, change only the title')).plan.bylines).toEqual([]);
     expect((await call('leave the author off this one')).plan.bylines).toHaveLength(1);
   });
+
+  it('nothing selected but a cover open: the open cover is the scope (a collection tweak rewrote 6 volume styles)', async () => {
+    const r = await runChat({ project, messages: [{ role: 'user', text: 'lighten the paper edges' }], focusBookId: 'b1', selectedIds: [],
+      callModel: async () => [{ functionCall: { name: 'propose_plan', args: { changes: [{ scope: 'shelf', targetId: 's1', style: 'x' }, { scope: 'books', bookIds: ['b2', 'b3'], style: 'y' }] } } }], describeCover: async () => '' });
+    expect(r.plan.changes).toEqual([]);
+    expect(r.plan.edits.map((e) => e.bookId)).toEqual(['b1']);
+  });
+  it('on a collection cover, "this collection" means that cover, not a wider scope', () => {
+    const p2 = { ...project, books: [...project.books, { id: 'h1', title: 'Sahih Muslim', type: 'Collection', collectionId: 'c1', versions: [{ id: 'vh', cover: 'kh' }] }] };
+    const plan = sanitizePlan(p2, { changes: [{ scope: 'collection', targetId: 'c1', style: 'beige' }] });
+    const { plan: out, scoped } = scopePlan(p2, plan, ['h1'], 'lighten the documents this collection contains');
+    expect(scoped).toBe(true);
+    expect(out.edits.map((e) => e.bookId)).toEqual(['h1']);
+    // naming the volumes / every cover still widens it
+    expect(scopePlan(p2, plan, ['h1'], 'apply this to every volume in the collection').scoped).toBe(false);
+  });
+  it('marks collection covers in the catalogue', () => {
+    const p2 = { ...project, books: [{ id: 'h1', title: 'Sahih Muslim', type: 'Collection', collectionId: 'c1', versions: [] }] };
+    expect(catalogue(p2)).toMatch(/h1 \| Sahih Muslim .*COLLECTION COVER/);
+  });
 });
 
