@@ -43,6 +43,9 @@ last two are the usual choice for volumes of a series or collection. Mode 'simil
 FRESH from the model's style prompt; mode 'style' ("use this style", "like this but with their own art") edits the model's
 photograph keeping the binding and drawing each book its own centre illustration; mode 'exact' ("use this exactly", "same
 cover, just change the title") edits it changing only title and byline. If unclear, default to 'style'.
+When the user asks to make selected covers like the model (in any words), ALWAYS answer with propose_plan references:
+refBookId = the MODEL COVER, bookIds = the selected books (minus the model), generate: true, and the mode that fits their
+words (default 'style'). Never turn such a request into in-place edits of each cover.
 "The model" means the MODEL COVER above; "regenerate these from the model" = references with that refBookId and
 generate: true.
 When the user wants other books based ON a particular cover ("make the others like this one", "base the Rumi books on
@@ -183,8 +186,10 @@ export const geminiDescribe = (apiKey, model = CHAT_MODEL) => async (imageB64, m
 
 /** Edit mode: turn the user's feedback ("too busy", "can't read the author") into ONE concrete visual instruction for the
  *  image model, by looking at the cover. Vague feedback made the image model change almost nothing. */
-export const refineRequest = (feedback) =>
+export const refineRequest = (feedback, book = {}) =>
   `You are directing an image editor that will edit this book cover. The art director says: "${String(feedback).trim()}"\n\n` +
+  `This cover is for "${book.title || ''}"${book.subtitle ? ` (subtitle "${book.subtitle}")` : ''}${book.author ? ` by ${book.author}` : ''}. ` +
+  `Any text on it must be exactly that — never invent titles, numbers or placeholders. You can see only THIS cover.\n\n` +
   `Look at the cover and turn that into concrete editing commands that achieve what they want. Each command names exactly ` +
   `what to remove, simplify, enlarge, shrink, recolour or move, and by how much (e.g. "Remove the inner floral border", ` +
   `"Enlarge the title lettering by a third", "Make the byline twice as large"). Be decisive enough to be clearly visible at ` +
@@ -194,8 +199,8 @@ export const refineRequest = (feedback) =>
 /** The refined edit as a list of commands (accepts "1." / "2)" / "-" bullets; a single sentence stays one command). */
 export const editSteps = (text) => /^\s*NONE\b/i.test(text || '') ? []
   : String(text || '').split('\n').map((l) => l.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, '').trim()).filter(Boolean);
-export const geminiRefine = (apiKey, model = CHAT_MODEL) => async (imageB64, mimeType, feedback) => {
-  const parts = await gemini(apiKey, model, { contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageB64 } }, { text: refineRequest(feedback) }] }] });
+export const geminiRefine = (apiKey, model = CHAT_MODEL) => async (imageB64, mimeType, feedback, book) => {
+  const parts = await gemini(apiKey, model, { contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageB64 } }, { text: refineRequest(feedback, book) }] }] });
   return parts.filter((p) => p.text).map((p) => p.text).join(' ').trim();
 };
 

@@ -140,7 +140,9 @@ describe('runChat', () => {
 
 describe('refineRequest', () => {
   it('asks for ONE concrete visual instruction from the user\'s feedback, keeping the cover otherwise', () => {
-    const r = refineRequest('good but a bit too busy for thumbnail visibility');
+    const r = refineRequest('good but a bit too busy for thumbnail visibility', { title: 'Sura LXXXVII. The Most High', author: 'Muhammad' });
+    expect(r).toContain('Sura LXXXVII. The Most High');           // the real title, so it can't invent "AL-FATIHA"
+    expect(r).toMatch(/never invent|do not invent/i);
     expect(r).toContain('good but a bit too busy for thumbnail visibility');
     expect(r).toMatch(/concrete/i);
     expect(r).toMatch(/what to remove|remove|enlarge|simplify/i);

@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=61';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=62';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1132,7 +1132,10 @@ $('chat-form').addEventListener('submit', (e) => {
   // Edit mode applies the text as an image instruction — but talk aimed at the Binder ("no, please make the edit to
   // these…", "can you…", "why…", "undo") goes to the Binder instead of being painted into a cover.
   const talk = /^(no|yes|ok(ay)?|thanks|why|what|how|did|didn.t|can you|could you|would you|will you|please (make|apply|do|redo|undo)|undo|redo|stop|wait)\b/i.test(t);
-  chatMode === 'edit' && (im?.bookId || selected.size) && t && !talk ? editFromChat(t) : sendChat(t);
+  // Anything about THE MODEL is a model regeneration (Similar/Same Style/Same Cover), not an in-place edit of each cover —
+  // the edit path never sees the model and invented "standard model assets" and wrong titles.
+  const aboutModel = /\b(model|starred|★)\b|same (style|cover|look) as|like (the|that) (one|cover)/i.test(t);
+  chatMode === 'edit' && (im?.bookId || selected.size) && t && !talk && !aboutModel ? editFromChat(t) : sendChat(t);
 });
 $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } });
 // The composer grows with its text (typed, pasted or prefilled), up to about a third of the screen.

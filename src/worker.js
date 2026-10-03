@@ -158,7 +158,7 @@ export default {
         if (!obj) return fail(404, 'Cover image missing');
         await initCodecs(webpEncWasm);
         const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
-        try { const steps = editSteps(await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', text)); return json({ ok: true, steps, instruction: steps.length ? steps.map((x, i) => `${i + 1}. ${x}`).join('\n') : 'NONE' }); }
+        try { const steps = editSteps(await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', text, { title: b.title, subtitle: b.subtitle, author: b.author })); return json({ ok: true, steps, instruction: steps.length ? steps.map((x, i) => `${i + 1}. ${x}`).join('\n') : 'NONE' }); }
         catch (e) { return fail(502, String(e.message || e)); }
       }
 
