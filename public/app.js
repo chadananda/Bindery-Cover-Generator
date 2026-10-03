@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=70';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=71';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -270,7 +270,7 @@ const seriesStem = (t) => {
   return m && m[1].trim().length >= 3 ? m[1].trim() : null;
 };
 const tray = (key, title, vols) => `<div class="tray" data-tray="${esc(key)}">
-  <div class="tray-head"><input type="checkbox" class="pick-tray" ${vols.length && vols.every((b) => selected.has(b.id)) ? 'checked' : ''} aria-label="Select every volume of ${esc(title)}" title="Select / deselect all ${vols.length} volumes" /><b>${esc(title)}</b> · ${vols.length} volumes<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
+  <div class="tray-head"><b>${esc(title)}</b> · ${vols.length} volumes${(() => { const all = vols.length && vols.every((b) => selected.has(b.id)); return `<button type="button" class="btn small" data-pick-tray="${all ? 'off' : 'on'}">${all ? 'Deselect all' : `Select all ${vols.length}`}</button>`; })()}<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
   <div class="tray-grid">${vols.map((b) => cardHtml(b)).join('')}</div></div>`;
 function shelfCards(books) {
   const heads = books.filter(isHead);
@@ -344,8 +344,10 @@ $('app').addEventListener('click', (e) => {
     }
     return;
   }
-  if (e.target.matches('.pick-tray')) {
-    e.target.closest('.tray').querySelectorAll('.card[data-book]').forEach((c) => (e.target.checked ? selected.add(c.dataset.book) : selected.delete(c.dataset.book)));
+  const pt = e.target.closest('[data-pick-tray]');
+  if (pt) {
+    // Selects only — every action then goes through the selection like anywhere else.
+    pt.closest('.tray').querySelectorAll('.card[data-book]').forEach((c) => (pt.dataset.pickTray === 'on' ? selected.add(c.dataset.book) : selected.delete(c.dataset.book)));
     renderShelves(); renderSelbar(); return;
   }
   if (e.target.matches('.grid, .tray-grid') && selected.size && !e.shiftKey && !e.ctrlKey && !e.metaKey) { clearSelection(); return; } // empty shelf space
@@ -364,16 +366,22 @@ function syncSelection() {
   $('app').querySelectorAll('.card[data-book]').forEach((c) => { const on = selected.has(c.dataset.book); c.classList.toggle('sel', on); c.setAttribute('aria-selected', on); });
   renderSelbar();
   const b = imBook(), m = project.books.find((x) => x.id === project.app.modelBookId);
-  if (b && m && !$('imgmgr').hidden) likeLabels(b, m.id === b.id ? project.books.find((x) => x.id === b.refBookId) || m : m);
+  if (b && !$('imgmgr').hidden) { genLabel(b, m && m.id !== b.id); if (m) likeLabels(b, m.id === b.id ? project.books.find((x) => x.id === b.refBookId) || m : m); }
 }
 const clearSelection = () => { selected.clear(); lastPick = null; setTimeout(saveView, 0); renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
 $('sel-clear').addEventListener('click', clearSelection);
-$('sel-generate').addEventListener('click', () => generate(selBooks()));
+$('sel-generate').addEventListener('click', () => { uiLog('generate', { input: { from: 'selection bar' }, output: { targets: selBooks().map((x) => `${x.id} “${x.title}”`) } }); generate(selBooks(), { own: true }); });
 // ONE model per library: ★ on a cover. Regenerate from model edits it into each selected book (based-on edit).
 // Per-user working state (this browser, per library) — not the shared database: one person's model mustn't change others'.
 function setModel(id) {
   project.app.modelBookId = id; store.set(`model:${lib}`, id);
   renderShelves(); renderSelbar(); // shelves, not just the two cards: tray headers offer Same style/cover when they hold the model
+}
+// The editor acts on the selection when the open cover is part of one (like every other action), else on the open cover.
+const selTargets = (b) => selected.has(b.id) && selected.size > 1 ? selBooks() : [b];
+function genLabel(b, src) {
+  const n = selTargets(b).length, gen = document.querySelector('#imgmgr [data-act="generate"]');
+  gen.textContent = `✦ Generate new${src ? ' · own style' : ''}${n > 1 ? ` · ${n} selected` : ''}`; gen.classList.toggle('gold', !src);
 }
 // The model buttons say how many covers they'll make ("Same Cover · 2 selected"); refreshed as the selection changes.
 function likeLabels(b, src) {
@@ -683,11 +691,12 @@ const refRaws = new Map();
 const refRaw = (book, v) => v.raw ? Promise.resolve(v.raw) : refRaws.get(v.id) || (refRaws.set(v.id, rawFromCover(book, v)), refRaws.get(v.id));
 
 /** Generate (or img2img-edit) one cover, key it, store it, record a version stamped with its look. */
-async function produce(book, { removeBg = true, change = '', lookId = null } = {}) {
+async function produce(book, { removeBg = true, change = '', lookId = null, own = false } = {}) {
   const from = change ? currentVersion(book) : null;
   if (change && !from?.raw && !from?.cover) throw new Error('No cover to edit — Generate one first');
   // Based on another book: EDIT that book's current cover for this one (same photograph; new title, byline, illustration).
-  const refBook = !change && book.refBookId && project.books.find((x) => x.id === book.refBookId);
+  // own: "Generate" = this book's own style layers, never its saved model link (the model buttons do that).
+  const refBook = !change && !own && book.refBookId && project.books.find((x) => x.id === book.refBookId);
   const refV = refBook && currentVersion(refBook);
   // 'similar' = fresh generation with the model's style layers; 'style'/'exact' = an edit of the model's photograph.
   const similar = !!refBook && book.refMode === 'similar';
@@ -713,7 +722,7 @@ async function produce(book, { removeBg = true, change = '', lookId = null } = {
   return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: basePrompt && basePrompt !== prompt ? basePrompt : null, aspect, w, h, edit: change || (basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
 }
 
-async function generate(books) {
+async function generate(books, { own = false } = {}) {
   if (!books.length) return;
   if (books.length > 3 && !confirm(`Generate ${books.length} covers? Each one is a paid Gemini image call.`)) return;
   const { id: lookId } = await ensureLook();
@@ -725,7 +734,7 @@ async function generate(books) {
       run.active++; renderJobs();
       status.set(b.id, { state: 'busy', msg: 'Generating…' }); renderCard(b.id); if (!$('chat').hidden) renderChat();
       if (im?.bookId === b.id) { imBusy(true, 'Generating… (~20–40s)'); imStatus('Generating…'); }
-      try { await produce(b, { lookId }); status.delete(b.id); if (im?.bookId === b.id) imStatus('Generated ✓', 'ok'); }
+      try { await produce(b, { lookId, own }); status.delete(b.id); if (im?.bookId === b.id) imStatus('Generated ✓', 'ok'); }
       catch (e) { status.set(b.id, { state: 'err', msg: e.message }); if (im?.bookId === b.id) imStatus(e.message, 'err'); }
       renderCard(b.id); if (!$('chat').hidden) renderChat(); if (im?.bookId === b.id) { imBusy(false); renderManager(); }
       run.active--; run.done++; renderJobs();
@@ -849,7 +858,7 @@ function renderManager() {
     likeLabels(b, src);
   }
   const gen = document.querySelector('#imgmgr [data-act="generate"]');
-  gen.textContent = src ? '✦ Generate new · own style' : '✦ Generate new'; gen.classList.toggle('gold', !src);
+  genLabel(b, src);
   $('im-prompt').textContent = !refV ? composePrompt(project, b) : b.refMode === 'similar'
     ? (modelPrompt(refB) ? retitlePrompt(modelPrompt(refB), project, b, { keepByline: norm(refB.author) === norm(b.author) }) : `(The look of “${refB.title}” is read from its image when you generate, then:)\n\n` + composePrompt(project, b, { styleText: '…its described look…' }))
     : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact', refAuthor: refB.author, refByline: refB.byline });
@@ -937,9 +946,12 @@ $('imgmgr').addEventListener('click', async (e) => {
   const removeBg = $('im-removebg').checked;
   try {
     if (act === 'generate') {
+      const targets = selTargets(b);
+      uiLog('generate', { bookId: b.id, input: { from: 'editor' }, output: { targets: targets.map((x) => `${x.id} “${x.title}”`) } });
+      if (targets.length > 1) { generate(targets, { own: true }); return; }
       imBusy(true, 'Generating… (~20–40s)'); imStatus('Generating…');
       const { id: lookId } = await ensureLook();
-      await produce(b, { removeBg, lookId }); imStatus('Generated ✓', 'ok');
+      await produce(b, { removeBg, lookId, own: true }); imStatus('Generated ✓', 'ok');
     } else if (act === 'rekey') {
       const v = currentVersion(b);
       if (!v?.raw) return imStatus('This version has no raw image to key.', 'err');
@@ -1249,9 +1261,9 @@ $('chat-body').addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('[data-apply-gen]')) {
-    const books = planSamples(m.plan); applyPlan(m.plan); m.applied = 'gen';
+    const books = planSamples(m.plan); applyPlan(m.plan); m.applied = 'gen'; const own = true;
     chat.messages.push({ role: 'assistant', text: `Generating ${books.length} cover${books.length > 1 ? 's' : ''} with the new style. They'll appear here as they finish; open any one to refine it.`, books: books.map((b) => b.id) });
-    renderChat(); if (books[0]) openManager(books[0].id); generate(books);
+    renderChat(); if (books[0]) openManager(books[0].id); generate(books, { own });
   }
 });
 
