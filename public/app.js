@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=49';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=50';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -812,8 +812,10 @@ $('imgmgr').addEventListener('click', async (e) => {
   const del = e.target.closest('[data-delver]');
   if (del && authed) {
     e.stopPropagation();
-    if (!confirm('Delete this version? Its images are removed; this can\'t be undone.')) return;
     const id = del.dataset.delver;
+    // Ask only for the version in use or the first one; other iterations go at once.
+    const risky = id === b.selected || id === b.versions[0]?.id;
+    if (risky && !confirm('Delete this version? Its images are removed; this can\'t be undone.')) return;
     try { await remove('versions', [id]); } catch (err) { imStatus(err.message, 'err'); return; }
     b.versions = b.versions.filter((x) => x.id !== id);
     if (b.selected === id) { b.selected = b.versions.at(-1)?.id || null; patch('books', b.id, { selected: b.selected }); }
