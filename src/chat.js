@@ -46,6 +46,10 @@ cover, just change the title") edits it changing only title and byline. If uncle
 When the user asks to make selected covers like the model (in any words), ALWAYS answer with propose_plan references:
 refBookId = the MODEL COVER, bookIds = the selected books (minus the model), generate: true, and the mode that fits their
 words (default 'style'). Never turn such a request into in-place edits of each cover.
+COVER TEXT: when the user dictates what a cover should say ("title is 'The Opening', sura line is 'Sura I'"), propose
+titles: the book's full title in the SAME PATTERN as the model's title (model "Sura LXXXI. The Folded up" + "Sura I" +
+"The Opening" → "Sura I. The Opening"). The title is what every generation prints, so fix it there — never only in an
+edit instruction. Combine with references/edits in the same plan when they also want the cover remade.
 START OVER: when a MODEL COVER is set and the user says start over, start again, redo it, do it over, from scratch,
 or copy (and edit) the model, they mean: throw away the current cover and make a NEW one by editing the model's
 photograph — propose references with refBookId = the MODEL COVER, bookIds = the selected books (or the open one),
@@ -99,6 +103,8 @@ export const TOOLS = [{ functionDeclarations: [
         mode: { type: 'string', enum: ['similar', 'style', 'exact'], description: "'similar' = a FRESH generation with the model's style prompt; 'style' = edit the model's photograph: same binding, NEW centre illustration; 'exact' = edit the model's photograph: only title and byline change" } }, required: ['refBookId', 'bookIds'] } },
       bylines: { type: 'array', description: "Set what the covers print as their author line; saved on the books and respected by every later generation", items: { type: 'object', properties: {
         bookIds: { type: 'array', items: { type: 'string' } }, byline: { type: 'string', description: '"" = print no author/byline at all; otherwise the exact text to print (e.g. "Translated by J.M. Rodwell")' } }, required: ['bookIds', 'byline'] } },
+      titles: { type: 'array', description: "Change books' titles (the text printed on their covers); applied before anything in the plan is generated", items: { type: 'object', properties: {
+        bookId: { type: 'string' }, title: { type: 'string', description: 'the full new title, e.g. "Sura I. The Opening"' } }, required: ['bookId', 'title'] } },
       edits: { type: 'array', description: "In-place edits of a book's current cover image", items: { type: 'object', properties: {
         bookId: { type: 'string' }, change: { type: 'string', description: 'one precise visual instruction, e.g. "make the leather a deeper forest green; keep everything else"' } }, required: ['bookId', 'change'] } } },
       required: ['changes'] } },
@@ -141,7 +147,12 @@ export function sanitizePlan(p, plan) {
     const ids = [...new Set((x.bookIds || []).filter((id) => books.has(id)))];
     return ids.length && typeof x.byline === 'string' ? [{ bookIds: ids, byline: x.byline.trim().slice(0, 200), name: `${ids.length} book${ids.length > 1 ? 's' : ''}` }] : [];
   });
-  return changes.length || generateBookIds.length || edits.length || references.length || bylines.length ? { changes, generateBookIds, edits, references, bylines } : null;
+  // Dictated cover text → the book's title (what every generation prints).
+  const titles = (plan?.titles || []).flatMap((x) => {
+    const b = p.books.find((y) => y.id === x.bookId), title = String(x.title || '').trim().slice(0, 300);
+    return b && title ? [{ bookId: b.id, before: b.title, title }] : [];
+  });
+  return changes.length || generateBookIds.length || edits.length || references.length || bylines.length || titles.length ? { changes, generateBookIds, edits, references, bylines, titles } : null;
 }
 
 // Words that name a scope wider than the selection.
@@ -156,10 +167,11 @@ export function scopePlan(p, plan, selectedIds = [], text = '') {
   const edits = plan.edits.filter((e) => sel.has(e.bookId));
   const references = plan.references.flatMap((r) => only(r.bookIds).length ? [{ ...r, bookIds: only(r.bookIds) }] : []);
   const bylines = (plan.bylines || []).flatMap((x) => only(x.bookIds).length ? [{ ...x, bookIds: only(x.bookIds), name: name(only(x.bookIds)) }] : []);
-  const out = { changes, generateBookIds: only(plan.generateBookIds), edits, references, bylines };
-  if (!changes.length && !edits.length && !references.length && !bylines.length && text.trim())
+  const titles = (plan.titles || []).filter((x) => sel.has(x.bookId));
+  const out = { changes, generateBookIds: only(plan.generateBookIds), edits, references, bylines, titles };
+  if (!changes.length && !edits.length && !references.length && !bylines.length && !titles.length && text.trim())
     out.edits = selectedIds.map((id) => p.books.find((b) => b.id === id)).filter((b) => b?.versions?.length).map((b) => ({ bookId: b.id, title: b.title, change: text.trim() }));
-  const scoped = JSON.stringify(out) !== JSON.stringify({ ...plan, bylines: plan.bylines || [] });
+  const scoped = JSON.stringify(out) !== JSON.stringify({ ...plan, bylines: plan.bylines || [], titles: plan.titles || [] });
   return { plan: out, scoped };
 }
 

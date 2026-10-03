@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=74';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=75';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -987,7 +987,7 @@ $('chat-mode').addEventListener('click', (e) => { const b = e.target.closest('[d
 // Feedback → numbered, concrete commands read against THIS cover (vague feedback made the image model change ~nothing),
 // shown in the chat as "Applying to …". null = it isn't a change request. Every edit path goes through this.
 async function refineEdit(b, text, { fallback = false } = {}) {
-  const { instruction, byline } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text }) });
+  const { instruction, byline } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text, title: b.title }) }); // title: a just-applied rename may not be saved yet
   // An author-line change is saved on the book too, so later regenerations keep it ("" = no author line).
   if (byline !== undefined && byline !== null) { b.byline = byline; patch('books', b.id, { byline }); }
   const none = !instruction || /^NONE\b/i.test(instruction);
@@ -1077,13 +1077,14 @@ const planHtml = (m, i) => {
   const p = m.plan, gen = planSamples(p);
   return `<div class="plan" data-plan="${i}">${p.changes.map((c) => `<div class="change"><span class="scope">${SCOPE[c.scope]}</span>${c.override ? ' <span class="scope over">Replaces inherited styles</span>' : ''} <b>${esc(c.name)}</b>
       <p class="after">${esc(c.style)}</p>${c.before ? `<details><summary>Current style</summary><p class="before">${esc(c.before)}</p></details>` : ''}</div>`).join('')}
+    ${(p.titles || []).map((x) => `<div class="change"><span class="scope">Title</span> <b>${esc(x.before)}</b><p class="after">→ “${esc(x.title)}” — the text every generation prints</p></div>`).join('')}
     ${(p.bylines || []).map((x) => `<div class="change"><span class="scope">Author line</span> <b>${esc(x.name)}</b><p class="after">${x.byline ? `Print “${esc(x.byline)}” instead of the author` : 'Print no author or byline'} — saved, so every later generation keeps it: ${esc(x.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${x.bookIds.length > 6 ? '…' : ''}</p></div>`).join('')}
     ${(p.edits || []).map((e) => `<div class="change"><span class="scope">Edit cover</span> <b>${esc(e.title)}</b><p class="after">${esc(e.change)}</p></div>`).join('')}
     ${(p.references || []).map((r) => `<div class="change"><span class="scope">Based on</span> <b>${esc(r.refTitle)}</b><p class="after">${r.bookIds.length} book${r.bookIds.length > 1 ? 's' : ''} made by editing this cover — ${r.mode === 'exact' ? '<b>same cover</b>: only title and byline change' : r.mode === 'similar' ? '<b>similar style</b>: fresh covers from its style prompt' : '<b>same style</b>: new title, byline and illustration'}: ${esc(r.bookIds.slice(0, 6).map((id) => project.books.find((b) => b.id === id)?.title).filter(Boolean).join(', '))}${r.bookIds.length > 6 ? '…' : ''}</p>${thumbsHtml([r.refBookId])}</div>`).join('')}
     ${m.applied ? `<p class="applied">Applied ✓${m.applied === 'gen' ? ` · generating ${gen.length}` : m.applied === 'edit' ? ` · editing ${p.edits.length}` : ''}</p>` : `<div class="plan-actions">
       ${p.references?.length ? `<button type="button" class="btn small gold" data-apply-refs>Base them on it &amp; generate ${p.references.reduce((n, r) => n + r.bookIds.length, 0)}</button><button type="button" class="btn small" data-apply-refs-only>Just link them</button>` : ''}
       ${p.edits?.length ? `<button type="button" class="btn small gold" data-apply-edits>✎ Edit ${p.edits.length > 1 ? `${p.edits.length} covers` : 'this cover'}</button>` : ''}
-      ${p.changes.length || p.bylines?.length ? '<button type="button" class="btn small" data-apply>Apply</button>' : ''}
+      ${p.changes.length || p.bylines?.length || (p.titles?.length && !p.references?.length) ? '<button type="button" class="btn small" data-apply>Apply</button>' : ''}
       ${gen.length ? `<button type="button" class="btn small gold" data-apply-gen>${p.changes.length ? 'Apply &amp; ' : ''}generate ${gen.length} cover${gen.length > 1 ? 's' : ''}</button>` : ''}
       <button type="button" class="btn small ghost" data-dismiss>Not now</button></div>`}</div>`;
 };
@@ -1127,6 +1128,7 @@ function applyPlan(plan) {
     else if (c.scope === 'collection') { const x = collById(c.targetId); if (x) { Object.assign(x, { style: c.style, override: !!c.override }); patch('collections', x.id, { style: c.style, override: !!c.override }); } }
     else c.bookIds.forEach((id) => { const b = project.books.find((x) => x.id === id); if (b) { Object.assign(b, { style: c.style, override: !!c.override }); patch('books', id, { style: c.style, override: !!c.override }); } });
   }
+  for (const x of plan.titles || []) { const b = project.books.find((y) => y.id === x.bookId); if (b) { b.title = x.title; patch('books', b.id, { title: x.title }); } }
   for (const x of plan.bylines || []) for (const id of x.bookIds) { const b = project.books.find((y) => y.id === id); if (b) { b.byline = x.byline; patch('books', id, { byline: x.byline }); } }
   renderAll();
 }

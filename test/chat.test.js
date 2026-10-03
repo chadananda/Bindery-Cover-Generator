@@ -45,7 +45,7 @@ describe('sanitizePlan', () => {
   });
   it('keeps cover edits for books that have a cover; drops the rest', () => {
     const plan = sanitizePlan(project, { changes: [], edits: [{ bookId: 'b1', change: ' darker leather ' }, { bookId: 'b2', change: 'x' }, { bookId: 'zzz', change: 'x' }, { bookId: 'b1', change: '' }] });
-    expect(plan).toEqual({ changes: [], generateBookIds: [], edits: [{ bookId: 'b1', title: 'The Masnavi', change: 'darker leather' }], references: [], bylines: [] });
+    expect(plan).toEqual({ changes: [], generateBookIds: [], edits: [{ bookId: 'b1', title: 'The Masnavi', change: 'darker leather' }], references: [], bylines: [], titles: [] });
   });
 
   it('carries the override flag on shelf/collection/book changes (never on the library)', () => {
@@ -75,6 +75,15 @@ describe('sanitizePlan', () => {
     const plan = sanitizePlan(p2, { changes: [], edits: [{ bookId: 'b1', change: 'x' }, { bookId: 'b2', change: 'y' }], references: [{ refBookId: 'b1', bookIds: ['b2'], generate: true }] });
     expect(plan.edits.map((e) => e.bookId)).toEqual(['b1']);
     expect(sanitizePlan(p2, { changes: [], edits: [{ bookId: 'b2', change: 'y' }] }).edits).toHaveLength(1);
+  });
+
+  it('keeps title changes for known books (the cover text the user dictates)', () => {
+    const plan = sanitizePlan(project, { changes: [], titles: [{ bookId: 'b1', title: ' Sura I. The Opening ' }, { bookId: 'zzz', title: 'x' }, { bookId: 'b2', title: '' }] });
+    expect(plan.titles).toEqual([{ bookId: 'b1', before: 'The Masnavi', title: 'Sura I. The Opening' }]);
+  });
+  it('scopes title changes to the selection like everything else', () => {
+    const plan = sanitizePlan(project, { changes: [], titles: [{ bookId: 'b1', title: 'A' }, { bookId: 'b2', title: 'B' }] });
+    expect(scopePlan(project, plan, ['b1'], 'title is A').plan.titles.map((x) => x.bookId)).toEqual(['b1']);
   });
 
   it('returns null for an empty plan', () => {
@@ -238,6 +247,11 @@ describe('scopePlan', () => {
     expect(SYSTEM).toMatch(/START OVER/);
     expect(SYSTEM).toMatch(/start over[^.]*copy[^.]*model/i);
     expect(SYSTEM).toMatch(/mode 'exact'/);
+  });
+
+  it('tells the model to turn dictated cover text into the book title, in the model\'s title pattern', () => {
+    expect(SYSTEM).toMatch(/titles/);
+    expect(SYSTEM).toMatch(/Sura I\. The Opening/);
   });
 });
 

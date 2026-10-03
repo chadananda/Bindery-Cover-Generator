@@ -153,11 +153,12 @@ export default {
       // POST /api/libraries/<lib>/refine {bookId, text} → {instruction}: the user's edit feedback rewritten, against the
       // current cover, as one concrete instruction ('NONE' when it isn't a change request).
       if (part === 'refine' && req.method === 'POST') {
-        const { bookId, text = '' } = await body();
+        const { bookId, text = '', title: newTitle } = await body();
         const project = await loadLibrary(env.DB, lib);
         const b = project?.books.find((x) => x.id === bookId);
         const v = b && (b.versions.find((x) => x.id === b.selected) || b.versions.at(-1));
         if (!v || !text.trim()) return fail(400, 'bookId with a cover, and text, required');
+        if (typeof newTitle === 'string' && newTitle.trim()) b.title = newTitle.trim().slice(0, 300);
         const obj = await env.COVERS.get(v.cover || v.raw);
         if (!obj) return fail(404, 'Cover image missing');
         await initCodecs(webpEncWasm);
