@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=82';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=83';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -989,7 +989,6 @@ function layoutBench() {
   bench.hidden = !cover && !on;
   bench.classList.toggle('has-cover', cover);
   $('chat').hidden = !on;
-  $('chat-clear').hidden = !on;
   $('sel-open').hidden = !bench.hidden || !selected.size;
   if (!cover) $('im-title').textContent = 'Cover editor & style chat';
   renderMode();
@@ -1142,6 +1141,7 @@ function renderChat() {
     : `<div class="msg assistant"><span class="avatar">❦</span><div class="bubblewrap"><div class="bubble ${m.error ? 'err' : ''}">${esc(m.text)}</div>${thumbsHtml(m.books)}${m.plan ? planHtml(m, i) : ''}</div></div>`).join('')
     + (chat.busy ? `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble"><span class="chat-stage" id="chat-stage">${STAGES[0]}</span></div></div>` : '');
   body.scrollTop = body.scrollHeight;
+  $('chat-clear').hidden = !chat.messages.length; // nothing to clear on a fresh conversation
 }
 async function sendChat(text) {
   if ((!text.trim() && !chat.refs.length) || chat.busy) return;

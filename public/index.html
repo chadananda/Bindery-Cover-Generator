@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=51" />
+  <link rel="stylesheet" href="/styles.css?v=52" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -145,7 +145,7 @@
     <header class="bench-head">
       <span class="roundel" aria-hidden="true">❦</span>
       <span class="titles"><h2 class="title">The Binder</h2><span class="subtitle" id="bench-sub"><span id="im-title">Cover editor &amp; style chat</span></span></span>
-      <button type="button" class="head-btn" id="chat-clear" title="Start a fresh conversation (covers and history are untouched)">Clear chat</button>
+      
       <button type="button" class="chat-icon" id="bench-close" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </header>
     <div class="chat-rule"></div>
@@ -219,9 +219,12 @@
     <section class="chat" id="chat" hidden aria-label="Style chat">
       <div class="chat-body" id="chat-body" role="log" aria-live="polite"></div>
       <form class="chat-compose" id="chat-form">
-        <div class="mode" id="chat-mode" role="radiogroup" aria-label="What the message does" hidden data-write>
-          <button type="button" role="radio" data-mode="ask" aria-checked="true">Ask</button>
-          <button type="button" role="radio" data-mode="edit" aria-checked="false">✎ Edit cover</button>
+        <div class="compose-top">
+          <div class="mode" id="chat-mode" role="radiogroup" aria-label="What the message does" hidden data-write>
+            <button type="button" role="radio" data-mode="ask" aria-checked="true">Ask</button>
+            <button type="button" role="radio" data-mode="edit" aria-checked="false">✎ Edit cover</button>
+          </div>
+          <button type="button" class="chat-clear" id="chat-clear" title="Clear this conversation (covers and their history are untouched)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg> Clear chat</button>
         </div>
         <p class="chat-sel" id="chat-sel" hidden></p>
         <div class="refs" id="chat-refs" hidden></div>
@@ -250,6 +253,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=82"></script>
+  <script type="module" src="/app.js?v=83"></script>
 </body>
 </html>
