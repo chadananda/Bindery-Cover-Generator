@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=45" />
+  <link rel="stylesheet" href="/styles.css?v=46" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -53,6 +53,7 @@
   <p id="empty" class="empty" hidden>This library is empty. Use <b>+ Books</b> to paste a CSV or add one.</p>
 
   <!-- Selection bar: appears at the bottom once anything is selected. -->
+  <div class="jobs" id="jobs" hidden role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span id="jobs-lab"></span><button type="button" class="btn small" id="jobs-stop">■ Stop the rest</button></div>
   <div class="selbar" id="selbar" hidden role="region" aria-label="Selected books">
     <span id="sel-count" class="sel-count"></span>
     <button type="button" class="btn small gold" id="sel-generate" data-write>✦ Generate</button>
@@ -257,6 +258,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=69"></script>
+  <script type="module" src="/app.js?v=70"></script>
 </body>
 </html>

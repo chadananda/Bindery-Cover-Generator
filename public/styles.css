@@ -539,3 +539,9 @@ body:not(.ro) .user-btn::after { content: ''; position: absolute; right: -2px; b
 .use-model { flex-basis: 100%; text-align: left; font: 600 12px var(--sans); color: #7a3a1c; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 .field.grow { flex: 1; min-width: 12rem; }
+
+/* Running generations + Stop: above the selection bar, bottom-left */
+.jobs { position: fixed; left: 1rem; bottom: 4.2rem; z-index: 60; display: flex; align-items: center; gap: .6rem; padding: .45rem .6rem .45rem .8rem; border-radius: 999px; background: var(--panel, var(--bg)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 6px 24px rgb(0 0 0 / .25); font: 600 13px var(--sans); }
+.jobs[hidden] { display: none; }
+.jobs .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-top-color: var(--accent); animation: jobs-spin 1s linear infinite; }
+@keyframes jobs-spin { to { transform: rotate(360deg); } }

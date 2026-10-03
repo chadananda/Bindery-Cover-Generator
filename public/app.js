@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=69';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=70';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -269,11 +269,8 @@ const seriesStem = (t) => {
     || s.match(/^(.*?)\s+\d+(?:\s*[-–]\s*\d+)?$/); // trailing number or range: "The Pickwick Papers 9-11"
   return m && m[1].trim().length >= 3 ? m[1].trim() : null;
 };
-// Same style / Same cover are mostly for a series: when the model is in this tray (or is its collection cover),
-// the tray header offers them for every other volume — no selecting.
-const trayModel = (vols, key) => { const m = project.app.modelBookId; return m && (vols.some((b) => b.id === m) || project.books.some((b) => b.id === m && b.collectionId && `${b.collectionId}` === key)) ? m : null; };
 const tray = (key, title, vols) => `<div class="tray" data-tray="${esc(key)}">
-  <div class="tray-head"><input type="checkbox" class="pick-tray" ${vols.length && vols.every((b) => selected.has(b.id)) ? 'checked' : ''} aria-label="Select every volume of ${esc(title)}" title="Select / deselect all ${vols.length} volumes" /><b>${esc(title)}</b> · ${vols.length} volumes${trayModel(vols, key) ? `<span class="tray-regen" data-write>From the model: <button type="button" class="btn small gold" data-tray-regen="style" title="Every other volume: the model's photograph with its own title, byline and illustration">✦ Same style</button><button type="button" class="btn small" data-tray-regen="exact" title="Every other volume: the model's cover, only title and byline changed">✦ Same cover</button></span>` : ''}<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
+  <div class="tray-head"><input type="checkbox" class="pick-tray" ${vols.length && vols.every((b) => selected.has(b.id)) ? 'checked' : ''} aria-label="Select every volume of ${esc(title)}" title="Select / deselect all ${vols.length} volumes" /><b>${esc(title)}</b> · ${vols.length} volumes<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
   <div class="tray-grid">${vols.map((b) => cardHtml(b)).join('')}</div></div>`;
 function shelfCards(books) {
   const heads = books.filter(isHead);
@@ -346,15 +343,6 @@ $('app').addEventListener('click', (e) => {
       selected.clear(); selected.add(id); lastPick = id; syncSelection(); openManager(id);
     }
     return;
-  }
-  const tr = e.target.closest('[data-tray-regen]');
-  if (tr && authed) {
-    const mode = tr.dataset.trayRegen, model = project.books.find((b) => b.id === project.app.modelBookId);
-    const vols = [...tr.closest('.tray').querySelectorAll('.card[data-book]')].map((c) => project.books.find((b) => b.id === c.dataset.book)).filter((b) => b && b.id !== model?.id);
-    if (!model || !vols.length) return;
-    uiLog('regen', { input: { from: 'tray', mode, model: `${model.id} “${model.title}”` }, output: { targets: vols.map((x) => `${x.id} “${x.title}”`) } });
-    vols.forEach((b) => { Object.assign(b, { refBookId: model.id, refMode: mode }); patch('books', b.id, { refBookId: model.id, refMode: mode }); });
-    openManager(vols[0].id); generate(vols); return;
   }
   if (e.target.matches('.pick-tray')) {
     e.target.closest('.tray').querySelectorAll('.card[data-book]').forEach((c) => (e.target.checked ? selected.add(c.dataset.book) : selected.delete(c.dataset.book)));
@@ -729,20 +717,39 @@ async function generate(books) {
   if (!books.length) return;
   if (books.length > 3 && !confirm(`Generate ${books.length} covers? Each one is a paid Gemini image call.`)) return;
   const { id: lookId } = await ensureLook();
-  const queue = [...books];
+  const queue = [...books], run = { queue, active: 0, done: 0, total: books.length };
+  runs.add(run); renderJobs();
   books.forEach((b) => { status.set(b.id, { state: 'busy', msg: 'Queued' }); renderCard(b.id); });
   const worker = async () => {
     for (let b; (b = queue.shift());) {
+      run.active++; renderJobs();
       status.set(b.id, { state: 'busy', msg: 'Generating…' }); renderCard(b.id); if (!$('chat').hidden) renderChat();
       if (im?.bookId === b.id) { imBusy(true, 'Generating… (~20–40s)'); imStatus('Generating…'); }
       try { await produce(b, { lookId }); status.delete(b.id); if (im?.bookId === b.id) imStatus('Generated ✓', 'ok'); }
       catch (e) { status.set(b.id, { state: 'err', msg: e.message }); if (im?.bookId === b.id) imStatus(e.message, 'err'); }
       renderCard(b.id); if (!$('chat').hidden) renderChat(); if (im?.bookId === b.id) { imBusy(false); renderManager(); }
+      run.active--; run.done++; renderJobs();
     }
   };
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  runs.delete(run); renderJobs();
   renderBar();
 }
+// Running generations, with a Stop: queued covers are dropped; the ones already with Gemini finish (already paid for).
+const runs = new Set();
+function renderJobs() {
+  const left = [...runs].reduce((n, r) => n + r.queue.length, 0), active = [...runs].reduce((n, r) => n + r.active, 0);
+  const done = [...runs].reduce((n, r) => n + r.done, 0), total = [...runs].reduce((n, r) => n + r.total, 0);
+  $('jobs').hidden = !runs.size;
+  $('jobs-lab').textContent = `Generating ${done + active} of ${total}${left ? ` · ${left} queued` : ''}`;
+  $('jobs-stop').hidden = !left;
+}
+$('jobs-stop').addEventListener('click', () => {
+  let dropped = 0;
+  for (const r of runs) for (const b of r.queue.splice(0)) { status.delete(b.id); renderCard(b.id); dropped++; r.total--; }
+  uiLog('stop', { output: { dropped } });
+  renderJobs(); if (!$('chat').hidden) renderChat();
+});
 
 // ---------------------------------------------------------------- Image Manager
 let im = null; // { bookId }
