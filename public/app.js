@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=67';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=68';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -352,6 +352,7 @@ $('app').addEventListener('click', (e) => {
     const mode = tr.dataset.trayRegen, model = project.books.find((b) => b.id === project.app.modelBookId);
     const vols = [...tr.closest('.tray').querySelectorAll('.card[data-book]')].map((c) => project.books.find((b) => b.id === c.dataset.book)).filter((b) => b && b.id !== model?.id);
     if (!model || !vols.length) return;
+    uiLog('regen', { input: { from: 'tray', mode, model: `${model.id} “${model.title}”` }, output: { targets: vols.map((x) => `${x.id} “${x.title}”`) } });
     vols.forEach((b) => { Object.assign(b, { refBookId: model.id, refMode: mode }); patch('books', b.id, { refBookId: model.id, refMode: mode }); });
     openManager(vols[0].id); generate(vols); return;
   }
@@ -374,6 +375,8 @@ function syncSelection() {
   setTimeout(saveView, 0);
   $('app').querySelectorAll('.card[data-book]').forEach((c) => { const on = selected.has(c.dataset.book); c.classList.toggle('sel', on); c.setAttribute('aria-selected', on); });
   renderSelbar();
+  const b = imBook(), m = project.books.find((x) => x.id === project.app.modelBookId);
+  if (b && m && !$('imgmgr').hidden) likeLabels(b, m.id === b.id ? project.books.find((x) => x.id === b.refBookId) || m : m);
 }
 const clearSelection = () => { selected.clear(); lastPick = null; setTimeout(saveView, 0); renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
 $('sel-clear').addEventListener('click', clearSelection);
@@ -384,11 +387,19 @@ function setModel(id) {
   project.app.modelBookId = id; store.set(`model:${lib}`, id);
   renderShelves(); renderSelbar(); // shelves, not just the two cards: tray headers offer Same style/cover when they hold the model
 }
+// The model buttons say how many covers they'll make ("Same Cover · 2 selected"); refreshed as the selection changes.
+function likeLabels(b, src) {
+  const n = likeTargets(b, src).length, LIKE = { similar: 'Similar Style', style: 'Same Style', exact: 'Same Cover' };
+  $('im-model').querySelectorAll('[data-like]').forEach((x) => { x.textContent = LIKE[x.dataset.like] + (n > 1 ? ` · ${n} selected` : ''); });
+}
+// The editor's model buttons: every selected cover when the open one is part of a multi-selection, else just it.
+const likeTargets = (b, model) => selected.has(b.id) && selected.size > 1 ? selBooks().filter((x) => x.id !== model.id) : [b];
 $('sel-regen').addEventListener('click', (e) => {
   const mode = e.target.closest('[data-regen]')?.dataset.regen; if (!mode) return;
   const model = project.books.find((b) => b.id === project.app.modelBookId);
   if (!model || !currentVersion(model)) return alert('Mark one cover as the model first (★ on its corner).');
   const books = selBooks().filter((b) => b.id !== model.id);
+  uiLog('regen', { input: { from: 'selection bar', mode, model: `${model.id} “${model.title}”` }, output: { targets: books.map((x) => `${x.id} “${x.title}”`) } });
   books.forEach((b) => { if (b.refBookId !== model.id || b.refMode !== mode) { Object.assign(b, { refBookId: model.id, refMode: mode }); patch('books', b.id, { refBookId: model.id, refMode: mode }); } });
   if (books[0]) openManager(books[0].id);
   generate(books);
@@ -828,6 +839,7 @@ function renderManager() {
       + (refV && src === libModel && refB.id !== libModel.id ? `<small class="prev-src">Previously based on “${esc(refB.title)}” — these buttons use the model.</small>` : '');
     $('im-model').querySelector('[data-like="similar"]').title = modelPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
       : "A fresh generation in its look (read from its image — it has no prompt to reuse), with this book's title, author and illustration";
+    likeLabels(b, src);
   }
   const gen = document.querySelector('#imgmgr [data-act="generate"]');
   gen.textContent = src ? '✦ Generate new · own style' : '✦ Generate new'; gen.classList.toggle('gold', !src);
@@ -899,6 +911,13 @@ $('imgmgr').addEventListener('click', async (e) => {
     // the block's source: THE MODEL if one is set (and isn't this book), else this book's saved source
     const lm = project.books.find((x) => x.id === project.app.modelBookId);
     const model = lm && lm.id !== b.id ? lm : project.books.find((x) => x.id === b.refBookId); if (!model) return;
+    // Part of a multi-selection: the buttons act on every selected cover, like the bottom bar's Regenerate.
+    const targets = likeTargets(b, model);
+    uiLog('regen', { bookId: b.id, input: { from: 'editor', mode: like.dataset.like, model: `${model.id} “${model.title}”` }, output: { targets: targets.map((x) => `${x.id} “${x.title}”`) } });
+    if (targets.length > 1) {
+      targets.forEach((x) => { Object.assign(x, { refBookId: model.id, refMode: like.dataset.like }); patch('books', x.id, { refBookId: model.id, refMode: like.dataset.like }); });
+      generate(targets); return;
+    }
     Object.assign(b, { refBookId: model.id, refMode: like.dataset.like }); patch('books', b.id, { refBookId: model.id, refMode: like.dataset.like });
     imBusy(true, 'Generating from the model… (~20–40s)'); imStatus('Generating from the model…');
     try { await produce(b, { removeBg: $('im-removebg').checked, lookId: model.versions.find((v) => v.id === model.selected)?.lookId || null }); imStatus('Done ✓ — saved as a new version', 'ok'); }
