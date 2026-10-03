@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=58';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=61';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -48,6 +48,18 @@ function patch(table, id, fields) {
   p.t = setTimeout(() => { pending.delete(k); persist(() => api(table === 'libraries' ? base() : `${base()}/${table}/${id}`, { method: 'PATCH', body: JSON.stringify(p.fields) })).catch(() => {}); }, 500);
   pending.set(k, p); saveState('Editing…');
 }
+// Reloading within the 500ms pause dropped the edit (e.g. a model just starred). On page hide, send every pending patch
+// now with keepalive, which the browser completes even as the page unloads.
+function flushPatches() {
+  for (const [k, p] of pending) {
+    clearTimeout(p.t);
+    const [table, id] = k.split('/');
+    fetch(table === 'libraries' ? base() : `${base()}/${table}/${id}`, { method: 'PATCH', keepalive: true, headers: { 'content-type': 'application/json' }, body: JSON.stringify(p.fields) }).catch(() => {});
+  }
+  pending.clear();
+}
+addEventListener('pagehide', flushPatches);
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushPatches(); });
 const insert = (table, rows) => persist(() => api(`${base()}/${table}`, { method: 'POST', body: JSON.stringify({ rows }) }));
 const remove = (table, ids) => persist(() => api(`${base()}/${table}`, { method: 'DELETE', body: JSON.stringify({ ids }) }));
 
@@ -107,7 +119,10 @@ const VIEW_KEY = 'view';
 function saveView() {
   if (!lib || !restored) return;
   const top = [...$('app').querySelectorAll('.card[data-book]')].find((c) => c.getBoundingClientRect().bottom > (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--libbar-h')) || 60) + 40);
-  store.set(VIEW_KEY, { lib, path: location.pathname, anchor: top?.dataset.book || null, offset: top ? Math.round(top.getBoundingClientRect().top) : 0, y: Math.round(scrollY), open: im?.bookId || null, chat: chatOpen() });
+  store.set(VIEW_KEY, { lib, path: location.pathname, anchor: top?.dataset.book || null, offset: top ? Math.round(top.getBoundingClientRect().top) : 0, y: Math.round(scrollY), open: im?.bookId || null, chat: chatOpen(), selected: [...selected], lastPick,
+    // the rest of the working state: the conversation (last 40), composer mode and draft, the open drawer
+    messages: chat.messages.slice(-40), mode: chatMode, draft: $('chat-input').value,
+    drawer: document.querySelector('#imgmgr .tool[aria-expanded="true"]')?.dataset.drawer || null });
 }
 let saveT2;
 addEventListener('scroll', () => { clearTimeout(saveT2); saveT2 = setTimeout(saveView, 250); }, { passive: true });
@@ -116,8 +131,18 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveV
 function restoreView() {
   const v = store.get(VIEW_KEY, null);
   if (!v || v.lib !== lib || v.path !== location.pathname) return;
-  if (v.open && project.books.some((b) => b.id === v.open)) openManager(v.open);
+  const known = new Set(project.books.map((b) => b.id));
+  (v.selected || []).filter((id) => known.has(id)).forEach((id) => selected.add(id)); lastPick = known.has(v.lastPick) ? v.lastPick : null;
+  if (selected.size) syncSelection();
+  if (Array.isArray(v.messages)) chat.messages = v.messages;
+  if (v.open && known.has(v.open)) openManager(v.open);
   if (v.chat && authed && !chatOpen()) openChat();
+  if (chatOpen()) {
+    if (v.draft) { $('chat-input').value = v.draft; autosize(); }
+    if (v.mode === 'edit' && !$('chat-mode').hidden) setMode('edit');
+    renderChat();
+  }
+  if (v.drawer && !$('imgmgr').hidden) document.querySelector(`#imgmgr .tool[data-drawer="${v.drawer}"]`)?.click();
   // after the Binder's layout change, put the anchor cover back at the same height
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const el = v.anchor && $('app').querySelector(`.card[data-book="${v.anchor}"]`);
@@ -129,6 +154,7 @@ async function openLib(id, push = true) {
   if (!libs.some((l) => l.id === id)) id = libs[0].id;
   lib = id; store.set('lib', id);
   ({ project } = await api(base()));
+  project.app.modelBookId = store.get(`model:${id}`, ''); // the model is this browser's choice, not the library's
   selected.clear(); status.clear(); focusShelf = '';
   if (push) go();
   $('lib-select').innerHTML = libs.map((l) => `<option value="${l.id}" ${l.id === lib ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
@@ -345,15 +371,17 @@ $('shelf-jump').addEventListener('change', (e) => { focusShelf = e.target.value;
 const selBooks = () => project.books.filter((b) => selected.has(b.id));
 // Reflect `selected` on the visible cards (checkbox + outline) without rebuilding the shelves.
 function syncSelection() {
+  setTimeout(saveView, 0);
   $('app').querySelectorAll('.card[data-book]').forEach((c) => { const on = selected.has(c.dataset.book); c.classList.toggle('sel', on); c.setAttribute('aria-selected', on); });
   renderSelbar();
 }
-const clearSelection = () => { selected.clear(); lastPick = null; renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
+const clearSelection = () => { selected.clear(); lastPick = null; setTimeout(saveView, 0); renderShelves(); renderSelbar(); if (chatOpen()) { renderRefs(); renderMode(); } };
 $('sel-clear').addEventListener('click', clearSelection);
 $('sel-generate').addEventListener('click', () => generate(selBooks()));
 // ONE model per library: ★ on a cover. Regenerate from model edits it into each selected book (based-on edit).
+// Per-user working state (this browser, per library) — not the shared database: one person's model mustn't change others'.
 function setModel(id) {
-  const prev = project.app.modelBookId; project.app.modelBookId = id; patch('libraries', lib, { modelBookId: id });
+  project.app.modelBookId = id; store.set(`model:${lib}`, id);
   renderShelves(); renderSelbar(); // shelves, not just the two cards: tray headers offer Same style/cover when they hold the model
 }
 $('sel-regen').addEventListener('click', (e) => {
@@ -949,7 +977,7 @@ $('bench-close').addEventListener('click', () => { $('imgmgr').hidden = true; im
 // Composer mode, when a cover is loaded: Ask (the Binder proposes) or ✎ Edit cover (the text IS the edit, run at once).
 let chatMode = 'ask';
 function setMode(m) {
-  chatMode = m;
+  chatMode = m; setTimeout(saveView, 0);
   document.querySelectorAll('#chat-mode [data-mode]').forEach((b) => b.setAttribute('aria-checked', b.dataset.mode === m));
   $('chat-input').placeholder = m === 'edit' ? `Describe the change to ${selected.size ? 'the selected covers' : 'this cover'} — e.g. make the leather a deeper green, add a silver clasp` : 'Ask, or tell the Binder what to restyle…';
 }
@@ -995,6 +1023,7 @@ document.querySelector('#imgmgr .tools').addEventListener('click', (e) => {
   const open = t.getAttribute('aria-expanded') !== 'true';
   document.querySelectorAll('#imgmgr .tool').forEach((x) => x.setAttribute('aria-expanded', x === t && open));
   document.querySelectorAll('#imgmgr .drawer').forEach((d) => { d.hidden = !(open && d.dataset.for === t.dataset.drawer); });
+  setTimeout(saveView, 0);
 });
 function openChat(focusBookId = null, draft = '') {
   if (!authed) return showLogin();
@@ -1056,6 +1085,7 @@ const thumbsHtml = (ids = []) => !ids.length ? '' : `<div class="chat-thumbs">${
     <span class="ct-cap">${esc(b.title)}</span>${st?.state === 'busy' ? '<span class="ct-busy">Generating…</span>' : ''}</button>`;
 }).join('')}</div>`;
 function renderChat() {
+  clearTimeout(renderChat.t); renderChat.t = setTimeout(saveView, 300);
   const body = $('chat-body');
   const welcome = `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble">Point me at a cover you like and tell me where its look should go: the rest of its shelf, a collection, every book by an author. I'll write the style and show you exactly what changes before anything is applied.
 <div class="chips">${EXAMPLES.map((x) => `<button type="button" class="chip" data-example>${esc(x)}</button>`).join('')}</div></div></div>`;
@@ -1071,7 +1101,7 @@ async function sendChat(text) {
   chat.messages.push({ role: 'user', text: text.trim(), refs: chat.refs }); chat.refs = []; renderRefs(); chat.busy = true; renderChat();
   let s = 0; const tick = setInterval(() => { const el = $('chat-stage'); if (el) el.textContent = STAGES[++s % STAGES.length]; }, 3500);
   try {
-    const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text, refs }) => ({ role, text, refs })), focusBookId: im?.bookId || chat.focus, selectedIds: [...selected] }) });
+    const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text, refs }) => ({ role, text, refs })), focusBookId: im?.bookId || chat.focus, selectedIds: [...selected], modelBookId: project.app.modelBookId || '' }) });
     chat.messages.push({ role: 'assistant', text: r.reply, plan: r.plan, books: r.books || [] });
     if (r.mode) { setMode(r.mode); renderMode(); }
   } catch (e) { chat.messages.push({ role: 'assistant', text: `Something went wrong: ${e.message}`, error: true }); }
@@ -1087,7 +1117,7 @@ function applyPlan(plan) {
   renderAll();
 }
 $('chat-fab').addEventListener('click', () => openChat());
-$('chat-clear').addEventListener('click', () => { chat.messages = []; chat.focus = null; renderChat(); });
+$('chat-clear').addEventListener('click', () => { chat.messages = []; chat.focus = null; renderChat(); saveView(); });
 $('chat-form').addEventListener('submit', (e) => {
   e.preventDefault(); const t = $('chat-input').value.trim(); if (!t && !chat.refs.length) return;
   $('chat-input').value = ''; autosize();
@@ -1107,7 +1137,7 @@ $('chat-form').addEventListener('submit', (e) => {
 $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } });
 // The composer grows with its text (typed, pasted or prefilled), up to about a third of the screen.
 function autosize() { const i = $('chat-input'); i.style.height = 'auto'; i.style.height = `${Math.min(i.scrollHeight + 2, innerHeight * 0.35)}px`; }
-$('chat-input').addEventListener('input', autosize);
+$('chat-input').addEventListener('input', () => { autosize(); clearTimeout(renderChat.t); renderChat.t = setTimeout(saveView, 600); });
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
   // Esc peels back one layer: the editor, then the chat, then the selection.

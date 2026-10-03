@@ -181,9 +181,10 @@ export default {
       // POST /api/libraries/<lib>/chat {messages, focusBookId?} → {reply, plan}. The plan is a proposal the client
       // shows for approval; nothing changes here. Covers are described from a 640px webp rendition.
       if (part === 'chat' && req.method === 'POST') {
-        const { messages = [], focusBookId, selectedIds = [] } = await body();
+        const { messages = [], focusBookId, selectedIds = [], modelBookId = '' } = await body();
         const project = await loadLibrary(env.DB, lib);
         if (!project) return fail(404, 'No such library');
+        project.app.modelBookId = modelBookId; // the model is the user's own (browser) choice, sent with each message
         const describe = geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined);
         const describeCover = async (book, v) => {
           const obj = await env.COVERS.get(v.cover || v.raw);

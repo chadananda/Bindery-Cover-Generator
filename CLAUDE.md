@@ -29,3 +29,5 @@ Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read;
 - Shelf and house styles are DRAFTS for Chad to tune. Book `description` feeds the prompt as context (never printed).
 - Looks: style snapshot auto-saved on first generation with new styles; ★ sample books + ✦ Try look; Looks dialog compares.
 - Open: Workers Builds (dashboard connect, deploy command `npm run deploy`); send Yevhenii (byev@solvve.com) the demo; settle golden prompt + 604-vs-450 count.
+- Working state is per-browser localStorage, never the DB: the ★ model (`model:<lib>`, sent to /chat), selection, open book,
+  chat conversation/mode/draft, drawer, scroll anchor (`view`). libraries.modelBookId is unused (multi-user).
