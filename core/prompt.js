@@ -158,7 +158,7 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
     sameAuthor ? 'Keep the byline and any credit line exactly as they are — same words, same place.'
       : by && book?.byline == null ? `If the cover has a byline or author line, replace it with "${by}" in the same style and place; if it has none, do not add one.`
       : by ? `Replace the byline with "${by}", in the same style and place.`
-      : 'Remove the byline and any author or credit line completely; print no author name.',
+      : "Do not print the author's name anywhere; remove it if it is there. Keep any translator or other credit line exactly as it is.",
   ];
   const keep = `Keep the book itself exactly as it is: the same binding and material, colour and texture, wear and patina, border and ` +
     `ornaments, typeface and layout, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +

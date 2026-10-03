@@ -253,5 +253,11 @@ describe('scopePlan', () => {
     expect(SYSTEM).toMatch(/titles/);
     expect(SYSTEM).toMatch(/Sura I\. The Opening/);
   });
+
+  it('drops author-line settings the user did not ask for (the Binder saved "no byline" on its own and erased a credit)', async () => {
+    const call = (text) => runChat({ project, messages: [{ role: 'user', text }], callModel: async () => [{ functionCall: { name: 'propose_plan', args: { changes: [], edits: [{ bookId: 'b1', change: 'x' }], bylines: [{ bookIds: ['b1'], byline: '' }] } } }], describeCover: async () => '' });
+    expect((await call('copy and edit the model, change only the title')).plan.bylines).toEqual([]);
+    expect((await call('leave the author off this one')).plan.bylines).toHaveLength(1);
+  });
 });
 

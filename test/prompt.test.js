@@ -265,7 +265,8 @@ describe('effectiveStyles', () => {
     expect(sim).toMatch(/no author name, byline or credit/i);
     for (const exact of [false, true]) {
       const e = composeBasedOnPrompt({ app: {} }, sura, 'Sura LXXXI', { exact, refAuthor: 'Muhammad' });
-      expect(e).toMatch(/remove the byline and any author or credit line/i);
+      expect(e).toMatch(/do not print the author's name/i);
+      expect(e).toMatch(/keep any translator or other credit line exactly/i); // "" erased TRANSLATION BY J.M. RODWELL
     }
     const credit = composeBasedOnPrompt({ app: {} }, { ...sura, byline: 'Rodwell' }, 'Sura LXXXI', { refAuthor: 'Muhammad' });
     expect(credit).toContain('Replace the byline with "Rodwell"');
@@ -279,7 +280,7 @@ describe('effectiveStyles', () => {
       expect(e).toMatch(/if it has none, do not add one/i);       // the photograph decides: no byline stays no byline
       const none = composeBasedOnPrompt({ app: {} }, book, 'Model', { exact, refAuthor: 'Hafiz', refByline: '' });
       expect(none).not.toContain('"Rumi"');
-      expect(none).toMatch(/print no author name/i);
+      expect(none).toMatch(/do not print the author's name/i);
     }
     const mp = compose({ app: { style: 'leather' } }, { title: 'Model', author: 'Hafiz', byline: '' });
     expect(retitlePrompt(mp, { app: {} }, book)).not.toContain('"Rumi"');

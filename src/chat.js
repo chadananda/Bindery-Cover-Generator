@@ -175,6 +175,7 @@ export function scopePlan(p, plan, selectedIds = [], text = '') {
   return { plan: out, scoped };
 }
 
+const AUTHOR_TALK = /\b(author|byline|credit|translat\w*|attribut\w*|written by|name at the bottom)\b/i;
 const FAKE_CALL = /<\/?function_calls?\b|<function_call\s+name=|<tool_code>|```tool_code/i;
 const stripFake = (t) => String(t || '').replace(/<function_calls>[\s\S]*?(<\/function_calls>|$)/gi, '').replace(/<function_call[\s\S]*?(<\/function_call>|$)/gi, '').trim();
 /** One chat turn. messages: [{role:'user'|'assistant', text}]. callModel(contents) → parts. */
@@ -215,6 +216,8 @@ export async function runChat({ project, messages, focusBookId, selectedIds = []
     if (plan) {
       const last = [...messages].reverse().find((m) => m.role === 'user')?.text || '';
       const proposed = sanitizePlan(project, plan.args);
+      // Author-line settings are saved and reused by every later generation: only when the user talked about it.
+      if (proposed && !AUTHOR_TALK.test(last)) proposed.bylines = [];
       const { plan: scopedPlan, scoped } = scopePlan(project, proposed, selectedIds, last);
       const note = scoped ? `\n(Limited to the ${selectedIds.length} selected cover${selectedIds.length > 1 ? 's' : ''} — say “the whole collection” or “every …” to go wider.)` : '';
       return { reply: (stripFake(text) || 'Here is what I would change.') + note, plan: scopedPlan, books: shown.slice(0, 12), ...extra, trace, ...(scoped ? { unscopedPlan: proposed } : {}) };
