@@ -45,6 +45,8 @@ export function composePrompt(project, book, opts = {}) {
       `the ${k.name.toLowerCase()} background. Leave a visible margin of ${k.name.toLowerCase()} around all edges of the book.`,
     '',
   ];
+  // opts.styleText: a described model look (Similar Style from a cover with no prompt) — the WHOLE style; no layers.
+  if (opts.styleText) { out.push(`STYLE — match this look exactly: ${opts.styleText.trim()}`, '', ...bookLines(project, book)); return finish(out, k, bgName); }
   const active = effectiveStyles(project, styleBook).filter((l) => !l.overridden && (l.style || l.level === 'collection'));
   // Precedence, stated outright: a specific request ("cloth-bound" for one book or shelf) beats a general default
   // ("leather" for the library) even when nobody marked it as an override.
@@ -62,6 +64,28 @@ export function composePrompt(project, book, opts = {}) {
     if (layer.level === 'book') out.push(`THIS BOOK: ${layer.style}`);
   }
   out.push('');
+  out.push(...bookLines(project, book));
+  return finish(out, k, bgName);
+}
+
+/** Instruction wrapper for an img2img edit of an existing cover. */
+/** The fixed closing of every generation prompt: lighting and the key-colour requirements. */
+function finish(out, k, bgName) {
+  out.push(
+    'Flat, even studio lighting — NO shadows of any kind, NO drop shadows, NO ambient occlusion.',
+    '',
+    'CRITICAL REQUIREMENTS:',
+    `1. The background must be SOLID PURE ${bgName} — perfectly uniform, no variation whatsoever.`,
+    `2. The book must NOT cast ANY shadow onto the ${k.name.toLowerCase()} background. No drop shadow, no soft shadow, ` +
+      `no ambient shadow, no penumbra. The book edges must transition directly to flat ${k.name.toLowerCase()} with zero shadow or darkening.`,
+    `3. No dark edges, no vignetting, no gradient near the book edges. The ${k.name.toLowerCase()} must be pure ${k.hex} right up to the book edge.`,
+  );
+  return out.join('\n');
+}
+
+/** The lines of a prompt that belong to ONE book: title, byline, context, illustration brief. Everything else is style. */
+function bookLines(project, book) {
+  const out = [];
   const title = (book?.title || '').trim();
   if (title) out.push(`The title "${title}" is stamped on the cover${book?.subtitle ? `, with the subtitle "${book.subtitle}" smaller beneath it` : ''}.`);
   const author = (book?.author || '').trim();
@@ -77,19 +101,22 @@ export function composePrompt(project, book, opts = {}) {
   const content = (book?.content || '').trim();
   if (content) out.push(`The embossed centre illustration shows ${content}.`);
   else if (about) out.push('Choose a centre illustration that evokes this book\'s subject and spirit, drawn from the context above.');
-  out.push(
-    'Flat, even studio lighting — NO shadows of any kind, NO drop shadows, NO ambient occlusion.',
-    '',
-    'CRITICAL REQUIREMENTS:',
-    `1. The background must be SOLID PURE ${bgName} — perfectly uniform, no variation whatsoever.`,
-    `2. The book must NOT cast ANY shadow onto the ${k.name.toLowerCase()} background. No drop shadow, no soft shadow, ` +
-      `no ambient shadow, no penumbra. The book edges must transition directly to flat ${k.name.toLowerCase()} with zero shadow or darkening.`,
-    `3. No dark edges, no vignetting, no gradient near the book edges. The ${k.name.toLowerCase()} must be pure ${k.hex} right up to the book edge.`,
-  );
-  return out.join('\n');
+  return out;
 }
+// Model prompts are recognised by these line openings (see bookLines).
+const BOOK_LINE = /^(The title "|The line "|ABOUT THIS BOOK|The embossed centre illustration shows|Choose a centre illustration)/;
 
-/** Instruction wrapper for an img2img edit of an existing cover. */
+/** Similar Style: the model's EXACT generation prompt with this book's title, byline and illustration brief swapped in —
+ *  no library/shelf defaults consulted, so later default changes can't pull it away from the model. */
+export function retitlePrompt(modelPrompt, project, book) {
+  const lines = String(modelPrompt).split('\n').filter((l) => !BOOK_LINE.test(l));
+  const at = lines.findIndex((l) => l.startsWith('Flat, even studio lighting'));
+  lines.splice(at >= 0 ? at : lines.length, 0, ...bookLines(project, book));
+  return lines.join('\n');
+}
+/** Is this a full generation prompt (one Similar Style can reuse)? */
+export const isGenerationPrompt = (p) => /^Front cover of a book/.test(p || '');
+
 /** A book based on another: EDIT that cover's photograph for this book — same binding, wear, light and framing. Style
  *  mode replaces title, byline AND centre illustration (from the book's content/description, never printed); exact mode
  *  changes only the title and byline and keeps the illustration as it is. */

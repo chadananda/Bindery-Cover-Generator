@@ -146,6 +146,22 @@ export default {
         return json({ ok: true, key });
       }
 
+      // POST /api/libraries/<lib>/describe {bookId} → {style}: the visual style of that book's current cover, in words
+      // (Similar Style from a model with no generation prompt to reuse). A text call on a 640px rendition.
+      if (part === 'describe' && req.method === 'POST') {
+        const { bookId } = await body();
+        const project = await loadLibrary(env.DB, lib);
+        const b = project?.books.find((x) => x.id === bookId);
+        const v = b && (b.versions.find((x) => x.id === b.selected) || b.versions.at(-1));
+        if (!v) return fail(404, 'No cover to describe');
+        const obj = await env.COVERS.get(v.cover || v.raw);
+        if (!obj) return fail(404, 'Cover image missing');
+        await initCodecs(webpEncWasm);
+        const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
+        try { return json({ ok: true, style: await geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', v.prompt), versionId: v.id }); }
+        catch (e) { return fail(502, String(e.message || e)); }
+      }
+
       // POST /api/libraries/<lib>/chat {messages, focusBookId?} → {reply, plan}. The plan is a proposal the client
       // shows for approval; nothing changes here. Covers are described from a 640px webp rendition.
       if (part === 'chat' && req.method === 'POST') {

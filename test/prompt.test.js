@@ -172,5 +172,35 @@ describe('effectiveStyles', () => {
     expect(p).toContain('a mountain path');
     expect(p).not.toContain('The Masnavi');
   });
+
+  it('Similar Style reuses the model\'s EXACT prompt: only title, byline and illustration brief are swapped', async () => {
+    const { composePrompt: compose, retitlePrompt } = await import('../core/prompt.js');
+    const proj = { app: { style: 'library leather' }, shelves: [{ id: 's', name: 'Islam', style: 'emerald girih' }] };
+    const modelPrompt = compose(proj, { title: 'The Masnavi', author: 'Rumi', shelfId: 's', description: 'Persian mystical poetry about love.', style: 'copper corner guards' });
+    // later the defaults change — Similar Style must not care
+    proj.app.style = 'CLOTH NOW';
+    const p = retitlePrompt(modelPrompt, proj, { title: 'Divan of Hafiz', author: 'Hafiz', shelfId: 's', content: 'a nightingale on a rose' });
+    expect(p).toContain('library leather');
+    expect(p).toContain('copper corner guards');
+    expect(p).not.toContain('CLOTH NOW');
+    expect(p).toContain('"Divan of Hafiz"');
+    expect(p).toContain('"Hafiz"');
+    expect(p).toContain('a nightingale on a rose');
+    expect(p).not.toContain('The Masnavi');
+    expect(p).not.toContain('"Rumi"');
+    expect(p).not.toContain('Persian mystical poetry');
+    expect(p).toMatch(/CRITICAL REQUIREMENTS/);
+  });
+
+  it('Similar Style from a DESCRIBED model (no prompt to reuse): its description is the whole style; defaults ignored', async () => {
+    const { composePrompt: compose } = await import('../core/prompt.js');
+    const proj = { app: { style: 'library leather' }, shelves: [{ id: 's', name: 'Islam', style: 'emerald girih' }] };
+    const p = compose(proj, { title: 'Divan', author: 'Hafiz', shelfId: 's' }, { styleText: 'deep green pebbled leather, copper corners, matte gold serif title' });
+    expect(p).toContain('copper corners');
+    expect(p).not.toContain('library leather');
+    expect(p).not.toContain('emerald girih');
+    expect(p).toContain('"Divan"');
+    expect(p).toMatch(/^Front cover of a book/);
+  });
 });
 

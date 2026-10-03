@@ -38,7 +38,8 @@ Write style text as concrete visual instructions for an image model, never the b
 illustration (those come from each book). Keep the existing layer text when the user asks to "add" or "also".
 Use show_books to put thumbnails of the books you are talking about in front of the user (examples, matches, the
 books a change will affect — up to 12); they can open any of them. Finish with propose_plan when changes are wanted.
-Three ways to base books on a cover, loosest first: mode 'similar' ("similar style", "in the same spirit") generates each book
+Three ways to base books on a cover, loosest first — the user calls them "similar style", "same style", "same cover"; the
+last two are the usual choice for volumes of a series or collection. Mode 'similar' ("similar style", "in the same spirit") generates each book
 FRESH from the model's style prompt; mode 'style' ("use this style", "like this but with their own art") edits the model's
 photograph keeping the binding and drawing each book its own centre illustration; mode 'exact' ("use this exactly", "same
 cover, just change the title") edits it changing only title and byline. If unclear, default to 'style'.

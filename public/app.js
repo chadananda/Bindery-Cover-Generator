@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=45';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=47';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -608,6 +608,20 @@ async function rawFromCover(book, v) {
   return storeImage(book, 'raw', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
 }
 
+// The prompt that generated the model's current look: its current version if that was a generation, else the latest
+// generation at or before it (an edit/adjust of a generation keeps that generation's style).
+function modelPrompt(book) {
+  const cur = currentVersion(book); if (!cur) return null;
+  if (isGenerationPrompt(cur.prompt)) return cur.prompt;
+  return [...book.versions].filter((v) => v.at <= cur.at && isGenerationPrompt(v.prompt)).sort((x, y) => y.at - x.at)[0]?.prompt || null;
+}
+// A model with no generation prompt (site cover, upload, or edits of one): Gemini describes its look once per version.
+const described = new Map();
+function describedStyle(book) {
+  const v = currentVersion(book);
+  if (!described.has(v.id)) described.set(v.id, api(`${base()}/describe`, { method: 'POST', body: JSON.stringify({ bookId: book.id }) }).then((r) => r.style).catch((e) => { described.delete(v.id); throw e; }));
+  return described.get(v.id);
+}
 // A reference version's cover on the key colour, made once per version (a batch of 20 books shares it).
 const refRaws = new Map();
 const refRaw = (book, v) => v.raw ? Promise.resolve(v.raw) : refRaws.get(v.id) || (refRaws.set(v.id, rawFromCover(book, v)), refRaws.get(v.id));
@@ -623,8 +637,12 @@ async function produce(book, { removeBg = true, change = '', lookId = null } = {
   const similar = !!refBook && book.refMode === 'similar';
   const basedOn = !similar && !!(refV?.cover || refV?.raw);
   const inputKey = change ? from.raw || await rawFromCover(book, from) : basedOn ? await refRaw(refBook, refV) : undefined;
-  const prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact' })
-    : composePrompt(project, book, similar ? { styleFrom: refBook } : {});
+  let prompt = change ? composeEditPrompt(project, change) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact' }) : null;
+  if (!prompt && similar) { // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
+    const mp = modelPrompt(refBook);
+    prompt = mp ? retitlePrompt(mp, project, book) : composePrompt(project, book, { styleText: await describedStyle(refBook) });
+  }
+  prompt ||= composePrompt(project, book);
   const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
@@ -734,6 +752,16 @@ function renderManager() {
     .map((l) => `<p class="layer-line ${l.overridden ? 'overridden' : ''}"><b>${l.level}</b> ${esc(l.name)}${l.override ? ' <em>(replaces the styles above)</em>' : ''} — ${esc(l.style || '(no style text)')}${l.overridden ? ' <em>(replaced)</em>' : ''}</p>`).join('');
   $('im-override').checked = !!b.override;
   const refB = b.refBookId && project.books.find((x) => x.id === b.refBookId), refV = refB && currentVersion(refB);
+  const model = project.books.find((x) => x.id === project.app.modelBookId);
+  const showModel = !!model && model.id !== b.id && !!currentVersion(model);
+  $('im-model').hidden = !showModel;
+  if (showModel) {
+    $('im-model-lab').textContent = `From the model “${model.title}”:`;
+    const sim = $('im-model').querySelector('[data-like="similar"]');
+    sim.title = modelPrompt(model) ? "The model's exact prompt, with this book's title, author and illustration — a fresh generation"
+      : "A fresh generation in the model's look (read from its image, since it has no prompt to reuse), with this book's title, author and illustration";
+    $('im-model').querySelectorAll('[data-like]').forEach((x) => x.setAttribute('aria-current', b.refBookId === model.id && (b.refMode || 'style') === x.dataset.like));
+  }
   $('im-prompt').textContent = !refV ? composePrompt(project, b) : b.refMode === 'similar' ? composePrompt(project, b, { styleFrom: refB }) : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact' });
   $('im-ref').hidden = !refB;
   if (refB) $('im-ref').innerHTML = `<span class="ref-lab">Based on</span><button type="button" class="ref-img" data-open-ref="${refB.id}" title="Open ${esc(refB.title)}">${refV ? pic(refV.cover || refV.raw, refB.title, '40px', [160], true, refV) : ''}</button><b>${esc(refB.title)}</b>
@@ -789,6 +817,16 @@ $('imgmgr').addEventListener('click', async (e) => {
   }
   const ver = e.target.closest('[data-ver]');
   if (ver && authed) { b.selected = ver.dataset.ver; patch('books', b.id, { selected: b.selected }); renderManager(); renderCard(b.id); imStatus('Now the current cover ✓', 'ok'); return; }
+  const like = e.target.closest('[data-like]');
+  if (like && authed) {
+    const model = project.books.find((x) => x.id === project.app.modelBookId); if (!model) return;
+    Object.assign(b, { refBookId: model.id, refMode: like.dataset.like }); patch('books', b.id, { refBookId: model.id, refMode: like.dataset.like });
+    imBusy(true, 'Generating from the model… (~20–40s)'); imStatus('Generating from the model…');
+    try { await produce(b, { removeBg: $('im-removebg').checked, lookId: model.versions.find((v) => v.id === model.selected)?.lookId || null }); imStatus('Done ✓ — saved as a new version', 'ok'); }
+    catch (err) { imStatus(err.message, 'err'); }
+    finally { imBusy(false); renderManager(); renderCard(b.id); }
+    return;
+  }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (!act) return;
   const removeBg = $('im-removebg').checked;
