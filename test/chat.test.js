@@ -111,6 +111,14 @@ describe('runChat', () => {
     expect(ctx).not.toContain('zzz');
   });
 
+  it('switches the composer mode when asked (switch_mode)', async () => {
+    const m = script([[{ functionCall: { name: 'switch_mode', args: { mode: 'edit' } } }], [{ text: 'Edit mode is on.' }]]);
+    const out = await runChat({ project, messages: [{ role: 'user', text: 'let me edit these directly' }], callModel: m.call });
+    expect(out).toMatchObject({ reply: 'Edit mode is on.', mode: 'edit' });
+    const bad = script([[{ functionCall: { name: 'switch_mode', args: { mode: 'nonsense' } } }], [{ text: 'ok' }]]);
+    expect((await runChat({ project, messages: [{ role: 'user', text: 'x' }], callModel: bad.call })).mode).toBeUndefined();
+  });
+
   it('answers plain questions without a plan', async () => {
     const m = script([[{ text: 'There are 3 books.' }]]);
     expect(await runChat({ project, messages: [{ role: 'user', text: 'how many?' }], callModel: m.call })).toEqual({ reply: 'There are 3 books.', plan: null, books: [] });

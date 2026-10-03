@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=31';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=33';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -258,7 +258,7 @@ function renderCard(bookId) {
 
 function renderSelbar() {
   const n = selected.size;
-  if (typeof chat !== 'undefined' && chatOpen()) renderRefs();
+  if (typeof chat !== 'undefined' && chatOpen()) { renderRefs(); renderMode(); }
   $('selbar').hidden = !n;
   $('sel-count').textContent = `${n} selected`;
   $('sel-move').innerHTML = `<option value="" disabled selected>Move to shelf…</option>` + project.shelves.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
@@ -806,8 +806,8 @@ function layoutBench() {
   $('chat').hidden = !on;
   $('bench-chat').hidden = on || !cover;
   $('chat-clear').hidden = !on;
-  $('chat-mode').hidden = !cover;
-  if (!cover) { $('im-title').textContent = 'The Binder'; $('bench-sub').textContent = 'Style assistant'; setMode('ask'); }
+  if (!cover) { $('im-title').textContent = 'The Binder'; $('bench-sub').textContent = 'Style assistant'; }
+  renderMode();
   document.body.classList.toggle('bench-open', !bench.hidden);
   $('chat-fab').hidden = !bench.hidden;
 }
@@ -823,19 +823,34 @@ let chatMode = 'ask';
 function setMode(m) {
   chatMode = m;
   document.querySelectorAll('#chat-mode [data-mode]').forEach((b) => b.setAttribute('aria-checked', b.dataset.mode === m));
-  $('chat-input').placeholder = m === 'edit' ? 'Describe the change to this cover — e.g. make the leather a deeper green, add a silver clasp' : 'Ask, or tell the Binder what to restyle…';
+  $('chat-input').placeholder = m === 'edit' ? `Describe the change to ${selected.size ? 'the selected covers' : 'this cover'} — e.g. make the leather a deeper green, add a silver clasp` : 'Ask, or tell the Binder what to restyle…';
 }
 $('chat-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) { setMode(b.dataset.mode); $('chat-input').focus(); } });
+// Edit mode: the message IS the edit. Ticked books → every one of them (in turn, each a paid call); otherwise the cover
+// open in the editor. Each result is a new version; the editor follows along.
 async function editFromChat(text) {
-  const b = imBook(); if (!b) return sendChat(text);
-  chat.messages.push({ role: 'user', text: `✎ ${text}` }, { role: 'assistant', text: `Editing ${b.title}…`, books: [b.id] });
+  const targets = (selected.size ? project.books.filter((b) => selected.has(b.id)) : [imBook()]).filter((b) => b && currentVersion(b));
+  if (!targets.length) return sendChat(text);
+  if (targets.length > 3 && !confirm(`Edit ${targets.length} covers? Each one is a paid Gemini image call.`)) return;
+  chat.messages.push({ role: 'user', text: `✎ ${text}` }, { role: 'assistant', text: `Editing ${targets.length > 1 ? `${targets.length} covers` : targets[0].title}…`, books: targets.map((b) => b.id) });
   const msg = chat.messages.at(-1); renderChat();
-  status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); imBusy(true, 'Editing… (~20–40s)'); imStatus('Editing…');
-  try {
-    await produce(b, { removeBg: $('im-removebg').checked, change: text }); status.delete(b.id);
-    imStatus('Edited ✓ — saved as a new version', 'ok'); msg.text = `Edited ${b.title} — saved as a new version. Not right? Describe another change, or delete it from History.`;
-  } catch (err) { status.set(b.id, { state: 'err', msg: err.message }); imStatus(err.message, 'err'); Object.assign(msg, { text: `Couldn't edit: ${err.message}`, error: true }); }
-  finally { imBusy(false); renderCard(b.id); renderManager(); renderChat(); }
+  let done = 0, failed = 0;
+  for (const b of targets) {
+    if (im?.bookId !== b.id) openManager(b.id);
+    status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat(); imBusy(true, `Editing${targets.length > 1 ? ` ${done + failed + 1} of ${targets.length}` : ''}… (~20–40s)`);
+    try { await produce(b, { removeBg: $('im-removebg').checked, change: text }); status.delete(b.id); done++; }
+    catch (err) { status.set(b.id, { state: 'err', msg: err.message }); failed++; }
+    imBusy(false); renderCard(b.id); renderManager(); renderChat();
+  }
+  Object.assign(msg, { text: `Edited ${done} cover${done === 1 ? '' : 's'}${failed ? `; ${failed} failed (hover the red badge to see why)` : ''} — each saved as a new version. Not right? Describe another change, or delete it from History.`, error: !done });
+  imStatus(done ? 'Edited ✓ — saved as a new version' : 'Edit failed', done ? 'ok' : 'err'); renderChat();
+}
+// The Ask / Edit switch shows whenever there's something to edit: a cover in the editor, or ticked books.
+function renderMode() {
+  const n = selected.size;
+  $('chat-mode').hidden = $('imgmgr').hidden && !n;
+  document.querySelector('#chat-mode [data-mode="edit"]').textContent = n ? `✎ Edit ${n} selected` : '✎ Edit cover';
+  if ($('chat-mode').hidden) setMode('ask');
 }
 // Cover tools: one drawer open at a time (Adjust, Details) keeps the panel from scrolling.
 document.querySelector('#imgmgr .tools').addEventListener('click', (e) => {
@@ -920,6 +935,7 @@ async function sendChat(text) {
   try {
     const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text, refs }) => ({ role, text, refs })), focusBookId: im?.bookId || chat.focus, selectedIds: [...selected] }) });
     chat.messages.push({ role: 'assistant', text: r.reply, plan: r.plan, books: r.books || [] });
+    if (r.mode) { setMode(r.mode); renderMode(); }
   } catch (e) { chat.messages.push({ role: 'assistant', text: `Something went wrong: ${e.message}`, error: true }); }
   finally { clearInterval(tick); chat.busy = false; renderChat(); }
 }
@@ -937,7 +953,15 @@ $('chat-clear').addEventListener('click', () => { chat.messages = []; chat.focus
 $('chat-form').addEventListener('submit', (e) => {
   e.preventDefault(); const t = $('chat-input').value.trim(); if (!t && !chat.refs.length) return;
   $('chat-input').value = ''; autosize();
-  chatMode === 'edit' && im?.bookId && t ? editFromChat(t) : sendChat(t);
+  // "edit mode" / "switch to ask" etc. flip the switch locally — no model call.
+  const sw = t.match(/^(?:switch|go|change)?\s*(?:to|into|back to)?\s*(edit|editing|ask|asking)(?:\s+mode)?[.!]?$/i);
+  if (sw) {
+    const want = /^edit/i.test(sw[1]) ? 'edit' : 'ask';
+    if (want === 'edit' && $('chat-mode').hidden) { chat.messages.push({ role: 'user', text: t }, { role: 'assistant', text: 'Open a cover or tick some books first — then Edit mode has something to edit.' }); return renderChat(); }
+    setMode(want); chat.messages.push({ role: 'user', text: t }, { role: 'assistant', text: want === 'edit' ? `Edit mode — what you type now is applied directly to ${selected.size ? `the ${selected.size} selected covers` : 'this cover'}.` : 'Ask mode — I’ll propose changes for you to approve.' });
+    return renderChat();
+  }
+  chatMode === 'edit' && (im?.bookId || selected.size) && t ? editFromChat(t) : sendChat(t);
 });
 $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } });
 // The composer grows with its text (typed, pasted or prefilled), up to about a third of the screen.

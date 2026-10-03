@@ -43,14 +43,19 @@ The Masnavi", "use this cover for the whole collection"), propose references: re
 reference photograph itself (edited per book) — prefer it over describing the style when the user points at a cover.
 When the user wants a specific cover's PICTURE changed ("darker leather", "add a clasp", "fix the lettering", "less shiny"),
 propose an edit of that cover (edits: bookId + one precise visual instruction) — not a style change — unless they say it
-should apply to a whole shelf/collection/author, which is a style change. Attached covers and the cover open in the
-editor are the ones they mean. Rewrite vague requests into concrete visual terms (material, colour, finish, placement). Only include generateBookIds when the user asks to generate or regenerate covers.
+should apply to a whole shelf/collection/author, which is a style change. When books are SELECTED, a request about "these",
+"them", "the selected ones" — or any change that doesn't name one particular cover — applies to EVERY selected book:
+put all of their ids in the edits / bookIds, not just the book open in the editor. Otherwise attached covers and the
+cover open in the editor are the ones they mean. Rewrite vague requests into concrete visual terms (material, colour, finish, placement). Only include generateBookIds when the user asks to generate or regenerate covers.
 Resolve books, shelves, collections and authors from the catalogue by id; if a reference is ambiguous, ask instead.
+When the user asks to switch to editing directly / edit mode, or back to asking, call switch_mode and confirm in one line.
 Reply briefly in plain English (no markdown headings).`;
 
 export const TOOLS = [{ functionDeclarations: [
   { name: 'describe_cover_style', description: "Look at a book's current cover image and the prompt that made it; returns a reusable description of its visual style.",
     parameters: { type: 'object', properties: { bookId: { type: 'string' } }, required: ['bookId'] } },
+  { name: 'switch_mode', description: "Switch the user's message box between 'ask' (you propose, they approve) and 'edit' (their next messages are applied directly as in-place edits of the open or selected covers).",
+    parameters: { type: 'object', properties: { mode: { type: 'string', enum: ['ask', 'edit'] } }, required: ['mode'] } },
   { name: 'show_books', description: 'Show thumbnails of these books in the chat; the user can open each one in the full editor.',
     parameters: { type: 'object', properties: { bookIds: { type: 'array', items: { type: 'string' } } }, required: ['bookIds'] } },
   { name: 'propose_plan', description: 'Propose style changes (and optionally covers to generate) for the user to approve.',
@@ -120,20 +125,23 @@ export async function runChat({ project, messages, focusBookId, selectedIds = []
   ];
   // Books to show as thumbnails: every cover the model looked at, plus what it asked to show. Known ids, in order.
   const shown = [];
+  let mode; // set by switch_mode
   const show = (ids) => ids.forEach((id) => { if (!shown.includes(id) && project.books.some((b) => b.id === id)) shown.push(id); });
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const parts = await callModel(contents);
     const text = parts.filter((x) => x.text).map((x) => x.text).join('\n').trim();
     const calls = parts.filter((x) => x.functionCall).map((x) => x.functionCall);
     calls.forEach((c) => show(c.name === 'show_books' ? c.args?.bookIds || [] : c.name === 'describe_cover_style' ? [c.args?.bookId] : []));
+    calls.filter((c) => c.name === 'switch_mode' && ['ask', 'edit'].includes(c.args?.mode)).forEach((c) => { mode = c.args.mode; });
+    const extra = mode ? { mode } : {};
     const plan = calls.find((c) => c.name === 'propose_plan');
-    if (plan) return { reply: text || 'Here is what I would change.', plan: sanitizePlan(project, plan.args), books: shown.slice(0, 12) };
-    const tools = calls.filter((c) => c.name !== 'show_books');
-    if (!tools.length && (text || !calls.length)) return { reply: text, plan: null, books: shown.slice(0, 12) };
+    if (plan) return { reply: text || 'Here is what I would change.', plan: sanitizePlan(project, plan.args), books: shown.slice(0, 12), ...extra };
+    const tools = calls.filter((c) => !['show_books', 'switch_mode'].includes(c.name));
+    if (!tools.length && (text || !calls.length)) return { reply: text, plan: null, books: shown.slice(0, 12), ...extra };
     contents.push({ role: 'model', parts });
     const responses = [];
     for (const c of calls) {
-      if (c.name === 'show_books') { responses.push({ functionResponse: { name: c.name, response: { shown: true } } }); continue; }
+      if (c.name === 'show_books' || c.name === 'switch_mode') { responses.push({ functionResponse: { name: c.name, response: { done: true } } }); continue; }
       const b = project.books.find((x) => x.id === c.args?.bookId);
       const v = b && (b.versions?.find((x) => x.id === b.selected) || b.versions?.at(-1));
       const result = !b ? { error: 'no such book id' } : !v?.cover && !v?.raw ? { error: 'that book has no cover yet' }
@@ -142,7 +150,7 @@ export async function runChat({ project, messages, focusBookId, selectedIds = []
     }
     contents.push({ role: 'user', parts: responses });
   }
-  return { reply: "Sorry, I couldn't finish that — try asking more specifically.", plan: null, books: shown.slice(0, 12) };
+  return { reply: "Sorry, I couldn't finish that — try asking more specifically.", plan: null, books: shown.slice(0, 12), ...(mode ? { mode } : {}) };
 }
 
 // ---- Gemini adapters (REST, no SDK) ----
