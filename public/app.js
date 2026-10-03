@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=75';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=76';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -596,7 +596,7 @@ async function keyRaw(rawKey) {
 const storeImage = async (book, kind, base64) => (await api(`${base()}/store`, { method: 'POST', body: JSON.stringify({ bookId: book.id, kind, base64 }) })).key;
 // A new version row (append-only) that becomes the book's current cover.
 async function addVersion(book, v) {
-  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', basePrompt: null, aspect: null, edit: null, lookId: null, w: null, h: null, ...v };
+  const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', basePrompt: null, inputKey: null, aspect: null, edit: null, lookId: null, w: null, h: null, ...v };
   await insert('versions', [{ ...row, bookId: book.id }]);
   book.versions.push(row); book.selected = row.id;
   patch('books', book.id, { selected: row.id });
@@ -664,7 +664,35 @@ async function produce(book, { removeBg = true, change = '', lookId = null, own 
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
-  return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: basePrompt && basePrompt !== prompt ? basePrompt : null, aspect, w, h, edit: change || (basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
+  return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: basePrompt && basePrompt !== prompt ? basePrompt : null, inputKey: inputKey || null, aspect, w, h, edit: change || (basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
+}
+
+// "Try again": the SAME request that made the current version — same prompt, same input image (the one that edit
+// started from, not its result) — as a new version. Gemini just gets another roll.
+async function retryRequest(v) {
+  if (!v?.raw || !v.prompt || ['current site cover', 'upload'].includes(v.edit) || v.edit?.startsWith('adjust')) throw new Error("This version wasn't generated here — nothing to try again");
+  if (v.inputKey || isGenerationPrompt(v.prompt)) return { prompt: v.prompt, inputKey: v.inputKey || null };
+  return (await api(`${base()}/retrysource`, { method: 'POST', body: JSON.stringify({ rawKey: v.raw }) })).request; // older versions: from the log
+}
+async function tryAgain(book, removeBg = true) {
+  const v = currentVersion(book), { prompt, inputKey } = await retryRequest(v);
+  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, why: `try again: ${v.edit || 'generate'}` }) });
+  let cover = null, aspect = null, w = null, h = null;
+  if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
+  else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
+  return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: v.basePrompt || null, inputKey: inputKey || null, aspect, w, h, edit: v.edit, lookId: v.lookId });
+}
+async function tryAgainAll(books) {
+  if (books.length > 3 && !confirm(`Try ${books.length} covers again? Each one is a paid Gemini image call.`)) return;
+  uiLog('retry', { output: { targets: books.map((x) => `${x.id} “${x.title}”`) } });
+  for (const b of books) {
+    status.set(b.id, { state: 'busy', msg: 'Trying again…' }); renderCard(b.id);
+    if (im?.bookId === b.id) { imBusy(true, 'Trying again — same request… (~20–40s)'); imStatus('Trying again…'); }
+    try { await tryAgain(b, im?.bookId === b.id ? $('im-removebg').checked : true); status.delete(b.id); if (im?.bookId === b.id) imStatus('Tried again ✓ — saved as a new version', 'ok'); }
+    catch (e) { status.set(b.id, { state: 'err', msg: e.message }); if (im?.bookId === b.id) imStatus(e.message, 'err'); if (!$('chat').hidden) chat.messages.push({ role: 'assistant', text: `Couldn't try ${b.title} again: ${e.message}`, error: true }); }
+    renderCard(b.id); if (im?.bookId === b.id) { imBusy(false); renderManager(); }
+    if (!$('chat').hidden) renderChat();
+  }
 }
 
 async function generate(books, { own = false } = {}) {
@@ -890,6 +918,7 @@ $('imgmgr').addEventListener('click', async (e) => {
   if (!act) return;
   const removeBg = $('im-removebg').checked;
   try {
+    if (act === 'retry') { await tryAgainAll(selTargets(b)); return; }
     if (act === 'generate') {
       const targets = selTargets(b);
       uiLog('generate', { bookId: b.id, input: { from: 'editor' }, output: { targets: targets.map((x) => `${x.id} “${x.title}”`) } });
@@ -1144,6 +1173,12 @@ $('chat-form').addEventListener('submit', (e) => {
     if (want === 'edit' && $('chat-mode').hidden) { chat.messages.push({ role: 'user', text: t }, { role: 'assistant', text: 'Open a cover or tick some books first — then Edit mode has something to edit.' }); return renderChat(); }
     setMode(want); chat.messages.push({ role: 'user', text: t }, { role: 'assistant', text: want === 'edit' ? `Edit mode — what you type now is applied directly to ${selected.size ? `the ${selected.size} selected covers` : 'this cover'}.` : 'Ask mode — I’ll propose changes for you to approve.' });
     return renderChat();
+  }
+  // "try again" (alone): the same request once more for the selected/open covers — no Binder, no reinterpretation.
+  if (/^\s*(try (it |that )?again|again|retry|re-?roll|one more (time|try)|give it another (go|try))[\s.!]*$/i.test(t) && (im?.bookId || selected.size)) {
+    const targets = (selected.size ? selBooks() : [imBook()]).filter((b) => b && currentVersion(b));
+    chat.messages.push({ role: 'user', text: t }, { role: 'assistant', text: `Trying again with the same request: ${targets.map((b) => b.title).join(' · ')}…`, books: targets.map((b) => b.id) }); renderChat();
+    tryAgainAll(targets); return;
   }
   // Edit mode applies the text as an image instruction — but talk aimed at the Binder ("no, please make the edit to
   // these…", "can you…", "why…", "undo") goes to the Binder instead of being painted into a cover.

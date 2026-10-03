@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { d1 } from './d1-shim.js';
-import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs } from '../src/store.js';
+import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest } from '../src/store.js';
 
 let db;
 beforeEach(async () => {
@@ -146,6 +146,15 @@ describe('store', () => {
     expect(logs.map((l) => l.kind)).toEqual(['generate', 'chat']);
     expect(logs[1]).toMatchObject({ bookId: 'b1', input: { text: 'hi' }, output: { reply: 'yo' } });
     expect(logs[0].input).toBe('Front cover…');
+  });
+
+  it('finds the logged request behind a raw image (try again for older versions), and stores versions.inputKey', async () => {
+    await addLog(db, 'ocean', { kind: 'generate', bookId: 'b1', input: { prompt: 'Edit this', inputKey: 'sets/ocean/raw/m/1.png' }, output: { rawKey: 'sets/ocean/raw/b1/2.png' } });
+    expect(await loggedRequest(db, 'ocean', 'sets/ocean/raw/b1/2.png')).toMatchObject({ prompt: 'Edit this', inputKey: 'sets/ocean/raw/m/1.png' });
+    expect(await loggedRequest(db, 'ocean', 'sets/ocean/raw/b1/9.png')).toBeNull();
+    await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'A' }]);
+    await insertRows(db, 'ocean', 'versions', [{ id: 'v1', bookId: 'b1', prompt: 'p', inputKey: 'sets/ocean/raw/m/1.png', at: 1 }]);
+    expect((await loadLibrary(db, 'ocean')).books[0].versions[0].inputKey).toBe('sets/ocean/raw/m/1.png');
   });
 });
 

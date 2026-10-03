@@ -162,6 +162,7 @@
           <div class="im-status-row"><span id="im-status" class="status"></span><span id="im-aspect" class="badge" hidden></span></div>
           <div class="cover-actions" data-write>
             <button type="button" class="btn gold" data-act="generate" title="A new cover from the styles (+ Details → centre illustration)">✦ Generate new</button>
+            <button type="button" class="btn" data-act="retry" data-write title="Send the request that made this version again — same prompt, same starting image — for another roll">↻ Try again</button>
             <span class="minor"><button type="button" class="btn small ghost" data-act="browse">Upload…</button><button type="button" class="btn small ghost" data-act="rekey">⟳ Re-key</button></span>
             <input type="file" id="im-file" accept="image/*" hidden />
           </div>
@@ -250,6 +251,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=75"></script>
+  <script type="module" src="/app.js?v=76"></script>
 </body>
 </html>

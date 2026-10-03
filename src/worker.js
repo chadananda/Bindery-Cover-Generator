@@ -3,7 +3,7 @@
 // R2 layout: sets/<lib>/raw/<book>/<ts>.png · sets/<lib>/covers/<book>/<ts>.png · fx/v<N>/<key>/<recipe> (resized
 // renditions, generate-once). Only a deleted generated version's own images are ever removed from R2.
 import { generateImage } from '../core/gemini.js';
-import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs } from './store.js';
+import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
 import { renderImage, initCodecs } from './render.js';
 import { runChat, geminiChat, geminiDescribe, geminiRefine, editSteps, bylineFrom } from './chat.js';
@@ -214,6 +214,15 @@ export default {
             output: { reply: r.reply, trace, plan: r.plan, ...(unscopedPlan ? { unscopedPlan } : {}), mode: r.mode || null } });
           return json({ ok: true, ...r });
         } catch (e) { audit(env, ctx, lib, { kind: 'chat', input: { message: messages.at(-1)?.text }, output: { error: String(e.message || e) } }); return fail(502, String(e.message || e)); }
+      }
+
+      // POST /api/libraries/<lib>/retrysource {rawKey} → {request: {prompt, inputKey}}: the exact request that made a raw
+      // image, from the log — "try again" for versions saved before versions.inputKey existed.
+      if (part === 'retrysource' && req.method === 'POST') {
+        const { rawKey } = await body();
+        if (!KEY.test(rawKey || '')) return fail(400, 'Bad rawKey');
+        const request = await loggedRequest(env.DB, lib, rawKey);
+        return request?.prompt ? json({ ok: true, request }) : fail(404, 'No logged request for that image');
       }
 
       // GET /api/libraries/<lib>/log?limit=&kind= → the audit trail (logged in only). POST log {kind, bookId, input, output}:

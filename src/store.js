@@ -7,7 +7,7 @@ const COLS = {
   shelves: ['id', 'name', 'style', 'override'],
   collections: ['id', 'shelfId', 'name', 'style', 'override'],
   books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample', 'override', 'refBookId', 'refMode', 'byline'],
-  versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'basePrompt', 'aspect', 'edit', 'lookId', 'at', 'w', 'h'],
+  versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'basePrompt', 'inputKey', 'aspect', 'edit', 'lookId', 'at', 'w', 'h'],
   looks: ['id', 'name', 'styles', 'notes', 'at'],
 };
 const PATCHABLE = { libraries: COLS.libraries, shelves: ['name', 'style', 'override'], collections: ['shelfId', 'name', 'style', 'override'], books: COLS.books.slice(1), looks: ['name', 'notes'], versions: ['w', 'h'] };
@@ -103,5 +103,10 @@ export async function listLogs(db, lib, limit = 50, kind = null) {
   const { results } = await db.prepare(`SELECT rowid AS id, at, kind, bookId, input, output FROM logs WHERE lib = ?${kind ? ' AND kind = ?' : ''} ORDER BY at DESC, rowid DESC LIMIT ?`)
     .bind(...[lib, kind, Math.min(+limit || 50, 500)].filter((x) => x !== null)).all();
   return results.map((r) => ({ ...r, input: dec(r.input), output: dec(r.output) }));
+}
+// "Try again" for a version made before versions.inputKey existed: the logged request that produced this raw image.
+export async function loggedRequest(db, lib, rawKey) {
+  const r = await db.prepare(`SELECT input FROM logs WHERE lib = ? AND kind = 'generate' AND output LIKE ? ORDER BY at DESC LIMIT 1`).bind(lib, `%"rawKey":"${rawKey}"%`).first();
+  return r ? dec(r.input) : null;
 }
 
