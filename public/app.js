@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=53';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, isGenerationPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=55';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -880,7 +880,22 @@ const EXAMPLES = ['The style on The Masnavi is just what I want — use it for t
 // beneath it (or alone). The shelves give up the panel's width (body.bench-open).
 const bench = $('bench');
 const chatOpen = () => !bench.hidden && bench.classList.contains('chat-on');
+// Opening/closing the Binder narrows/widens the shelves and the rows reflow. Keep the book in focus at the same height
+// on screen: note its top before, then follow it with scroll for the length of the margin transition.
+let anchorId = null;
+function keepInPlace(id, top0) {
+  if (!id || top0 == null) return;
+  const until = performance.now() + 450;
+  const step = () => { // re-find each frame: closing re-renders the shelves and replaces the card element
+    const el = $('app').querySelector(`.card[data-book="${id}"]`);
+    if (el) { const d = el.getBoundingClientRect().top - top0; if (Math.abs(d) > .5) scrollBy(0, d); }
+    if (performance.now() < until) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 function layoutBench() {
+  const wasOpen = document.body.classList.contains('bench-open');
+  const id = im?.bookId || anchorId, card = id && $('app').querySelector(`.card[data-book="${id}"]`), top0 = card?.getBoundingClientRect().top;
   const cover = !$('imgmgr').hidden, on = bench.classList.contains('chat-on');
   bench.hidden = !cover && !on;
   bench.classList.toggle('has-cover', cover);
@@ -890,6 +905,8 @@ function layoutBench() {
   renderMode();
   document.body.classList.toggle('bench-open', !bench.hidden);
   $('chat-fab').hidden = !bench.hidden;
+  if (wasOpen !== !bench.hidden) keepInPlace(id, top0);
+  if (im?.bookId) anchorId = im.bookId;
 }
 // The cover and the chat open together (one step to edit); logged-out visitors get the cover only.
 function openPane(id) {
