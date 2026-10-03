@@ -6,13 +6,13 @@ const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
  * @param {{apiKey: string, prompt: string, inputImage?: string, inputMime?: string, model?: string,
- *          aspectRatio?: string, fetch?: typeof fetch, retries?: number}} o
+ *          aspectRatio?: string, imageSize?: '1K'|'2K'|'4K', fetch?: typeof fetch, retries?: number}} o
  *   inputImage: base64 (no data: prefix) — present means an img2img edit of that image.
  * @returns {Promise<{base64: string, mimeType: string, text: string}>}
  */
 export async function generateImage({
   apiKey, prompt, inputImage, inputMime = 'image/png', model = DEFAULT_MODEL,
-  aspectRatio = '3:4', fetch: f = globalThis.fetch, retries = 2,
+  aspectRatio = '3:4', imageSize = '2K', fetch: f = globalThis.fetch, retries = 2,
 }) {
   if (!apiKey) throw new Error('No Gemini API key');
   const parts = [];
@@ -25,7 +25,8 @@ export async function generateImage({
     body: JSON.stringify({
       contents: [{ parts }],
       // An edit returns the input's own shape: forcing 3:4 on it makes the model re-frame (re-compose) the cover.
-      generationConfig: inputImage ? { responseModalities: ['TEXT', 'IMAGE'] } : { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio } },
+      // 2K always: at the 1K default (896×1200) leather grain and gold tooling turned to invented noise.
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: inputImage ? { imageSize } : { aspectRatio, imageSize } },
     }),
   };
 

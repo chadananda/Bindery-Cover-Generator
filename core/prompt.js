@@ -71,8 +71,11 @@ export function composePrompt(project, book, opts = {}) {
 
 /** Instruction wrapper for an img2img edit of an existing cover. */
 /** The fixed closing of every generation prompt: lighting and the key-colour requirements. */
+// Shiny gold mirrors its surroundings — the key-colour backdrop came back as pink/cyan specks in the tooling.
+const metal = (k) => `Metallic surfaces reflect only neutral warm studio light — no ${k.name.toLowerCase()}, pink, cyan, rainbow or iridescent tints.`;
 function finish(out, k, bgName) {
   out.push(
+    metal(k),
     'Flat, even studio lighting — NO shadows of any kind, NO drop shadows, NO ambient occlusion.',
     '',
     'CRITICAL REQUIREMENTS:',
@@ -123,7 +126,8 @@ export function retitlePrompt(modelPrompt, project, book, { keepByline = false }
   if (book?.byline == null && modelNone) book = { ...book, byline: '' };
   const lines = String(modelPrompt).split('\n').filter((l) => !BOOK_LINE.test(l) || (keepByline && /^(The line "|Print no author name)/.test(l)));
   const at = lines.findIndex((l) => l.startsWith('Flat, even studio lighting'));
-  lines.splice(at >= 0 ? at : lines.length, 0, ...bookLines(project, keepByline ? { ...book, author: '' } : book));
+  const metalLine = lines.some((l) => l.startsWith('Metallic surfaces reflect')) ? [] : [metal(keyColor(project))]; // older prompts
+  lines.splice(at >= 0 ? at : lines.length, 0, ...bookLines(project, keepByline ? { ...book, author: '' } : book), ...metalLine);
   return lines.join('\n');
 }
 /** Is this a full generation prompt (one Similar Style can reuse)? */
@@ -150,7 +154,7 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
   ];
   const keep = `Keep the book itself exactly as it is: the same binding and material, colour and texture, wear and patina, border and ` +
     `ornaments, typeface and layout, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +
-    `crop or zoom. Do not print any other text. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and ` +
+    `crop or zoom. Do not print any other text. ${metal(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and ` +
     `keep the same ${k.name.toLowerCase()} margin around all edges of the book.`;
   if (exact) {
     return `Edit this exact photograph. It is the cover of "${refTitle}". Make it the cover of another volume of the same set by ` +
@@ -175,6 +179,6 @@ export function composeEditPrompt(project, change) {
     `needs, and no more. What the change touches must change, decisively — if it names a typeface, the letters are redrawn ` +
     `in a visibly different typeface. It is still the same photograph of the same book: the parts the request does not ` +
     `mention stay as they are, and the lighting, camera angle, scale and position in the frame are unchanged. Do not re-shoot, ` +
-    `re-light, re-frame, crop or zoom. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and keep the ` +
+    `re-light, re-frame, crop or zoom. ${metal(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and keep the ` +
     `same ${k.name.toLowerCase()} margin around all edges of the book.`;
 }

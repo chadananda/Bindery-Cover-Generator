@@ -287,5 +287,12 @@ describe('effectiveStyles', () => {
     expect(retitlePrompt(anon, { app: {} }, book)).not.toContain('"Rumi"');
     expect(retitlePrompt(mp, { app: {} }, { ...book, byline: 'Tr. X' })).toContain('"Tr. X"');
   });
+
+  it('every prompt keeps metallic reflections neutral (gold picked up magenta/cyan specks from the backdrop)', async () => {
+    const { composePrompt: compose, composeEditPrompt, composeBasedOnPrompt } = await import('../core/prompt.js');
+    const p = { app: { keyColor: 'magenta' } };
+    for (const x of [compose(p, { title: 'A' }), composeEditPrompt(p, 'x'), composeBasedOnPrompt(p, { title: 'A' }, 'B'), composeBasedOnPrompt(p, { title: 'A' }, 'B', { exact: true })])
+      expect(x).toMatch(/metallic surfaces reflect only neutral warm studio light.*no magenta/i);
+  });
 });
 

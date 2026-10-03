@@ -18,7 +18,7 @@ describe('generateImage', () => {
     const [url, init] = fetch.mock.calls[0];
     expect(url).toContain('gemini-3-pro-image-preview:generateContent');
     const body = JSON.parse(init.body);
-    expect(body.generationConfig).toEqual({ responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: '3:4' } });
+    expect(body.generationConfig).toEqual({ responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: '3:4', imageSize: '2K' } });
   });
 
   it('sends the key as a header, never in the URL (URLs end up in logs)', async () => {
@@ -39,7 +39,7 @@ describe('generateImage', () => {
   it('an edit keeps the input image\'s shape: no forced aspect ratio (3:4 made the model re-frame the cover)', async () => {
     const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
     await generateImage({ apiKey: 'k', prompt: 'add a clasp', inputImage: 'SU1H', fetch });
-    expect(JSON.parse(fetch.mock.calls[0][1].body).generationConfig).toEqual({ responseModalities: ['TEXT', 'IMAGE'] });
+    expect(JSON.parse(fetch.mock.calls[0][1].body).generationConfig).toEqual({ responseModalities: ['TEXT', 'IMAGE'], imageConfig: { imageSize: '2K' } }); // 1K (896×1200) turned grain and tooling to noise
   });
 
   it('throws WITH the model text when it returns 200 but no image (a refusal)', async () => {
