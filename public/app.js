@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=33';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=34';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -832,7 +832,8 @@ async function editFromChat(text) {
   const targets = (selected.size ? project.books.filter((b) => selected.has(b.id)) : [imBook()]).filter((b) => b && currentVersion(b));
   if (!targets.length) return sendChat(text);
   if (targets.length > 3 && !confirm(`Edit ${targets.length} covers? Each one is a paid Gemini image call.`)) return;
-  chat.messages.push({ role: 'user', text: `✎ ${text}` }, { role: 'assistant', text: `Editing ${targets.length > 1 ? `${targets.length} covers` : targets[0].title}…`, books: targets.map((b) => b.id) });
+  // Name every target up front, so a missing one is obvious before any paid call finishes.
+  chat.messages.push({ role: 'user', text: `✎ ${text}` }, { role: 'assistant', text: `Editing ${targets.length > 1 ? `these ${targets.length} covers: ${targets.map((b) => b.title).join(' · ')}` : targets[0].title}…`, books: targets.map((b) => b.id) });
   const msg = chat.messages.at(-1); renderChat();
   let done = 0, failed = 0;
   for (const b of targets) {
@@ -961,7 +962,10 @@ $('chat-form').addEventListener('submit', (e) => {
     setMode(want); chat.messages.push({ role: 'user', text: t }, { role: 'assistant', text: want === 'edit' ? `Edit mode — what you type now is applied directly to ${selected.size ? `the ${selected.size} selected covers` : 'this cover'}.` : 'Ask mode — I’ll propose changes for you to approve.' });
     return renderChat();
   }
-  chatMode === 'edit' && (im?.bookId || selected.size) && t ? editFromChat(t) : sendChat(t);
+  // Edit mode applies the text as an image instruction — but talk aimed at the Binder ("no, please make the edit to
+  // these…", "can you…", "why…", "undo") goes to the Binder instead of being painted into a cover.
+  const talk = /^(no|yes|ok(ay)?|thanks|why|what|how|did|didn.t|can you|could you|would you|will you|please (make|apply|do|redo|undo)|undo|redo|stop|wait)\b/i.test(t);
+  chatMode === 'edit' && (im?.bookId || selected.size) && t && !talk ? editFromChat(t) : sendChat(t);
 });
 $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } });
 // The composer grows with its text (typed, pasted or prefilled), up to about a third of the screen.
