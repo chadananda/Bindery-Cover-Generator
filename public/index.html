@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=52" />
+  <link rel="stylesheet" href="/styles.css?v=53" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -160,9 +160,9 @@
           <div class="im-ref" id="im-ref" hidden></div>
           <div class="im-status-row"><span id="im-status" class="status"></span><span id="im-aspect" class="badge" hidden></span></div>
           <div class="cover-actions" data-write>
-            <button type="button" class="btn gold" data-act="generate" title="A new cover from the styles (+ Details → centre illustration)">✦ Generate new</button>
-            <button type="button" class="btn" data-act="retry" data-write title="Send the request that made this version again — same prompt, same starting image — for another roll">↻ Try again</button>
-            <span class="minor"><button type="button" class="btn small ghost" data-act="browse">Upload…</button><button type="button" class="btn small ghost" data-act="rekey">⟳ Re-key</button></span>
+            <button type="button" class="btn small gold" data-act="generate" title="A new cover from this book's own style layers (library → shelf → collection → book; Details → centre illustration)">✦ Generate</button>
+            <button type="button" class="btn small" data-act="retry" title="Send the request that made this version again — same prompt, same starting image — for another roll">↻ Try again</button>
+            <span class="minor"><button type="button" class="icon-btn" data-act="browse" title="Upload an image as a new version" aria-label="Upload"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg></button><button type="button" class="icon-btn" data-act="rekey" aria-label="Re-key"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/></svg></button></span>
             <input type="file" id="im-file" accept="image/*" hidden />
           </div>
           <div class="im-model" id="im-model" hidden data-write>
@@ -171,9 +171,8 @@
             <button type="button" class="btn small" data-like="style" title="Edit the model's cover: new art, title and author">Same Style</button>
             <button type="button" class="btn small" data-like="exact" title="Edit the model's cover: only title and author change">Same Cover</button>
           </div>
-          <p class="cover-tip" data-write>To change this cover, tell the Binder below — <b>✎ Edit cover</b> applies it in place.</p>
           <div id="im-versions" hidden>
-            <h3>History <small>· click to use · × to delete</small></h3>
+            <h3 class="hist-h" title="Click a version to make it the current cover · × deletes a generated version">History</h3>
             <div id="im-strip" class="strip"></div>
           </div>
         </div>
@@ -253,6 +252,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=83"></script>
+  <script type="module" src="/app.js?v=84"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=83';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=84';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -364,7 +364,7 @@ function setModel(id) {
 const selTargets = (b) => selected.has(b.id) && selected.size > 1 ? selBooks() : [b];
 function genLabel(b, src) {
   const n = selTargets(b).length, gen = document.querySelector('#imgmgr [data-act="generate"]');
-  gen.textContent = `✦ Generate new${src ? ' · own style' : ''}${n > 1 ? ` · ${n} selected` : ''}`; gen.classList.toggle('gold', !src);
+  gen.textContent = `✦ Generate${n > 1 ? ` · ${n}` : ''}`; gen.classList.toggle('gold', !src);
 }
 // The model buttons say how many covers they'll make ("Same Cover · 2 selected"); refreshed as the selection changes.
 function likeLabels(b, src) {
@@ -373,7 +373,7 @@ function likeLabels(b, src) {
   const set = isHead(b) && !(selected.size > 1 && selected.has(b.id));
   $('im-model').querySelectorAll('[data-like]').forEach((x) => {
     x.hidden = set && x.dataset.like !== 'style';
-    x.textContent = set ? `✦ Match ${src === project.books.find((y) => y.id === project.app.modelBookId) ? "the model's" : 'its volumes’'} style` : LIKE[x.dataset.like] + (n > 1 ? ` · ${n} selected` : '');
+    x.textContent = set ? `✦ Match ${src === project.books.find((y) => y.id === project.app.modelBookId) ? "the model's" : 'its volumes’'} style` : LIKE[x.dataset.like] + (n > 1 ? ` · ${n}` : '');
     x.dataset.tip ??= x.title; // the button's own tooltip, restored for ordinary books
     x.title = set ? "Keeps this boxed set (volumes, angle, framing) and gives it the model's binding, gold and ornament" : x.dataset.tip;
   });
@@ -830,8 +830,8 @@ function renderManager() {
   $('im-model').hidden = !src;
   if (src) {
     $('im-model-lab').innerHTML = `<button type="button" class="ref-img" data-open-ref="${src.id}" title="Open ${esc(src.title)}">${pic(srcV.cover || srcV.raw, src.title, '40px', [160], true, srcV)}</button>
-      <span>${src === libModel ? 'From the model' : src === vol ? 'Style from its volume' : 'Based on'} <b>“${esc(src.title)}”</b></span>${src !== libModel && src !== vol ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
-      + (refV && src === libModel && refB.id !== libModel.id ? `<small class="prev-src">Previously based on “${esc(refB.title)}” — these buttons use the model.</small>` : '');
+      <span class="im-model-t" title="${esc(src.title)}${refV && src === libModel && refB.id !== libModel.id ? ` — previously based on “${refB.title}”; these buttons use the model` : ''}">${src === libModel ? 'Model' : src === vol ? 'Style from its volume' : 'Based on'}: <b>${esc(src.title)}</b></span>${src !== libModel && src !== vol ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
+      ;
     $('im-model').querySelector('[data-like="similar"]').title = modelPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
       : "A fresh generation in its look (read from its image — it has no prompt to reuse), with this book's title, author and illustration";
     likeLabels(b, src);
@@ -851,10 +851,9 @@ function renderManager() {
   $('im-aspect').textContent = v?.aspect ? `proportions ${v.aspect.toFixed(2)} — check framing` : '';
   const vers = b.versions || [];
   $('im-versions').hidden = !vers.length;
-  $('im-strip').innerHTML = [...vers].reverse().map((x) => `<button type="button" class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(x.edit ? 'Edit: ' + x.edit : x.prompt.slice(0, 200))}">
+  $('im-strip').innerHTML = [...vers].reverse().map((x) => `<button type="button" class="ver ${x.id === v?.id ? 'on' : ''}" data-ver="${x.id}" title="${esc(`${new Date(x.at).toLocaleString()} — ${x.edit ? 'Edit: ' + x.edit : x.prompt.slice(0, 200)}`)}">
       ${pic(x.cover || x.raw, '', '84px', [160, 240], false, x)}
       <span class="ver-lab">${esc(verLabel(x))}${x.cover ? '' : ' · raw'}</span>
-      <span class="ver-date">${new Date(x.at).toLocaleDateString()}</span>
       ${x.edit !== 'current site cover' ? `<span class="ver-del" role="button" tabindex="0" data-delver="${x.id}" data-write title="Delete this version (and its images)" aria-label="Delete version">×</span>` : ''}</button>`).join('');
 }
 // Printed byline: unset = the author; "None" = no author line; text = that credit instead.
