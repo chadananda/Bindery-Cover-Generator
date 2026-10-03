@@ -14,7 +14,7 @@ export const catalogue = (p) => [
   ...p.books.map((b) => `${b.id} | ${b.title} | ${b.author || ''} | ${b.shelfId || ''} | ${b.collectionId || ''} | ${b.versions?.length ? 'cover' : 'no cover'}${b.byline == null ? '' : b.byline === '' ? ' | byline: none' : ` | byline: "${b.byline}"`}${b.style ? ` | ${b.style}` : ''}`),
 ].join('\n');
 
-const SYSTEM = `You help an art director set the cover styles of a book library. Covers are generated from layered style text:
+export const SYSTEM = `You help an art director set the cover styles of a book library. Covers are generated from layered style text:
 library style → shelf style → collection style → the book's own style (applied last). Shelf and collection styles describe
 how covers there DIFFER from the library style (leather colour, motifs, border, typography, illustration treatment).
 
@@ -46,6 +46,11 @@ cover, just change the title") edits it changing only title and byline. If uncle
 When the user asks to make selected covers like the model (in any words), ALWAYS answer with propose_plan references:
 refBookId = the MODEL COVER, bookIds = the selected books (minus the model), generate: true, and the mode that fits their
 words (default 'style'). Never turn such a request into in-place edits of each cover.
+START OVER: when a MODEL COVER is set and the user says start over, start again, redo it, do it over, from scratch,
+or copy (and edit) the model, they mean: throw away the current cover and make a NEW one by editing the model's
+photograph — propose references with refBookId = the MODEL COVER, bookIds = the selected books (or the open one),
+generate: true, mode 'exact' (only the text changes) unless they ask for new art ('style'). Never answer it with an edit
+of the current cover, and never with a style change.
 "The model" means the MODEL COVER above; "regenerate these from the model" = references with that refBookId and
 generate: true.
 When the user wants other books based ON a particular cover ("make the others like this one", "base the Rumi books on

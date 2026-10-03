@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { catalogue, sanitizePlan, runChat, refineRequest, scopePlan } from '../src/chat.js';
+import { catalogue, sanitizePlan, runChat, refineRequest, scopePlan, SYSTEM } from '../src/chat.js';
 
 const project = {
   app: { name: 'Ocean', style: 'leather' },
@@ -232,6 +232,12 @@ describe('scopePlan', () => {
     expect(r.plan.edits).toHaveLength(1);
     expect(r.reply).not.toMatch(/<function_call/);
     expect(seen[1]).toMatch(/call the tool/i);
+  });
+
+  it('"start over" with a model set means a fresh Same Cover from the model, never an edit of the current cover', () => {
+    expect(SYSTEM).toMatch(/START OVER/);
+    expect(SYSTEM).toMatch(/start over[^.]*copy[^.]*model/i);
+    expect(SYSTEM).toMatch(/mode 'exact'/);
   });
 });
 
