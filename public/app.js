@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer, looks); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=29';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE, snapshotStyles, sameStyles, applyStyles, nextLookName } from './core/index.js?v=30';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -628,7 +628,8 @@ function openManager(bookId) {
   $('im-title').textContent = b.title;
   $('im-about-wrap').hidden = !b.description;
   $('im-about').textContent = b.description || '';
-  $('im-content').value = b.content || ''; $('im-change').value = ''; resetAdjust();
+  $('im-content').value = b.content || ''; resetAdjust();
+  $('bench-sub').textContent = [b.author, shelfById(b.shelfId)?.name].filter(Boolean).join(' · ') || 'Cover';
   $('im-style').value = b.style || '';
   $('im-t').value = b.title || ''; $('im-sub').value = b.subtitle || ''; $('im-by').value = b.author || '';
   $('im-sample').checked = !!b.sample;
@@ -747,11 +748,6 @@ $('imgmgr').addEventListener('click', async (e) => {
       imBusy(true, 'Generating… (~20–40s)'); imStatus('Generating…');
       const { id: lookId } = await ensureLook();
       await produce(b, { removeBg, lookId }); imStatus('Generated ✓', 'ok');
-    } else if (act === 'edit') {
-      const change = $('im-change').value.trim();
-      if (!change) { $('im-change').focus(); return imStatus('Describe the change you want, then Edit current.', 'err'); }
-      imBusy(true, 'Editing…'); imStatus('Editing the current cover…');
-      await produce(b, { removeBg, change }); imStatus('Edited ✓ — saved as a new version', 'ok'); $('im-change').value = '';
     } else if (act === 'rekey') {
       const v = currentVersion(b);
       if (!v?.raw) return imStatus('This version has no raw image to key.', 'err');
@@ -760,7 +756,6 @@ $('imgmgr').addEventListener('click', async (e) => {
       await addVersion(b, { raw: v.raw, cover: await storeImage(b, 'covers', k.base64), prompt: v.prompt, aspect: k.aspect, w: k.w, h: k.h, edit: v.edit, lookId: v.lookId });
       imStatus('Re-keyed ✓', 'ok');
     } else if (act === 'browse') { $('im-file').click(); return; }
-    else if (act === 'chat') { addRef(b.id); openChat(b.id, $('chat-input').value.trim() ? '' : 'The style on this cover is what I’m after. Apply it to '); return; }
   } catch (err) { imStatus(err.message, 'err'); }
   finally { imBusy(false); renderManager(); renderCard(b.id); }
 });
@@ -787,22 +782,55 @@ $('im-file').addEventListener('change', async (e) => {
 const chat = { messages: [], focus: null, busy: false };
 const STAGES = ['Reading the shelves…', 'Looking at the cover…', 'Putting the style into words…'];
 const EXAMPLES = ['The style on The Masnavi is just what I want — use it for the rest of the Islam shelf', 'Make the leather on this cover a deeper green and the lettering properly stamped gold', 'Make the Bahá’í shelf a lighter blue with silver tooling'];
-// ---- workspace dock: cover editor and chat as side panes (non-modal). body classes size the shelves around them.
-const chatOpen = () => !$('chat').hidden;
-function layoutDock(last) {
-  document.body.classList.toggle('dock-editor', !$('imgmgr').hidden);
-  document.body.classList.toggle('dock-chat', chatOpen());
-  if (last) $('dock').dataset.last = last; // on phones only the last-opened pane shows
-  $('chat-fab').hidden = chatOpen();
+// ---- workbench: ONE right-hand panel. #imgmgr (cover editor) shows when a book is loaded; .chat-on shows the chat
+// beneath it (or alone). The shelves give up the panel's width (body.bench-open).
+const bench = $('bench');
+const chatOpen = () => !bench.hidden && bench.classList.contains('chat-on');
+function layoutBench() {
+  const cover = !$('imgmgr').hidden, on = bench.classList.contains('chat-on');
+  bench.hidden = !cover && !on;
+  bench.classList.toggle('has-cover', cover);
+  $('chat').hidden = !on;
+  $('bench-chat').hidden = on || !cover;
+  $('chat-clear').hidden = !on;
+  $('chat-mode').hidden = !cover;
+  if (!cover) { $('im-title').textContent = 'The Binder'; $('bench-sub').textContent = 'Style assistant'; setMode('ask'); }
+  document.body.classList.toggle('bench-open', !bench.hidden);
+  $('chat-fab').hidden = !bench.hidden;
 }
-function openPane(id) { $(id).hidden = false; layoutDock(id); }
+function openPane(id) { if (id === 'imgmgr') $('imgmgr').hidden = false; else bench.classList.add('chat-on'); layoutBench(); }
 function closePane(id) {
-  $(id).hidden = true;
-  if (id === 'imgmgr') im = null;
-  layoutDock(!$('chat').hidden ? 'chat' : !$('imgmgr').hidden ? 'imgmgr' : '');
-  renderAll(); if (chatOpen()) renderChat();
+  if (id === 'imgmgr') { $('imgmgr').hidden = true; im = null; } else bench.classList.remove('chat-on');
+  layoutBench(); renderAll(); if (chatOpen()) renderChat();
 }
-$('im-close').addEventListener('click', () => closePane('imgmgr'));
+$('bench-close').addEventListener('click', () => { $('imgmgr').hidden = true; im = null; bench.classList.remove('chat-on'); layoutBench(); renderAll(); });
+$('bench-chat').addEventListener('click', () => openChat());
+// Composer mode, when a cover is loaded: Ask (the Binder proposes) or ✎ Edit cover (the text IS the edit, run at once).
+let chatMode = 'ask';
+function setMode(m) {
+  chatMode = m;
+  document.querySelectorAll('#chat-mode [data-mode]').forEach((b) => b.setAttribute('aria-checked', b.dataset.mode === m));
+  $('chat-input').placeholder = m === 'edit' ? 'Describe the change to this cover — e.g. make the leather a deeper green, add a silver clasp' : 'Ask, or tell the Binder what to restyle…';
+}
+$('chat-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) { setMode(b.dataset.mode); $('chat-input').focus(); } });
+async function editFromChat(text) {
+  const b = imBook(); if (!b) return sendChat(text);
+  chat.messages.push({ role: 'user', text: `✎ ${text}` }, { role: 'assistant', text: `Editing ${b.title}…`, books: [b.id] });
+  const msg = chat.messages.at(-1); renderChat();
+  status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); imBusy(true, 'Editing… (~20–40s)'); imStatus('Editing…');
+  try {
+    await produce(b, { removeBg: $('im-removebg').checked, change: text }); status.delete(b.id);
+    imStatus('Edited ✓ — saved as a new version', 'ok'); msg.text = `Edited ${b.title} — saved as a new version. Not right? Describe another change, or delete it from History.`;
+  } catch (err) { status.set(b.id, { state: 'err', msg: err.message }); imStatus(err.message, 'err'); Object.assign(msg, { text: `Couldn't edit: ${err.message}`, error: true }); }
+  finally { imBusy(false); renderCard(b.id); renderManager(); renderChat(); }
+}
+// Cover tools: one drawer open at a time (Adjust, Details) keeps the panel from scrolling.
+document.querySelector('#imgmgr .tools').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-drawer]'); if (!t) return;
+  const open = t.getAttribute('aria-expanded') !== 'true';
+  document.querySelectorAll('#imgmgr .tool').forEach((x) => x.setAttribute('aria-expanded', x === t && open));
+  document.querySelectorAll('#imgmgr .drawer').forEach((d) => { d.hidden = !(open && d.dataset.for === t.dataset.drawer); });
+});
 function openChat(focusBookId = null, draft = '') {
   if (!authed) return showLogin();
   if (focusBookId) chat.focus = focusBookId;
@@ -892,9 +920,12 @@ function applyPlan(plan) {
   renderAll();
 }
 $('chat-fab').addEventListener('click', () => openChat());
-$('chat-close').addEventListener('click', closeChat);
 $('chat-clear').addEventListener('click', () => { chat.messages = []; chat.focus = null; renderChat(); });
-$('chat-form').addEventListener('submit', (e) => { e.preventDefault(); const t = $('chat-input').value; $('chat-input').value = ''; autosize(); sendChat(t); });
+$('chat-form').addEventListener('submit', (e) => {
+  e.preventDefault(); const t = $('chat-input').value.trim(); if (!t && !chat.refs.length) return;
+  $('chat-input').value = ''; autosize();
+  chatMode === 'edit' && im?.bookId && t ? editFromChat(t) : sendChat(t);
+});
 $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } });
 // The composer grows with its text (typed, pasted or prefilled), up to about a third of the screen.
 function autosize() { const i = $('chat-input'); i.style.height = 'auto'; i.style.height = `${Math.min(i.scrollHeight + 2, innerHeight * 0.35)}px`; }

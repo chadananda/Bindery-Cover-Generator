@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=29" />
+  <link rel="stylesheet" href="/styles.css?v=31" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -146,24 +146,45 @@
     </div>
   </dialog>
 
-  <!-- Workspace dock (right): cover editor and style chat side by side, non-modal — the shelves stay usable.
-       Cover editor: content + style prompts, Generate / Edit (img2img) / Upload; every render kept as a version. -->
-  <div class="dock" id="dock">
-  <aside class="pane editor" id="imgmgr" hidden aria-label="Cover editor">
-    <header class="pane-head">
-      <h2 id="im-title">Cover</h2>
-      <button type="button" class="pane-btn" data-act="chat" title="Chat about this cover">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg><span>Chat</span></button>
-      <button type="button" class="pane-x" id="im-close" aria-label="Close editor"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <!-- WORKBENCH (right, non-modal): ONE panel holding the cover editor (top) and the style chat (below). States on the
+       panel: .has-cover (a book is loaded) and .chat-on. Cover only → an "Ask the Binder" button opens the chat beneath;
+       chat only → full height, and the cover slides in when a cover is clicked, generated or edited. Optional editor
+       controls live in two drawers (Adjust, Details), one open at a time, so the panel never needs to scroll. -->
+  <aside class="bench" id="bench" hidden aria-label="Workbench">
+    <header class="bench-head">
+      <span class="roundel" aria-hidden="true">❦</span>
+      <span class="titles"><h2 id="im-title" class="title">The Binder</h2><span class="subtitle" id="bench-sub">Style assistant</span></span>
+      <button type="button" class="chat-icon" id="chat-clear" title="New conversation" aria-label="New conversation"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"/></svg></button>
+      <button type="button" class="chat-icon" id="bench-close" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </header>
-    <div class="pane-body im-body">
-      <div class="im-preview-wrap">
-        <div id="im-preview" class="stage im-preview"><span class="hint">The cover appears here</span></div>
-        <div id="im-spin" class="im-spin" hidden><span class="spinner"></span><span id="im-spin-lab">Working…</span></div>
+    <div class="chat-rule"></div>
+
+    <section class="cover" id="imgmgr" hidden aria-label="Cover editor">
+      <div class="cover-top">
+        <div class="im-preview-wrap">
+          <div id="im-preview" class="stage im-preview"><span class="hint">The cover appears here</span></div>
+          <div id="im-spin" class="im-spin" hidden><span class="spinner"></span><span id="im-spin-lab">Working…</span></div>
+        </div>
+        <div class="cover-side">
+          <div class="im-ref" id="im-ref" hidden></div>
+          <div class="im-status-row"><span id="im-status" class="status"></span><span id="im-aspect" class="badge" hidden></span></div>
+          <div class="cover-actions" data-write>
+            <button type="button" class="btn gold" data-act="generate" title="A new cover from the styles (+ Details → centre illustration)">✦ Generate new</button>
+            <span class="minor"><button type="button" class="btn small ghost" data-act="browse">Upload…</button><button type="button" class="btn small ghost" data-act="rekey">⟳ Re-key</button></span>
+            <input type="file" id="im-file" accept="image/*" hidden />
+          </div>
+          <p class="cover-tip" data-write>To change this cover, tell the Binder below — <b>✎ Edit cover</b> applies it in place.</p>
+          <div id="im-versions" hidden>
+            <h3>History <small>· click to use · × to delete</small></h3>
+            <div id="im-strip" class="strip"></div>
+          </div>
+        </div>
       </div>
-      <div class="im-status-row"><span id="im-status" class="status"></span><span id="im-aspect" class="badge" hidden></span></div>
-      <details class="adjust" id="im-adjust">
-        <summary>Adjust <small>· brightness, contrast, colour — free, instant, saved as a new version</small></summary>
+      <nav class="tools" aria-label="Cover tools">
+        <button type="button" class="tool" data-drawer="adjust" aria-expanded="false">Adjust <small>brightness · colour</small></button>
+        <button type="button" class="tool" data-drawer="details" aria-expanded="false">Details <small>illustration · style · titles · prompt</small></button>
+      </nav>
+      <div class="drawer" id="im-adjust" data-for="adjust" hidden>
         <div class="sliders">
           <label><span>Shadows</span><input type="range" min="0" max="100" value="0" data-adj="gamma" title="Lift the dark tones (dark leather) without blowing out the light ones" /><output>0</output></label>
           <label><span>Brightness</span><input type="range" min="50" max="250" value="100" data-adj="brightness" /><output>100</output></label>
@@ -171,69 +192,48 @@
           <label><span>Saturation</span><input type="range" min="0" max="200" value="100" data-adj="saturate" /><output>100</output></label>
           <label><span>Warmth</span><input type="range" min="0" max="50" value="0" data-adj="sepia" /><output>0</output></label>
         </div>
+        <div class="row wrap"><button type="button" class="btn small ghost" id="adj-reset">Reset</button><button type="button" class="btn small gold" id="adj-save" data-write>Save as new version</button><small>free · instant</small></div>
+      </div>
+      <div class="drawer" data-for="details" hidden>
+        <details class="inherit" id="im-about-wrap" hidden><summary>About this book <small>· guides the imagery, never printed</small></summary><p id="im-about"></p></details>
+        <label class="field"><span>Centre illustration <small>· for ✦ Generate new · blank = chosen from the description</small></span>
+          <textarea id="im-content" rows="2" placeholder="e.g. a winged lion standing on an open scroll"></textarea></label>
+        <label class="field"><span>This book only <small>· applied last</small></span>
+          <textarea id="im-style" rows="2" placeholder="e.g. add an ornate silver clasp"></textarea></label>
+        <label class="check" data-write><input type="checkbox" id="im-override" /> Replace the inherited styles <small>· this book's style alone</small></label>
+        <div class="cover-grid">
+          <label class="field"><span>Title</span><input id="im-t" /></label>
+          <label class="field"><span>Subtitle</span><input id="im-sub" /></label>
+          <label class="field"><span>Byline</span><input id="im-by" /></label>
+        </div>
         <div class="row wrap">
-          <button type="button" class="btn small ghost" id="adj-reset">Reset</button>
-          <button type="button" class="btn small gold" id="adj-save" data-write>Save as new version</button>
+          <label class="check" data-write><input type="checkbox" id="im-sample" /> ★ Sample book</label>
+          <label class="check" data-write><input type="checkbox" id="im-removebg" checked /> Cut away the background</label>
         </div>
-      </details>
-      <div class="im-ref" id="im-ref" hidden></div>
-      <div id="im-versions" hidden>
-        <h3>History <small>· every version is kept · click one to use it</small></h3>
-        <div id="im-strip" class="strip"></div>
+        <details class="inherit"><summary>Inherited style</summary><div id="im-layers"></div></details>
+        <details class="inherit"><summary>The full prompt</summary><pre id="im-prompt"></pre></details>
       </div>
-      <div class="edit-box" data-write>
-        <label for="im-change">Change the current cover <small>· Gemini edits this picture in place; the result is saved as a new version</small></label>
-        <div class="edit-row">
-          <textarea id="im-change" rows="2" placeholder="e.g. make the leather a deeper green · add an ornate silver clasp · remove the sunburst"></textarea>
-          <button type="button" class="btn" data-act="edit">✎ Edit current</button>
+    </section>
+
+    <section class="chat" id="chat" hidden aria-label="Style chat">
+      <div class="chat-body" id="chat-body" role="log" aria-live="polite"></div>
+      <form class="chat-compose" id="chat-form">
+        <div class="mode" id="chat-mode" role="radiogroup" aria-label="What the message does" hidden data-write>
+          <button type="button" role="radio" data-mode="ask" aria-checked="true">Ask</button>
+          <button type="button" role="radio" data-mode="edit" aria-checked="false">✎ Edit cover</button>
         </div>
-      </div>
-      <div class="row wrap actions" data-write>
-        <button type="button" class="btn gold" data-act="generate" title="A new cover from the prompt (the styles + the centre illustration below)">✦ Generate new</button>
-        <button type="button" class="btn ghost" data-act="rekey" title="Cut the background away again (no new generation)">⟳ Re-key</button>
-        <button type="button" class="btn ghost" data-act="browse">Upload…</button>
-        <input type="file" id="im-file" accept="image/*" hidden />
-      </div>
-      <label class="check" data-write><input type="checkbox" id="im-sample" /> ★ Sample book <small>· included in ✦ Try look</small></label>
-      <label class="check" data-write><input type="checkbox" id="im-removebg" checked /> Cut away the background <small>· transparent PNG</small></label>
-      <details class="inherit" id="im-about-wrap" hidden>
-        <summary>About this book <small>· guides the imagery, never printed</small></summary>
-        <p id="im-about"></p>
-      </details>
-      <label class="field"><span>Centre illustration <small>· for ✦ Generate new · blank = chosen from the description</small></span>
-        <textarea id="im-content" rows="3" placeholder="e.g. a winged lion standing on an open scroll"></textarea></label>
-      <details class="inherit"><summary>Inherited style</summary><div id="im-layers"></div></details>
-      <label class="field"><span>This book only <small>· optional, applied last</small></span>
-        <textarea id="im-style" rows="2" placeholder="e.g. add an ornate silver clasp"></textarea></label>
-      <label class="check" data-write><input type="checkbox" id="im-override" /> Replace the inherited styles <small>· this book's style alone, not library + shelf</small></label>
-      <div class="cover-grid">
-        <label class="field"><span>Title</span><input id="im-t" /></label>
-        <label class="field"><span>Subtitle</span><input id="im-sub" /></label>
-        <label class="field"><span>Byline</span><input id="im-by" /></label>
-      </div>
-      <details class="inherit"><summary>The full prompt</summary><pre id="im-prompt"></pre></details>
-    </div>
+        <p class="chat-sel" id="chat-sel" hidden></p>
+        <div class="refs" id="chat-refs" hidden></div>
+        <div class="compose-row">
+          <textarea id="chat-input" rows="1" placeholder="e.g. The style on The Masnavi is what I want — use it for the rest of the Islam shelf"></textarea>
+          <button type="submit" class="chat-send" aria-label="Send"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 11.2 20.2 3.4c.8-.4 1.6.5 1.2 1.3l-7.8 16.8c-.4.8-1.6.7-1.9-.2l-2-6.6a1 1 0 0 0-.7-.7l-6.6-2c-.9-.3-.9-1.5 0-1.9z" transform="rotate(3 12 12)"/></svg></button>
+        </div>
+        <p class="compose-hint">Click a cover to open it here — the Binder sees it. ⇧-click covers to attach several.</p>
+      </form>
+    </section>
+
+    <button type="button" class="bench-chat" id="bench-chat" data-write><span class="roundel" aria-hidden="true">❦</span> Ask the Binder <small>· change this cover in plain words</small></button>
   </aside>
-  <section class="pane chat" id="chat" hidden aria-label="Style chat">
-    <header class="chat-head">
-      <span class="roundel">❦</span>
-      <span class="titles"><span class="title">The Binder</span><span class="subtitle">Style assistant</span></span>
-      <button type="button" class="chat-icon" id="chat-clear" title="New conversation" aria-label="New conversation"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"/></svg></button>
-      <button type="button" class="chat-icon" id="chat-close" aria-label="Close chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-    </header>
-    <div class="chat-rule"></div>
-    <div class="chat-body" id="chat-body" role="log" aria-live="polite"></div>
-    <form class="chat-compose" id="chat-form">
-      <p class="chat-sel" id="chat-sel" hidden></p>
-      <div class="refs" id="chat-refs" hidden></div>
-      <div class="compose-row">
-      <textarea id="chat-input" rows="1" placeholder="e.g. The style on The Masnavi is what I want — use it for the rest of the Islam shelf"></textarea>
-      <button type="submit" class="chat-send" aria-label="Send"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 11.2 20.2 3.4c.8-.4 1.6.5 1.2 1.3l-7.8 16.8c-.4.8-1.6.7-1.9-.2l-2-6.6a1 1 0 0 0-.7-.7l-6.6-2c-.9-.3-.9-1.5 0-1.9z" transform="rotate(3 12 12)"/></svg></button>
-      </div>
-      <p class="compose-hint">Click a cover to open it in the editor — the Binder sees it. ⇧-click covers to attach several to your message.</p>
-    </form>
-  </section>
-  </div>
 
   <dialog id="login" class="dlg login">
     <form method="dialog" id="login-form">
@@ -245,6 +245,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=29"></script>
+  <script type="module" src="/app.js?v=30"></script>
 </body>
 </html>
