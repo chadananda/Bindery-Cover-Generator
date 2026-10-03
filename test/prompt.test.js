@@ -102,6 +102,8 @@ describe('effectiveStyles', () => {
     expect(p).toContain('add a silver clasp');
     expect(p).toMatch(/same photograph/i);
     expect(p).toMatch(/do not re-?(shoot|photograph|frame|crop)/i);
+    expect(p).toMatch(/clearly visible/i);            // a timid change reads as "nothing happened"
+    expect(p).not.toMatch(/pixel-for-pixel/i);        // that wording froze the whole image
     expect(p).toMatch(/lettering/i);
     expect(p).toContain('#FF00FF');
   });

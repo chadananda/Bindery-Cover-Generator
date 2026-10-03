@@ -147,11 +147,11 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false } 
 
 export function composeEditPrompt(project, change) {
   const k = keyColor(project);
-  // In-place edit, not a re-shoot: the model drifts to a fresh photograph (new light, crop, lettering) unless told hard.
-  return `Edit this exact photograph. Make ONLY this change: ${change.trim()}\n\n` +
-    `Return the SAME photograph with that one change applied in place. Everything not named in the change must stay ` +
-    `pixel-for-pixel as it is: the same book, the same leather colour and texture, the same wear, border, illustration, ` +
-    `lettering, typeface and spacing, the same lighting, camera angle, scale and position in the frame. Do not re-shoot, ` +
-    `re-photograph, re-light, re-frame, crop, zoom or redraw anything. Keep the background SOLID PURE ${k.name} (${k.hex}), ` +
-    `uniform, with NO shadow, and keep the same ${k.name.toLowerCase()} margin around all edges of the book.`;
+  // In-place, but VISIBLE: "pixel-for-pixel" wording made the model change almost nothing (3–9/255 average difference).
+  return `Edit this photograph of a book cover. Make this change: ${change.trim()}\n\n` +
+    `Make the change CLEARLY VISIBLE — it must be obvious even at thumbnail size; change as much of the cover as the request ` +
+    `needs, and no more. It is still the same photograph of the same book: keep what the change does not touch (material, ` +
+    `colours, lettering, illustration, lighting, camera angle, scale and position in the frame) as it is. Do not re-shoot, ` +
+    `re-light, re-frame, crop or zoom. Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and keep the ` +
+    `same ${k.name.toLowerCase()} margin around all edges of the book.`;
 }

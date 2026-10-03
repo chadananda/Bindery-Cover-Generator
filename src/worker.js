@@ -6,7 +6,7 @@ import { generateImage } from '../core/gemini.js';
 import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
 import { renderImage, initCodecs } from './render.js';
-import { runChat, geminiChat, geminiDescribe } from './chat.js';
+import { runChat, geminiChat, geminiDescribe, geminiRefine } from './chat.js';
 import webpEncWasm from '@jsquash/webp/codec/enc/webp_enc_simd.wasm';
 
 const COOKIE = 'cg_auth';
@@ -144,6 +144,22 @@ export default {
         const key = `sets/${lib}/${kind}/${bookId}/${Date.now()}.png`;
         await env.COVERS.put(key, bytes, { httpMetadata: { contentType: 'image/png' } });
         return json({ ok: true, key });
+      }
+
+      // POST /api/libraries/<lib>/refine {bookId, text} → {instruction}: the user's edit feedback rewritten, against the
+      // current cover, as one concrete instruction ('NONE' when it isn't a change request).
+      if (part === 'refine' && req.method === 'POST') {
+        const { bookId, text = '' } = await body();
+        const project = await loadLibrary(env.DB, lib);
+        const b = project?.books.find((x) => x.id === bookId);
+        const v = b && (b.versions.find((x) => x.id === b.selected) || b.versions.at(-1));
+        if (!v || !text.trim()) return fail(400, 'bookId with a cover, and text, required');
+        const obj = await env.COVERS.get(v.cover || v.raw);
+        if (!obj) return fail(404, 'Cover image missing');
+        await initCodecs(webpEncWasm);
+        const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
+        try { return json({ ok: true, instruction: await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', text) }); }
+        catch (e) { return fail(502, String(e.message || e)); }
       }
 
       // POST /api/libraries/<lib>/describe {bookId} → {style}: the visual style of that book's current cover, in words

@@ -180,3 +180,18 @@ export const geminiDescribe = (apiKey, model = CHAT_MODEL) => async (imageB64, m
   ] }] });
   return parts.filter((p) => p.text).map((p) => p.text).join(' ').trim();
 };
+
+/** Edit mode: turn the user's feedback ("too busy", "can't read the author") into ONE concrete visual instruction for the
+ *  image model, by looking at the cover. Vague feedback made the image model change almost nothing. */
+export const refineRequest = (feedback) =>
+  `You are directing an image editor that will edit this book cover. The art director says: "${String(feedback).trim()}"\n\n` +
+  `Look at the cover and write ONE concrete editing instruction that achieves what they want: name exactly what to remove, ` +
+  `simplify, enlarge, shrink, recolour or move, and by how much (e.g. "remove the inner floral border and the four corner ` +
+  `medallions; enlarge the title lettering by a third; make the byline twice as large"). Make it decisive enough to be clearly ` +
+  `visible at thumbnail size. Keep the book, material, lighting and framing; never ask to re-shoot or crop. If they are only ` +
+  `chatting and not asking for a change, reply exactly: NONE. Output only the instruction.`;
+export const geminiRefine = (apiKey, model = CHAT_MODEL) => async (imageB64, mimeType, feedback) => {
+  const parts = await gemini(apiKey, model, { contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageB64 } }, { text: refineRequest(feedback) }] }] });
+  return parts.filter((p) => p.text).map((p) => p.text).join(' ').trim();
+};
+

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { catalogue, sanitizePlan, runChat } from '../src/chat.js';
+import { catalogue, sanitizePlan, runChat, refineRequest } from '../src/chat.js';
 
 const project = {
   app: { name: 'Ocean', style: 'leather' },
@@ -137,3 +137,14 @@ describe('runChat', () => {
     expect(out.reply).toMatch(/couldn.t finish/i);
   });
 });
+
+describe('refineRequest', () => {
+  it('asks for ONE concrete visual instruction from the user\'s feedback, keeping the cover otherwise', () => {
+    const r = refineRequest('good but a bit too busy for thumbnail visibility');
+    expect(r).toContain('good but a bit too busy for thumbnail visibility');
+    expect(r).toMatch(/concrete/i);
+    expect(r).toMatch(/what to remove|remove|enlarge|simplify/i);
+    expect(r).toMatch(/only the instruction/i);
+  });
+});
+
