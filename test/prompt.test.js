@@ -304,5 +304,21 @@ describe('effectiveStyles', () => {
     // single-part titles keep the plain replacement
     expect(composeBasedOnPrompt({ app: {} }, { title: 'Light' }, 'Dark', { exact: true })).toContain('Replace the title lettering with "Light"');
   });
+
+  it('reads "try again" requests: bare, or with an extra instruction', async () => {
+    const { tryAgainIntent, retryPrompt } = await import('../core/prompt.js');
+    expect(tryAgainIntent('try again')).toEqual({ extra: '' });
+    expect(tryAgainIntent('Try again!')).toEqual({ extra: '' });
+    expect(tryAgainIntent('Try again, but make the font a little smaller')).toEqual({ extra: 'make the font a little smaller' });
+    expect(tryAgainIntent('again but with less gold')).toEqual({ extra: 'with less gold' });
+    expect(tryAgainIntent('retry: smaller title')).toEqual({ extra: 'smaller title' });
+    expect(tryAgainIntent('try again and keep the border')).toEqual({ extra: 'keep the border' });
+    expect(tryAgainIntent('make the title smaller')).toBeNull();
+    expect(tryAgainIntent('why did you try again?')).toBeNull();
+    const p = retryPrompt('Edit this photograph. Make this change: 1. X', 'make the font a little smaller');
+    expect(p.startsWith('Edit this photograph. Make this change: 1. X')).toBe(true);
+    expect(p).toMatch(/also.*make the font a little smaller/i);
+    expect(retryPrompt('P', '')).toBe('P');
+  });
 });
 

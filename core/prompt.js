@@ -190,3 +190,13 @@ export function composeEditPrompt(project, change) {
     `re-light, re-frame, crop or zoom. ${metal(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and keep the ` +
     `same ${k.name.toLowerCase()} margin around all edges of the book.`;
 }
+
+/** "try again" / "try again, but make the font smaller" → {extra}; anything else → null. A retry re-sends the exact
+ *  request (same prompt, same starting image); extra is appended to it. */
+export function tryAgainIntent(text) {
+  const m = String(text || '').match(/^\s*(?:try (?:it |that )?again|again|retry|re-?roll|one more (?:time|try)|give it another (?:go|try))\s*(?:[,:;.!-]+\s*)?(?:(?:but|and|with)\b\s*)?(.*?)[\s.!]*$/i);
+  return m ? { extra: m[1].trim() } : null;
+}
+/** The retried prompt: the same request plus the extra instruction for this attempt. */
+export const retryPrompt = (prompt, extra) => (extra ? `${prompt}\n\nAlso, in this attempt: ${extra.trim()}` : prompt);
+
