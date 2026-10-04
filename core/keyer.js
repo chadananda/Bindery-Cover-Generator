@@ -99,7 +99,9 @@ export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
     const i = p * 4;
     const keyMean = keyChannels.reduce((s, c) => s + d[i + c], 0) / keyChannels.length;
     const offMean = offChannels.reduce((s, c) => s + d[i + c], 0) / offChannels.length;
-    if (keyMean - offMean > 30 && nearTransparent(p)) {
+    // …and EVERY key channel must be raised (magenta spill lifts red AND blue): red leather lifts only red.
+    const spill = keyChannels.every((c) => offChannels.every((o) => d[i + c] > d[i + o] + 15));
+    if (keyMean - offMean > 30 && spill && nearTransparent(p)) {
       for (const c of keyChannels) d[i + c] = Math.min(d[i + c], offMean + 10);
       d[i + 3] = 255;
     }
@@ -115,9 +117,10 @@ export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
     for (let p = 0; p < W * H; p++) {
       if (dist[p] <= 0 || transparent(p)) continue;
       const i = p * 4;
-      const keyMean = keyChannels.reduce((s, c) => s + d[i + c], 0) / keyChannels.length;
-      const offMean = offChannels.reduce((s, c) => s + d[i + c], 0) / offChannels.length;
-      if (keyMean - offMean > 20) for (const c of keyChannels) d[i + c] = Math.round(offMean + (d[i + c] - offMean) * 0.3);
+      // The cast is what ALL key channels share above the others (magenta lifts red AND blue); take most of it away.
+      // A red binding has no such shared lift (blue stays low), so it is left alone.
+      const cast = Math.min(...keyChannels.map((c) => d[i + c])) - Math.max(...offChannels.map((o) => d[i + o]));
+      if (cast > 20) for (const c of keyChannels) d[i + c] = Math.round(d[i + c] - cast * 0.7);
     }
   }
 

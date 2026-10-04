@@ -76,6 +76,13 @@ describe('keyOut — the four passes, then trim + pad', () => {
     expect((r + b) / 2 - g).toBeLessThan(35);                      // its magenta cast is reduced
   });
 
+  it('leaves RED leather at the edges red (the edge passes darkened a red binding into a brown band)', () => {
+    const img = canvas(60, 80);
+    for (let y = 8; y <= 71; y++) for (let x = 8; x <= 51; x++) img.set(x, y, [200, 40, 50]); // cardinal-red book
+    const out = keyOut(img, { pad: 0 });
+    for (const x of [0, 1, 2]) { const i = (30 * out.width + x) * 4; expect([...out.data.slice(i, i + 3)]).toEqual([200, 40, 50]); }
+  });
+
   it('despills a magenta fringe but keeps it FULLY opaque (semi-transparent edges look chewed)', () => {
     const img = canvas(60, 80);
     // Left edge column with magenta spill. Uneven R/B on purpose: (R+B)/2−G > 30 makes it spill, while
