@@ -12,7 +12,7 @@ Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read;
 - `scripts/tmp/` — one-off scripts (gitignored): `seed.mjs`/`published-only.mjs`/`mirror-local.mjs` (old R2 project.json era), `r2-to-d1.mjs` (the one-time import).
 
 ## Rules
-- Tests first: `npm test` (104). Store tests run real migrations on node:sqlite (test/d1-shim.js). Deploy ONLY via `npm run deploy` — it copies core/ first; a bare `wrangler deploy` ships a stale public/core/.
+- Tests first: `npm test` (132). Store tests run real migrations on node:sqlite (test/d1-shim.js). Deploy ONLY via `npm run deploy` — it copies core/ first; a bare `wrangler deploy` ships a stale public/core/.
 - Cloudflare: Chad's PERSONAL account (b750d0f7…). Export CLOUDFLARE_ACCOUNT_ID if wrangler asks which account.
 - Do NOT bulk-generate until Chad has dialled in the prompts (each generation is paid). Tune on single covers.
 - Bump `?v=N` on styles.css/app.js/core import in public/ when shipping UI changes (cache).
