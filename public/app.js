@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=101';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=102';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -163,6 +163,28 @@ async function openLib(id, push = true) {
   $('app').hidden = false;
 }
 $('lib-select').addEventListener('change', (e) => openLib(e.target.value));
+// Coming back to the tab pulls the server's current styles and book settings (changed elsewhere — another person, or a
+// style rewritten from outside), so generations never use stale text. Fields with an unsaved local edit keep yours;
+// versions are left alone (they're appended locally as they're made).
+const FRESH = { app: ['style', 'keyColor', 'name'], shelves: ['name', 'style', 'override'], collections: ['name', 'style', 'override', 'shelfId'],
+  books: ['title', 'subtitle', 'author', 'style', 'override', 'content', 'byline', 'coverTitle', 'pos', 'collectionId', 'shelfId', 'refBookId', 'refMode'] };
+async function refreshProject() {
+  if (!lib || !project || document.hidden) return;
+  let fresh; try { ({ project: fresh } = await api(base())); } catch { return; }
+  if (!fresh || fresh.app.name == null) return;
+  let changed = false;
+  const take = (table, cur, nu) => { for (const f of FRESH[table]) {
+    if (pending.has(`${table === 'app' ? 'libraries' : table}/${table === 'app' ? lib : cur.id}`) && f in (pending.get(`${table === 'app' ? 'libraries' : table}/${table === 'app' ? lib : cur.id}`).fields)) continue;
+    if (JSON.stringify(cur[f] ?? null) !== JSON.stringify(nu[f] ?? null)) { cur[f] = nu[f]; changed = true; } } };
+  take('app', project.app, fresh.app);
+  for (const t of ['shelves', 'collections', 'books']) {
+    const byId = new Map(project[t].map((x) => [x.id, x]));
+    for (const nu of fresh[t]) { const cur = byId.get(nu.id); if (cur) take(t, cur, nu); else { project[t].push(nu); changed = true; } }
+  }
+  if (changed) { renderAll(); if (im) renderManager(); }
+}
+addEventListener('focus', refreshProject);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshProject(); });
 $('new-lib').addEventListener('click', async () => {
   const name = (prompt('Name of the new library (e.g. WholeReader):') || '').trim();
   if (!name) return;
