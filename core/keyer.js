@@ -1,6 +1,6 @@
 // Chroma keyer — Recipe A of the "Book Cover Generation" artifact, on raw RGBA so it runs anywhere
 // (browser canvas, Worker, Node). Input/output: { data: Uint8ClampedArray RGBA, width, height }.
-// Passes: sample → border flood-fill → shadow cleanup to fixpoint → despill (opaque) → trim → pad.
+// Passes: sample → border flood-fill → shadow cleanup to fixpoint → despill (opaque) → edge cast → trim → pad.
 
 const MAGENTA = [255, 0, 255];
 
@@ -61,8 +61,12 @@ export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
   //    (Magenta rule; for other keys, "dominated by the key's channels" generalises the same test.)
   const keyChannels = [0, 1, 2].filter((c) => key[c] > 127);
   const offChannels = [0, 1, 2].filter((c) => key[c] <= 127);
+  // …and it must be near-PURE key colour at any brightness: (weakest key channel − strongest off channel) ÷ brightest
+  // key channel ≥ 0.6. Backdrop and shadow score ~0.75; leather merely TINTED by the backdrop (a spine lit magenta scored
+  // 0.3–0.54) is part of the book — clearing it ate the spine in jagged bites.
+  const keyPurity = (i) => (Math.min(...keyChannels.map((c) => d[i + c])) - Math.max(...offChannels.map((o) => d[i + o]))) / Math.max(1, ...keyChannels.map((c) => d[i + c]));
   const shadowLike = (i) => offChannels.length > 0 && keyChannels.length > 0 &&
-    keyChannels.every((c) => offChannels.every((o) => d[i + c] > d[i + o] + 30));
+    keyChannels.every((c) => offChannels.every((o) => d[i + c] > d[i + o] + 30)) && keyPurity(i) >= 0.6;
   // Fixpoint as a queue, not repeated full scans: seed with shadow-like pixels already touching
   // transparency; clearing one can expose its neighbours, so they are re-tested. Same result as
   // "loop until nothing changes", in one sweep — a wide shadow on a 1MP image would otherwise
@@ -98,6 +102,22 @@ export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
     if (keyMean - offMean > 30 && nearTransparent(p)) {
       for (const c of keyChannels) d[i + c] = Math.min(d[i + c], offMean + 10);
       d[i + 3] = 255;
+    }
+  }
+
+  // 5. Edge cast: the backdrop tints the book's outer edges (a rounded spine reads purple). Within ~3% of the width from
+  //    transparency, pull the key channels most of the way toward the others. Interior colours are untouched.
+  const band = Math.max(3, Math.round(W * 0.03));
+  if (keyChannels.length && offChannels.length) {
+    const dist = new Int32Array(W * H).fill(-1); head = 0; tail = 0;
+    for (let p = 0; p < W * H; p++) if (transparent(p)) { dist[p] = 0; queue[tail++] = p; }
+    while (head < tail) { const p = queue[head++]; if (dist[p] >= band) continue; for (const q of neighbours(p)) if (dist[q] < 0) { dist[q] = dist[p] + 1; queue[tail++] = q; } }
+    for (let p = 0; p < W * H; p++) {
+      if (dist[p] <= 0 || transparent(p)) continue;
+      const i = p * 4;
+      const keyMean = keyChannels.reduce((s, c) => s + d[i + c], 0) / keyChannels.length;
+      const offMean = offChannels.reduce((s, c) => s + d[i + c], 0) / offChannels.length;
+      if (keyMean - offMean > 20) for (const c of keyChannels) d[i + c] = Math.round(offMean + (d[i + c] - offMean) * 0.3);
     }
   }
 

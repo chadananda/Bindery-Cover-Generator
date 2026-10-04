@@ -63,6 +63,19 @@ describe('keyOut — the four passes, then trim + pad', () => {
     expect(out.height).toBe(64); // the shadow rows were removed, then trimmed away
   });
 
+  it('keeps a magenta-TINTED spine (lit by the backdrop) instead of eating it, and tones down its cast', () => {
+    // Real values from The Masnavi's spine: purple-tinted leather (ratio 0.3–0.54) right against the backdrop. The shadow
+    // rule removed it in jagged bites. Only near-pure key colour (shadow, ratio ≥ 0.6) may be cleared.
+    const img = canvas(60, 80);
+    const spine = [[127, 26, 94], [120, 33, 85], [92, 17, 60], [105, 22, 76], [86, 12, 47]];
+    for (let y = 8; y <= 71; y++) for (let x = 8; x <= 13; x++) img.set(x, y, spine[(x + y) % spine.length]);
+    const out = keyOut(img, { pad: 0 });
+    expect(out.width).toBe(44);                                    // the spine columns are still there
+    for (let y = 0; y < out.height; y++) expect(alphaAt(out, 3, y)).toBe(255);
+    const i = (20 * out.width + 1) * 4, [r, g, b] = out.data.slice(i, i + 3); // inside the edge band (3% of width)
+    expect((r + b) / 2 - g).toBeLessThan(35);                      // its magenta cast is reduced
+  });
+
   it('despills a magenta fringe but keeps it FULLY opaque (semi-transparent edges look chewed)', () => {
     const img = canvas(60, 80);
     // Left edge column with magenta spill. Uneven R/B on purpose: (R+B)/2−G > 30 makes it spill, while

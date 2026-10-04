@@ -72,7 +72,7 @@ export function composePrompt(project, book, opts = {}) {
 /** Instruction wrapper for an img2img edit of an existing cover. */
 /** The fixed closing of every generation prompt: lighting and the key-colour requirements. */
 // Shiny gold mirrors its surroundings — the key-colour backdrop came back as pink/cyan specks in the tooling.
-const metal = (k) => `Metallic surfaces reflect only neutral warm studio light — no ${k.name.toLowerCase()}, pink, cyan, rainbow or iridescent tints.`;
+const metal = (k) => `The book is lit only by neutral white studio light: no ${k.name.toLowerCase()} light falls on it — its spine and edges keep the binding's own colour, and metallic surfaces reflect only neutral warm light, with no ${k.name.toLowerCase()}, pink, cyan, rainbow or iridescent tints.`;
 function finish(out, k, bgName) {
   out.push(
     metal(k),
@@ -126,7 +126,7 @@ export function retitlePrompt(modelPrompt, project, book, { keepByline = false }
   if (book?.byline == null && modelNone) book = { ...book, byline: '' };
   const lines = String(modelPrompt).split('\n').filter((l) => !BOOK_LINE.test(l) || (keepByline && /^(The line "|Print no author name)/.test(l)));
   const at = lines.findIndex((l) => l.startsWith('Flat, even studio lighting'));
-  const metalLine = lines.some((l) => l.startsWith('Metallic surfaces reflect')) ? [] : [metal(keyColor(project))]; // older prompts
+  const metalLine = lines.some((l) => /^(Metallic surfaces reflect|The book is lit only by neutral)/.test(l)) ? [] : [metal(keyColor(project))]; // older prompts
   lines.splice(at >= 0 ? at : lines.length, 0, ...bookLines(project, keepByline ? { ...book, author: '' } : book), ...metalLine);
   return lines.join('\n');
 }
