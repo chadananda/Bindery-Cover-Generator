@@ -292,5 +292,11 @@ describe('scopePlan', () => {
     const p2 = { ...project, books: [{ id: 'h1', title: 'Sahih Muslim', type: 'Collection', collectionId: 'c1', versions: [] }] };
     expect(catalogue(p2)).toMatch(/h1 \| Sahih Muslim .*COLLECTION COVER/);
   });
+
+  it('edits are the default: realism/detail requests are edits, fresh generation only when asked', () => {
+    expect(SYSTEM).toMatch(/EDITS ARE THE DEFAULT/);
+    expect(SYSTEM).toMatch(/never replace it with a fresh generation unless they ASK/i);
+    expect(SYSTEM).not.toMatch(/propose a FRESH generation without the image/i);
+  });
 });
 
