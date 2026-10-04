@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=91';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=93';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -135,7 +135,7 @@ function restoreView() {
   const known = new Set(project.books.map((b) => b.id));
   (v.selected || []).filter((id) => known.has(id)).forEach((id) => selected.add(id)); lastPick = known.has(v.lastPick) ? v.lastPick : null;
   if (selected.size) syncSelection();
-  if (Array.isArray(v.messages)) chat.messages = v.messages;
+  if (Array.isArray(v.messages)) chat.messages = v.messages.map((m) => m.review?.state === 'running' ? { ...m, review: { ...m.review, state: 'error', error: 'interrupted by a reload — check History' } } : m);
   if (v.open && selected.has(v.open)) openManager(v.open); // only a cover that is still selected
   if (v.chat && authed && !chatOpen()) openChat();
   if (chatOpen()) {
@@ -1072,33 +1072,56 @@ async function refineEdit(b, text, { fallback = false } = {}) {
   if (byline !== undefined && byline !== null) { b.byline = byline; patch('books', b.id, { byline }); }
   const none = !instruction || /^NONE\b/i.test(instruction);
   if (none && !fallback) return null;
-  const change = none ? text : instruction; // a numbered list of commands — shown as-is, and sent as-is to the image model
-  chat.messages.push({ role: 'assistant', text: `Applying to ${b.title}:\n${change}` }); renderChat();
-  return change;
+  return none ? text : instruction; // a numbered list of commands — shown for review, then sent as-is to the image model
+}
+// The same edit request again from a given starting image (the one the first run used), with new wording.
+function replayEdit(book, text, inputKey, removeBg = true) {
+  const run = (coverJobs.get(book.id) || Promise.resolve()).then(async () => {
+    const prompt = composeEditPrompt(project, text), from = currentVersion(book);
+    const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, why: `edit (resubmitted): ${text}` }) });
+    let cover = null, aspect = null, w = null, h = null;
+    if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
+    else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((x) => ({ w: x.width, h: x.height })));
+    return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: from?.basePrompt || null, inputKey, aspect, w, h, edit: text, lookId: from?.lookId || null });
+  });
+  const tail = run.catch(() => {}); coverJobs.set(book.id, tail); return run;
+}
+// Review before any paid call: each cover's commands appear in an editable box with ✎ Apply / Cancel.
+function addReview(b, text) { chat.messages.push({ role: 'assistant', review: { bookId: b.id, title: b.title, text, state: 'pending' } }); renderChat(); }
+// Submit: the first time, edits the cover's current version; after that, REPLAYS from the same starting image that edit
+// used (not its result), with the box's current wording — tweak the commands and resubmit without compounding.
+async function applyReview(m) {
+  const r = m.review, b = project.books.find((x) => x.id === r.bookId); if (!b || r.state === 'running') return;
+  const replay = !!r.inputKey; r.state = 'running'; renderChat();
+  uiLog('apply-edit', { bookId: b.id, input: { commands: r.text, replayFrom: r.inputKey || null } });
+  status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id);
+  if (im?.bookId === b.id) { imBusy(true, 'Editing… (~20–40s)'); imStatus(replay ? 'Resubmitting from the same starting image…' : 'Editing…'); }
+  const removeBg = im?.bookId === b.id ? $('im-removebg').checked : true;
+  try {
+    const v = replay ? await replayEdit(b, r.text, r.inputKey, removeBg) : await produce(b, { removeBg, change: r.text });
+    r.inputKey ||= v.inputKey; status.delete(b.id); r.state = 'done'; r.runs = (r.runs || 0) + 1;
+    if (im?.bookId === b.id) imStatus('Edited ✓ — saved as a new version', 'ok'); }
+  catch (err) { status.set(b.id, { state: 'err', msg: err.message }); r.state = 'error'; r.error = err.message; if (im?.bookId === b.id) imStatus(err.message, 'err'); }
+  renderCard(b.id); if (im?.bookId === b.id) { imBusy(false); renderManager(); } renderChat();
 }
 async function editFromChat(text) {
   const targets = (selected.size ? project.books.filter((b) => selected.has(b.id)) : [imBook()]).filter((b) => b && currentVersion(b));
   if (!targets.length) return sendChat(text);
-  if (targets.length > 3 && !confirm(`Edit ${targets.length} covers? Each one is a paid Gemini image call.`)) return;
-  // Name every target up front, so a missing one is obvious before any paid call finishes.
   uiLog('edit-mode', { input: { message: text }, output: { targets: targets.map((b) => `${b.id} “${b.title}”`) } });
-  chat.messages.push({ role: 'user', text: `✎ ${text}` }, { role: 'assistant', text: `Editing ${targets.length > 1 ? `these ${targets.length} covers: ${targets.map((b) => b.title).join(' · ')}` : targets[0].title}…`, books: targets.map((b) => b.id) });
+  chat.messages.push({ role: 'user', text: `✎ ${text}` }, { role: 'assistant', text: `Reading ${targets.length > 1 ? `these ${targets.length} covers: ${targets.map((b) => b.title).join(' · ')}` : targets[0].title}…`, books: targets.map((b) => b.id) });
   const msg = chat.messages.at(-1); renderChat();
-  let done = 0, failed = 0;
+  let n = 0;
   for (const b of targets) {
-    if (im?.bookId !== b.id) openManager(b.id, { follow: true });
-    status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat(); imBusy(true, `Reading ${targets.length > 1 ? `cover ${done + failed + 1} of ${targets.length}` : 'the cover'}…`);
+    if (im?.bookId === b.id) imBusy(true, `Reading ${targets.length > 1 ? `cover ${n + 1} of ${targets.length}` : 'the cover'}…`);
     try {
       const change = await refineEdit(b, text);
-      if (!change) { status.delete(b.id); imBusy(false); renderCard(b.id); chat.messages.pop(); chat.messages.pop(); return sendChat(text); }
-      imBusy(true, `Editing${targets.length > 1 ? ` ${done + failed + 1} of ${targets.length}` : ''}… (~20–40s)`);
-      await produce(b, { removeBg: $('im-removebg').checked, change }); status.delete(b.id); done++;
-    }
-    catch (err) { status.set(b.id, { state: 'err', msg: err.message }); failed++; }
-    imBusy(false); renderCard(b.id); renderManager(); renderChat();
+      if (!change) { imBusy(false); chat.messages.splice(chat.messages.indexOf(msg) - 1, 2); return sendChat(text); } // not a change request: the Binder answers
+      addReview(b, change); n++;
+    } catch (err) { chat.messages.push({ role: 'assistant', text: `Couldn't read ${b.title}: ${err.message}`, error: true }); }
+    if (im?.bookId === b.id) imBusy(false);
   }
-  Object.assign(msg, { text: `Edited ${done} cover${done === 1 ? '' : 's'}${failed ? `; ${failed} failed (hover the red badge to see why)` : ''} — each saved as a new version. Not right? Describe another change, or delete it from History.`, error: !done });
-  imStatus(done ? 'Edited ✓ — saved as a new version' : 'Edit failed', done ? 'ok' : 'err'); renderChat();
+  msg.text = n ? `Here ${n > 1 ? 'are the commands for each cover' : 'is what I would send'} — edit the wording if you like, then ✎ Submit. Nothing is changed (or paid) until you Submit.` : 'Nothing to apply.';
+  renderChat();
 }
 // The Ask / Edit switch shows whenever there's something to edit: a cover in the editor, or ticked books.
 // A new selection defaults the composer to ✎ Edit (what you type changes those covers); Ask stays chosen if you pick it
@@ -1180,6 +1203,18 @@ const thumbsHtml = (ids = []) => !ids.length ? '' : `<div class="chat-thumbs">${
     <span class="ct-img">${v ? pic(v.cover || v.raw, b.title, '104px', [160, 240], false, v) : `<span class="none">${esc(b.title)}</span>`}</span>
     <span class="ct-cap">${esc(b.title)}</span>${st?.state === 'busy' ? '<span class="ct-busy">Generating…</span>' : ''}</button>`;
 }).join('')}</div>`;
+// An edit awaiting review: the commands in an editable box; Apply sends exactly that text to the image model.
+function reviewHtml(m, i) {
+  const r = m.review, pending = chat.messages.filter((x) => x.review?.state === 'pending').length;
+  const last = chat.messages.findLastIndex((x) => x.review?.state === 'pending') === i;
+  const note = { running: '<p class="applied">Editing… (~20–40s)</p>', done: `<p class="applied">Applied ✓${r.runs > 1 ? ` (${r.runs}×)` : ''} — saved as a new version. Change the wording and Submit to redo it from the same starting image.</p>`,
+    cancelled: '<p class="applied muted">Not applied — Submit to run it after all.</p>', error: `<p class="applied err">Failed: ${esc(r.error || '')} — Submit to try again.</p>` }[r.state] || '';
+  return `<div class="msg assistant"><span class="avatar">❦</span><div class="bubblewrap"><div class="review" data-review="${i}">
+    <div class="review-h">✎ <b>${esc(r.title)}</b></div>
+    <textarea class="review-text" rows="${Math.min(8, r.text.split('\n').length + 1)}" ${r.state === 'running' ? 'readonly' : ''} aria-label="Edit commands for ${esc(r.title)}">${esc(r.text)}</textarea>
+    ${note}${r.state === 'running' ? '' : `<div class="plan-actions"><button type="button" class="btn small gold" data-review-apply>${r.inputKey ? '↻ Submit again' : '✎ Submit'}</button>${last && pending > 1 ? `<button type="button" class="btn small" data-review-all>Submit all ${pending}</button>` : ''}${r.state === 'pending' ? '<button type="button" class="btn small ghost" data-review-cancel>Cancel</button>' : ''}</div>`}
+  </div></div></div>`;
+}
 function renderChat() {
   clearTimeout(renderChat.t); renderChat.t = setTimeout(saveView, 300);
   const body = $('chat-body');
@@ -1187,6 +1222,7 @@ function renderChat() {
 <div class="chips">${EXAMPLES.map((x) => `<button type="button" class="chip" data-example>${esc(x)}</button>`).join('')}</div></div></div>`;
   body.innerHTML = welcome + chat.messages.map((m, i) => m.role === 'user'
     ? `<div class="msg user"><div class="bubblewrap user-wrap">${thumbsHtml(m.refs)}<div class="bubble">${esc(m.text)}</div></div></div>`
+    : m.review ? reviewHtml(m, i)
     : `<div class="msg assistant"><span class="avatar">❦</span><div class="bubblewrap"><div class="bubble ${m.error ? 'err' : ''}">${esc(m.text)}</div>${thumbsHtml(m.books)}${m.plan ? planHtml(m, i) : ''}</div></div>`).join('')
     + (chat.busy ? `<div class="msg assistant"><span class="avatar">❦</span><div class="bubble"><span class="chat-stage" id="chat-stage">${STAGES[0]}</span></div></div>` : '');
   body.scrollTop = body.scrollHeight;
@@ -1256,7 +1292,23 @@ addEventListener('keydown', (e) => {
   // Esc peels back one layer: the editor, then the chat, then the selection.
   if (!$('imgmgr').hidden) closePane('imgmgr'); else if (chatOpen()) closeChat(); else if (selected.size) clearSelection();
 });
+$('chat-body').addEventListener('input', (e) => {
+  const box = e.target.closest('[data-review]'); if (!box || !e.target.matches('.review-text')) return;
+  chat.messages[+box.dataset.review].review.text = e.target.value; clearTimeout(renderChat.t); renderChat.t = setTimeout(saveView, 600);
+});
 $('chat-body').addEventListener('click', (e) => {
+  const box = e.target.closest('[data-review]');
+  if (box) {
+    const m = chat.messages[+box.dataset.review];
+    if (e.target.closest('[data-review-cancel]')) { m.review.state = 'cancelled'; renderChat(); return; }
+    if (e.target.closest('[data-review-apply]')) { applyReview(m); return; }
+    if (e.target.closest('[data-review-all]')) {
+      const all = chat.messages.filter((x) => x.review?.state === 'pending');
+      if (all.length > 3 && !confirm(`Edit ${all.length} covers? Each one is a paid Gemini image call.`)) return;
+      all.forEach((x) => applyReview(x)); return;
+    }
+    return;
+  }
   if (e.target.closest('[data-example]')) { $('chat-input').value = e.target.textContent; autosize(); $('chat-input').focus(); return; }
   const thumb = e.target.closest('[data-open-book]');
   if (thumb) { openManager(thumb.dataset.openBook); return; }
@@ -1283,20 +1335,14 @@ $('chat-body').addEventListener('click', (e) => {
     const edits = m.plan.edits.filter((x) => project.books.some((b) => b.id === x.bookId));
     if (edits.length > 3 && !confirm(`Edit ${edits.length} covers? Each one is a paid Gemini image call.`)) return;
     applyPlan(m.plan); m.applied = 'edit';
-    chat.messages.push({ role: 'assistant', text: `Editing ${edits.length > 1 ? `${edits.length} covers` : 'the cover'}. The result appears here and in its History; open it to compare or delete it.`, books: edits.map((x) => x.bookId) });
-    renderChat(); openManager(edits[0].bookId, { follow: true });
+    chat.messages.push({ role: 'assistant', text: `Reading ${edits.length > 1 ? `the ${edits.length} covers` : 'the cover'}…` }); const msg = chat.messages.at(-1); renderChat();
     (async () => {
       for (const x of edits) {
         const b = project.books.find((y) => y.id === x.bookId);
-        status.set(b.id, { state: 'busy', msg: 'Editing…' }); renderCard(b.id); renderChat();
-        if (im?.bookId === b.id) { imBusy(true, 'Reading the cover…'); imStatus('Editing from the chat…'); }
-        try {
-          const change = await refineEdit(b, x.change, { fallback: true }); // the Binder's proposal → commands against this cover
-          if (im?.bookId === b.id) imBusy(true, 'Editing… (~20–40s)');
-          await produce(b, { removeBg: true, change }); status.delete(b.id); if (im?.bookId === b.id) imStatus('Edited ✓ — saved as a new version', 'ok'); }
-        catch (err) { status.set(b.id, { state: 'err', msg: err.message }); chat.messages.push({ role: 'assistant', text: `Couldn't edit ${b.title}: ${err.message}`, error: true }); }
-        renderCard(b.id); renderChat(); if (im?.bookId === b.id) { imBusy(false); renderManager(); }
+        try { addReview(b, await refineEdit(b, x.change, { fallback: true })); } // the Binder's proposal → commands against this cover
+        catch (err) { chat.messages.push({ role: 'assistant', text: `Couldn't read ${b.title}: ${err.message}`, error: true }); }
       }
+      msg.text = 'Check the commands — edit the wording if you like, then ✎ Submit. Nothing is changed (or paid) until you do.'; renderChat();
     })();
     return;
   }

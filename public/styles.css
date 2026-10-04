@@ -602,3 +602,13 @@ body.bench-open .libhead { margin-right: var(--bench-w); }
 /* (re-stated after the larger defaults above so they still win) */
 @container (min-width: 660px) { .cover { --pv-h: min(480px, 50vh); } .bench.chat-on .cover { --pv-h: min(400px, 40vh); } }
 @media (max-height: 820px) { .cover { --pv-h: min(320px, 40vh); } .bench.chat-on .cover { --pv-h: min(250px, 30vh); } }
+/* An edit awaiting review in the chat: editable commands, Apply / Cancel */
+.review { border: 1px solid rgb(200 162 75 / .55); border-radius: 12px; background: rgb(255 253 247 / .9); padding: .6rem .7rem; display: grid; gap: .45rem; min-width: min(100%, 420px); }
+.review-h { font-size: 13px; color: #3d352a; }
+.review-text { width: 100%; font: 14px/1.45 var(--sans); color: #24211c; background: #fff; border: 1px solid #ddd5c2; border-radius: 8px; padding: .5rem .6rem; resize: vertical; }
+.review-text[readonly] { background: transparent; border-color: transparent; color: #5c5244; resize: none; }
+.applied.muted { color: #8a8070; } .applied.err { color: #b2402a; }
+:root[data-theme="dark"] .review { background: rgb(30 36 44 / .9); } :root[data-theme="dark"] .review-text { background: #12161b; color: #e9e6dd; border-color: #3a4250; }
+:root[data-theme="dark"] .review-h { color: #cfc6b8; }
+.bubblewrap:has(> .review) { flex: 1; min-width: 0; max-width: none; width: 100%; }
+.review { width: 100%; box-sizing: border-box; min-width: 0; }
