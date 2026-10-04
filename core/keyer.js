@@ -36,7 +36,9 @@ export function detectKey(img) {
  * @returns {{data: Uint8ClampedArray, width: number, height: number, aspect: number, bbox: number[]}|null}
  *   null when nothing but background was found (a failed generation).
  */
-export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
+// tolerance 75 (was 120): backdrop pixels sit well inside it, shadows go to the purity pass; 120 swallowed light
+// bindings' pink-lit sides (an ivory Gospel lost its whole spine).
+export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
   const { width: W, height: H } = img;
   const d = new Uint8ClampedArray(img.data);
   const bg = sampleBackground(img);
@@ -51,7 +53,7 @@ export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
     }
     casts.sort((a, b) => a - b); return casts[Math.floor(casts.length / 2)] || 0;
   })();
-  const tol = lean > 30 ? Math.min(tolerance, 70) : tolerance;
+  const tol = lean > 30 ? Math.min(tolerance, 60) : tolerance;
   const isBg = (i) => dist(d, i, bg) <= tol || dist(d, i, key) <= tol;
   const clear = (p) => { d[p * 4 + 3] = 0; };
   const transparent = (p) => d[p * 4 + 3] === 0;

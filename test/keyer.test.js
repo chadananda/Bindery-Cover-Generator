@@ -98,6 +98,14 @@ describe('keyOut — the four passes, then trim + pad', () => {
     expect(alphaAt(out, 1, 100)).toBe(255);
   });
 
+  it('keeps the pink-lit side of a light (ivory) binding — it sat inside the old 120 flood tolerance and was eaten', () => {
+    const img = canvas(200, 260, { book: [20, 20, 179, 239] });
+    for (let y = 20; y <= 239; y++) for (let x = 20; x <= 179; x++) img.set(x, y, x < 30 ? [245, 175, 225] : [240, 230, 205]);
+    const out = keyOut(img, { pad: 0 });
+    expect(out.width).toBe(160);
+    expect(alphaAt(out, 2, 100)).toBe(255);
+  });
+
   it('despills a magenta fringe but keeps it FULLY opaque (semi-transparent edges look chewed)', () => {
     const img = canvas(60, 80);
     // Left edge column with magenta spill. Uneven R/B on purpose: (R+B)/2−G > 30 makes it spill, while
