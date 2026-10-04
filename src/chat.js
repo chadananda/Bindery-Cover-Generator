@@ -288,6 +288,10 @@ export const refineRequest = (feedback, book = {}) =>
   `features (e.g. "tall high-contrast Trajan-style Roman capitals with wide letter spacing", "Art Nouveau display letters"). ` +
   `If what they asked for is close to the current typeface, still change it clearly (case, weight, contrast, proportions, ` +
   `spacing); a request the image already satisfies comes back unchanged.\n` +
+  `The image editor is CONSERVATIVE: mild wording ("subtle", "slightly", "a bit") comes back almost unchanged. So every ` +
+  `command states the target look in concrete visual terms, how far it is from the current look (e.g. "nearly as dark as ` +
+  `the leather", "about twice as bright as now") and what it must no longer look like ("they must no longer look gold or ` +
+  `brass"). Even when they ask for "a bit", make the change unmistakable at thumbnail size.\n` +
   `Give commands ONLY for what they asked for — turn their words into specifics, but never remove, add or move anything ` +
   `they did not mention (no "remove the corner ornaments" unless they asked).\n` +
   `Output ONLY a short numbered list, one command per line ("1. …"), usually 1–4 commands. If they want the author line ` +

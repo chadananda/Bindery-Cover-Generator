@@ -17,8 +17,10 @@ export async function generateImage({
 }) {
   if (!apiKey) throw new Error('No Gemini API key');
   const parts = [];
-  if (inputImage) parts.push({ inlineData: { mimeType: inputMime, data: inputImage } });
-  if (inputImage && styleImage) parts.push({ inlineData: { mimeType: 'image/png', data: styleImage } });
+  // Gemini returns JPEG at 2K, stored under .png keys: label inputs by their actual bytes (base64 "/9j/" = JPEG).
+  const mimeOf = (b64, fallback) => (b64.startsWith('/9j/') ? 'image/jpeg' : b64.startsWith('iVBOR') ? 'image/png' : fallback);
+  if (inputImage) parts.push({ inlineData: { mimeType: mimeOf(inputImage, inputMime), data: inputImage } });
+  if (inputImage && styleImage) parts.push({ inlineData: { mimeType: mimeOf(styleImage, 'image/png'), data: styleImage } });
   parts.push({ text: prompt });
   const init = {
     method: 'POST',

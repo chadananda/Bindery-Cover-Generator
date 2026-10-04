@@ -58,5 +58,13 @@ describe('generateImage', () => {
     const parts = JSON.parse(fetch.mock.calls[0][1].body).contents[0].parts;
     expect(parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'U0VU' } }, { inlineData: { mimeType: 'image/png', data: 'TU9E' } }, { text: 'restyle' }]);
   });
+
+  it('labels an input image by its bytes (2K results are JPEG under .png keys)', async () => {
+    const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
+    await generateImage({ apiKey: 'k', prompt: 'p', inputImage: '/9j/4AAQ', styleImage: 'iVBORw0K', fetch });
+    const parts = JSON.parse(fetch.mock.calls[0][1].body).contents[0].parts;
+    expect(parts[0].inlineData.mimeType).toBe('image/jpeg');
+    expect(parts[1].inlineData.mimeType).toBe('image/png');
+  });
 });
 

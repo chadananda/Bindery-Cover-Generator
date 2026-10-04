@@ -195,6 +195,13 @@ describe('editSteps', () => {
     expect(r).toMatch(/never remove, add or move anything they did not mention/i);
   });
 
+  it('commands are concrete and say what it must no longer look like (mild "subtle bronze" came back unchanged)', () => {
+    const r = refineRequest('make the corners dark brushed bronze', { title: 'X' });
+    expect(r).toMatch(/CONSERVATIVE/);
+    expect(r).toMatch(/must no longer look/i);
+    expect(r).toMatch(/how far it is from the current look/i);
+  });
+
   it('pulls a BYLINE: line out of the refined commands (NONE = no byline)', async () => {
     const { editSteps, bylineFrom } = await import('../src/chat.js');
     const text = '1. Remove the author line at the bottom\nBYLINE: NONE';
