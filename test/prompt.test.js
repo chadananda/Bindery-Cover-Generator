@@ -407,5 +407,18 @@ describe('effectiveStyles', () => {
     for (const x of [composeEditPrompt({ app: {} }, 'x'), composeBasedOnPrompt({ app: {} }, { title: 'A' }, 'B'), composeSetStylePrompt({ app: {} }, { title: 'A' }, 'B')])
       expect(x).toMatch(/whites, creams and ivories stay clean and neutral.*correct it; never add one/i);
   });
+
+  it('a collection with no cover yet gets a boxed set built from a volume (not another single book)', async () => {
+    const { composeSetFromVolumePrompt, composePrompt: compose } = await import('../core/prompt.js');
+    const p = composeSetFromVolumePrompt({ app: {} }, { title: 'Sahih Muslim', type: 'Collection' }, 'Sahih Muslim (Book 1)', 19);
+    expect(p).toMatch(/boxed set|slipcase/i);
+    expect(p).toMatch(/19 volumes/);
+    expect(p).toMatch(/spines/i);
+    expect(p).toContain('"Sahih Muslim"');
+    expect(p).not.toMatch(/turn it into the cover of a different book/i);
+    // plain Generate on a collection: also a set
+    const proj = { app: {}, shelves: [], collections: [{ id: 'c', name: 'Sahih Muslim' }], books: [{ id: 'c', collectionId: 'c', type: 'Collection' }, { id: 'v1', collectionId: 'c' }, { id: 'v2', collectionId: 'c' }] };
+    expect(compose(proj, { id: 'c', title: 'Sahih Muslim', type: 'Collection', collectionId: 'c' })).toMatch(/boxed set of its 2 volumes/i);
+  });
 });
 

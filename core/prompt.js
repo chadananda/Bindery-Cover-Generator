@@ -118,6 +118,11 @@ function finish(out, k, bgName) {
 function bookLines(project, book) {
   const out = [];
   const { title, byline: by } = coverText(book);
+  // A collection's own cover is the SET, not one more volume.
+  if (book?.type === 'Collection') {
+    const n = (project?.books || []).filter((b) => b.collectionId && b.collectionId === book.collectionId && b.type !== 'Collection').length;
+    out.push(`This is the cover picture for a whole COLLECTION: photograph a boxed set${n ? ` of its ${n} volumes` : ''} — a slipcase or box holding the volumes, their spines showing side by side, in the binding described above; the set's title "${title}" on the front of the box.`);
+  }
   if (title) out.push(`The title "${title}" is stamped on the cover${book?.subtitle ? `, with the subtitle "${book.subtitle}" smaller beneath it` : ''}.`);
   if (by) out.push(`The line "${by}" is stamped smaller at the bottom of the cover.`);
   else if (book?.byline === '') out.push(NO_BYLINE);
@@ -243,6 +248,18 @@ export function composeSetStylePrompt(project, book, refTitle, key) {
     `copy the second image's title, number or centre illustration onto it — choose a fitting emblem for the whole set in the ` +
     `same technique. Do not re-shoot, crop or zoom. ${metal(k)} ${noDrift(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, ` +
     `with NO shadow, and keep the same ${k.name.toLowerCase()} margin around the set.`;
+}
+
+/** A collection with no cover yet, from one of its volumes: a NEW photograph of the whole set in that volume's binding
+ *  (editing the volume's photograph only ever made another single book). */
+export function composeSetFromVolumePrompt(project, book, volTitle, n, key) {
+  const k = KEY_COLORS[key] || keyColor(project), title = coverText(book).title;
+  return `The attached photograph is "${volTitle}", one volume of a set. Make a NEW photograph of the WHOLE SET as a collection: ` +
+    `a handsome boxed set — a slipcase holding ${n ? `${n} volumes` : 'its volumes'}, their spines showing side by side, each bound exactly like the ` +
+    `attached volume (same leather, colour, gilt tooling, ornament and lettering style). On the front face of the slipcase, the set's title ` +
+    `"${title}" in the same lettering, with an ornament in the same style; do not copy the volume's own title or number. Photographed ` +
+    `from the front at a slight angle so the box and the row of spines both show, the whole set in frame. ${metal(k)} ` +
+    `The background is SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, with a ${k.name.toLowerCase()} margin around the set.`;
 }
 
 export function composeEditPrompt(project, change, key) {
