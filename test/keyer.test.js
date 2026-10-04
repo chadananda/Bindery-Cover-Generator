@@ -83,6 +83,21 @@ describe('keyOut — the four passes, then trim + pad', () => {
     for (const x of [0, 1, 2]) { const i = (30 * out.width + x) * 4; expect([...out.data.slice(i, i + 3)]).toEqual([200, 40, 50]); }
   });
 
+  it('leaves a PURPLE binding purple to its edge (purple is close to magenta; Isaiah got a dark edge band)', () => {
+    const img = canvas(200, 260, { book: [20, 20, 179, 239] });
+    for (let y = 20; y <= 239; y++) for (let x = 20; x <= 179; x++) img.set(x, y, [100, 40, 150]); // royal purple book
+    const out = keyOut(img, { pad: 0 });
+    for (const x of [0, 1, 3, 6]) { const i = (100 * out.width + x) * 4; expect([...out.data.slice(i, i + 3)]).toEqual([100, 40, 150]); }
+  });
+
+  it('keeps the light highlights along a purple binding\'s edge (they sit within the usual tolerance of magenta)', () => {
+    const img = canvas(200, 260, { book: [20, 20, 179, 239] });
+    for (let y = 20; y <= 239; y++) for (let x = 20; x <= 179; x++) img.set(x, y, x < 24 ? [175, 95, 205] : [100, 40, 150]);
+    const out = keyOut(img, { pad: 0 });
+    expect(out.width).toBe(160);                                   // the highlight columns were not flood-filled away
+    expect(alphaAt(out, 1, 100)).toBe(255);
+  });
+
   it('despills a magenta fringe but keeps it FULLY opaque (semi-transparent edges look chewed)', () => {
     const img = canvas(60, 80);
     // Left edge column with magenta spill. Uneven R/B on purpose: (R+B)/2−G > 30 makes it spill, while

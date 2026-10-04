@@ -33,7 +33,19 @@ export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
   const { width: W, height: H } = img;
   const d = new Uint8ClampedArray(img.data);
   const bg = sampleBackground(img);
-  const isBg = (i) => dist(d, i, bg) <= tolerance || dist(d, i, key) <= tolerance;
+  // A binding that is itself key-coloured (purple against magenta) has highlights within the usual tolerance of the
+  // backdrop, and the flood-fill bit them off its edge. Sample the middle of the image (the book): if its colour leans
+  // to the key, flood with a tighter tolerance.
+  const lean = (() => {
+    const kc = [0, 1, 2].filter((c) => key[c] > 127), oc = [0, 1, 2].filter((c) => key[c] <= 127), casts = [];
+    if (!kc.length || !oc.length) return 0;
+    for (let y = Math.floor(H * 0.3); y < H * 0.7; y += 4) for (let x = Math.floor(W * 0.3); x < W * 0.7; x += 4) {
+      const i = (y * W + x) * 4; casts.push(Math.min(...kc.map((c) => d[i + c])) - Math.max(...oc.map((o) => d[i + o])));
+    }
+    casts.sort((a, b) => a - b); return casts[Math.floor(casts.length / 2)] || 0;
+  })();
+  const tol = lean > 30 ? Math.min(tolerance, 70) : tolerance;
+  const isBg = (i) => dist(d, i, bg) <= tol || dist(d, i, key) <= tol;
   const clear = (p) => { d[p * 4 + 3] = 0; };
   const transparent = (p) => d[p * 4 + 3] === 0;
   const neighbours = (p) => {
@@ -85,6 +97,21 @@ export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
     for (const q of neighbours(p)) if (!transparent(q) && shadowLike(q * 4)) enqueue(q);
   }
 
+  // The binding's OWN cast: a purple or magenta-ish book is that colour all over. Measure the median cast (what all key
+  // channels share above the others) in a ring a little way inside the edge, and only treat the EXCESS at the edge as
+  // spill — otherwise a purple binding gets a dark band round its edge.
+  const band = Math.max(3, Math.round(W * 0.03));
+  const castOf = (i) => Math.min(...keyChannels.map((c) => d[i + c])) - Math.max(...offChannels.map((o) => d[i + o]));
+  const edgeDist = new Int32Array(W * H).fill(-1);
+  if (keyChannels.length && offChannels.length) {
+    head = 0; tail = 0;
+    for (let p = 0; p < W * H; p++) if (transparent(p)) { edgeDist[p] = 0; queue[tail++] = p; }
+    while (head < tail) { const p = queue[head++]; if (edgeDist[p] >= band * 2) continue; for (const q of neighbours(p)) if (edgeDist[q] < 0) { edgeDist[q] = edgeDist[p] + 1; queue[tail++] = q; } }
+  }
+  const ring = []; for (let p = 0; p < W * H; p++) if (edgeDist[p] > band && edgeDist[p] <= band * 2 && !transparent(p)) ring.push(castOf(p * 4));
+  ring.sort((a, b) => a - b);
+  const baseCast = ring.length ? Math.max(0, ring[Math.floor(ring.length / 2)]) : 0;
+
   // 4. Despill pixels within 2px of transparency. Clamp the key channels; KEEP them fully opaque.
   const nearTransparent = (p) => {
     const x = p % W, y = (p - x) / W;
@@ -100,27 +127,23 @@ export function keyOut(img, { key = MAGENTA, tolerance = 120, pad = 12 } = {}) {
     const keyMean = keyChannels.reduce((s, c) => s + d[i + c], 0) / keyChannels.length;
     const offMean = offChannels.reduce((s, c) => s + d[i + c], 0) / offChannels.length;
     // …and EVERY key channel must be raised (magenta spill lifts red AND blue): red leather lifts only red.
-    const spill = keyChannels.every((c) => offChannels.every((o) => d[i + c] > d[i + o] + 15));
+    const spill = keyChannels.every((c) => offChannels.every((o) => d[i + c] > d[i + o] + 15)) && castOf(i) > baseCast + 15;
     if (keyMean - offMean > 30 && spill && nearTransparent(p)) {
-      for (const c of keyChannels) d[i + c] = Math.min(d[i + c], offMean + 10);
+      for (const c of keyChannels) d[i + c] = Math.min(d[i + c], offMean + 10 + baseCast); // keep the binding's own cast
       d[i + 3] = 255;
     }
   }
 
   // 5. Edge cast: the backdrop tints the book's outer edges (a rounded spine reads purple). Within ~3% of the width from
   //    transparency, pull the key channels most of the way toward the others. Interior colours are untouched.
-  const band = Math.max(3, Math.round(W * 0.03));
   if (keyChannels.length && offChannels.length) {
-    const dist = new Int32Array(W * H).fill(-1); head = 0; tail = 0;
-    for (let p = 0; p < W * H; p++) if (transparent(p)) { dist[p] = 0; queue[tail++] = p; }
-    while (head < tail) { const p = queue[head++]; if (dist[p] >= band) continue; for (const q of neighbours(p)) if (dist[q] < 0) { dist[q] = dist[p] + 1; queue[tail++] = q; } }
     for (let p = 0; p < W * H; p++) {
-      if (dist[p] <= 0 || transparent(p)) continue;
+      if (edgeDist[p] <= 0 || edgeDist[p] > band || transparent(p)) continue;
       const i = p * 4;
-      // The cast is what ALL key channels share above the others (magenta lifts red AND blue); take most of it away.
-      // A red binding has no such shared lift (blue stays low), so it is left alone.
-      const cast = Math.min(...keyChannels.map((c) => d[i + c])) - Math.max(...offChannels.map((o) => d[i + o]));
-      if (cast > 20) for (const c of keyChannels) d[i + c] = Math.round(d[i + c] - cast * 0.7);
+      // The cast is what ALL key channels share above the others (magenta lifts red AND blue); take most of the EXCESS
+      // over the binding's own cast away. A red binding has no shared lift; a purple one's lift is its own colour.
+      const excess = castOf(i) - baseCast;
+      if (excess > 20) for (const c of keyChannels) d[i + c] = Math.round(d[i + c] - excess * 0.7);
     }
   }
 
