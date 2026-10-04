@@ -290,6 +290,8 @@ export const refineRequest = (feedback, book = {}) =>
   `features (e.g. "tall high-contrast Trajan-style Roman capitals with wide letter spacing", "Art Nouveau display letters"). ` +
   `If what they asked for is close to the current typeface, still change it clearly (case, weight, contrast, proportions, ` +
   `spacing); a request the image already satisfies comes back unchanged.\n` +
+  `Give commands ONLY for what they asked for — turn their words into specifics, but never remove, add or move anything ` +
+  `they did not mention (no "remove the corner ornaments" unless they asked).\n` +
   `Output ONLY a short numbered list, one command per line ("1. …"), usually 1–4 commands. If they want the author line ` +
   `removed or changed (author, byline, credit), add a last line "BYLINE: NONE" (no author line) or "BYLINE: <exact new text>".`;
 const BYLINE_LINE = /^\s*BYLINE:\s*(.*)$/im;

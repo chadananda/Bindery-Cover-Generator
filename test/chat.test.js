@@ -189,6 +189,12 @@ describe('editSteps', () => {
     expect(r).toMatch(/visibly different/i);
   });
 
+  it('never adds changes the director did not ask for (it slipped in "remove the corner ornaments")', () => {
+    const r = refineRequest('the lettering an elegant serif font, deeply embossed gold', { title: 'X' });
+    expect(r).toMatch(/only[^.]*what they asked/i);
+    expect(r).toMatch(/never remove, add or move anything they did not mention/i);
+  });
+
   it('pulls a BYLINE: line out of the refined commands (NONE = no byline)', async () => {
     const { editSteps, bylineFrom } = await import('../src/chat.js');
     const text = '1. Remove the author line at the bottom\nBYLINE: NONE';
