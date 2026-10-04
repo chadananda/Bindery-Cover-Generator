@@ -353,5 +353,14 @@ describe('effectiveStyles', () => {
     expect(p).toContain('The line "Hafiz"');
     expect(composeBasedOnPrompt({ app: {} }, { title: 'Poems from the Divan of Hafiz', author: 'Hafiz' }, 'X', { refAuthor: 'Y' })).toContain('"Poems from the Divan"');
   });
+
+  it('coverTitle overrides the printed title (the catalogue title is untouched)', async () => {
+    const { coverText, composePrompt: compose } = await import('../core/prompt.js');
+    expect(coverText({ title: 'Selections from the Writings of the Báb', author: 'The Báb', coverTitle: 'Selected Writings' })).toEqual({ title: 'Selected Writings', byline: 'The Báb' });
+    // a cover title that itself ends with the author: no second name
+    expect(coverText({ title: 'X', author: 'Hafiz', coverTitle: 'The Divan of Hafiz' })).toEqual({ title: 'The Divan of Hafiz', byline: '' });
+    expect(coverText({ title: 'X', author: 'Hafiz', coverTitle: '  ' }).title).toBe('X');
+    expect(compose({ app: {} }, { title: 'Long Catalogue Title', author: 'A', coverTitle: 'Short' })).toContain('The title "Short"');
+  });
 });
 

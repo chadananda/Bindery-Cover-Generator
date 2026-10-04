@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=59" />
+  <link rel="stylesheet" href="/styles.css?v=60" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -159,6 +159,11 @@
         <div class="cover-side">
           <div class="im-ref" id="im-ref" hidden></div>
           <div class="im-status-row"><span id="im-status" class="status"></span><span id="im-aspect" class="badge" hidden></span></div>
+          <div class="on-cover" data-write title="What the cover prints. Changing it here never changes the catalogue title or author.">
+            <span class="oc-lab">On the cover</span>
+            <input id="oc-title" aria-label="Title printed on the cover" placeholder="Title" />
+            <div class="oc-row"><input id="oc-by" aria-label="Author line printed on the cover" placeholder="Author line" /><label class="check oc-none"><input type="checkbox" id="oc-noby" /> none</label></div>
+          </div>
           <div class="cover-actions" data-write>
             <button type="button" class="btn small gold" data-act="generate" title="A new cover from this book's own style layers (library → shelf → collection → book; Details → centre illustration)">✦ Generate</button>
             <button type="button" class="btn small" data-act="retry" title="Send the request that made this version again — same prompt, same starting image — for another roll">↻ Try again</button>
@@ -206,10 +211,6 @@
           <label class="field"><span>Author</span><input id="im-by" /></label>
         </div>
         <div class="row wrap">
-          <label class="field grow"><span>Printed byline <small>· blank = the author</small></span><input id="im-byline" /></label>
-          <label class="check" data-write><input type="checkbox" id="im-noby" /> No author line</label>
-        </div>
-        <div class="row wrap">
           <label class="check" data-write><input type="checkbox" id="im-removebg" checked /> Cut away the background</label>
         </div>
         <details class="inherit"><summary>Inherited style</summary><div id="im-layers"></div></details>
@@ -254,6 +255,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=96"></script>
+  <script type="module" src="/app.js?v=97"></script>
 </body>
 </html>

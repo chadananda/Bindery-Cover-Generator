@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=96';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=97';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -902,21 +902,34 @@ function renderManager() {
       <span class="ver-lab">${esc(verLabel(x))}${x.cover ? '' : ' · raw'}</span>
       ${x.edit !== 'current site cover' ? `<span class="ver-del" role="button" tabindex="0" data-delver="${x.id}" data-write title="Delete this version (and its images)" aria-label="Delete version">×</span>` : ''}</button>`).join('');
 }
-// Printed byline: unset = the author; "None" = no author line; text = that credit instead.
+// "On the cover": the printed title and author line, shown as they will print (coverText: an "of <author>" ending is cut,
+// the name printed once). Editing sets cover-only overrides — books.coverTitle / books.byline — never the catalogue
+// title/author. Back to the default text (or blank) = no override.
 function showByline(b) {
-  $('im-noby').checked = b.byline === ''; $('im-byline').disabled = b.byline === '';
-  $('im-byline').value = b.byline || ''; $('im-byline').placeholder = b.author ? `the author: ${b.author}` : 'none';
+  const cur = coverText(b), def = coverText({ ...b, coverTitle: null, byline: null });
+  $('oc-title').value = cur.title; $('oc-title').placeholder = def.title;
+  $('oc-noby').checked = b.byline === ''; $('oc-by').disabled = b.byline === '';
+  $('oc-by').value = cur.byline; $('oc-by').placeholder = b.byline === '' ? 'no author line' : def.byline || 'no author line';
 }
-function setByline(b, v) { b.byline = v; patch('books', b.id, { byline: v }); showByline(b); renderManager(); }
-$('im-byline').addEventListener('change', (e) => { const b = imBook(); if (b) setByline(b, e.target.value.trim() || null); });
-$('im-noby').addEventListener('change', (e) => { const b = imBook(); if (b) setByline(b, e.target.checked ? '' : null); });
+function setCover(b, fields) { Object.assign(b, fields); patch('books', b.id, fields); showByline(b); renderManager(); }
+$('oc-title').addEventListener('change', (e) => {
+  const b = imBook(); if (!b) return;
+  const v = e.target.value.trim(), def = coverText({ ...b, coverTitle: null }).title;
+  setCover(b, { coverTitle: !v || v === def ? null : v });
+});
+$('oc-by').addEventListener('change', (e) => {
+  const b = imBook(); if (!b) return;
+  const v = e.target.value.trim(), def = coverText({ ...b, byline: null }).byline;
+  setCover(b, { byline: !v || v === def ? null : v });
+});
+$('oc-noby').addEventListener('change', (e) => { const b = imBook(); if (b) setCover(b, { byline: e.target.checked ? '' : null }); });
 // Field edits persist as you type (they live on the book).
 const imFields = { 'im-content': 'content', 'im-style': 'style', 'im-t': 'title', 'im-sub': 'subtitle', 'im-by': 'author' };
 for (const [id, field] of Object.entries(imFields)) {
   $(id).addEventListener('input', (e) => {
     const b = imBook(); if (!b) return;
     b[field] = e.target.value; patch('books', b.id, { [field]: e.target.value });
-    $('im-prompt').textContent = composePrompt(project, b);
+    $('im-prompt').textContent = composePrompt(project, b); if (field === 'title' || field === 'author') showByline(b);
     if (field === 'title' || field === 'author') $('im-title').textContent = [b.title, b.author, shelfById(b.shelfId)?.name].filter(Boolean).join(' · ');
   });
 }
@@ -1067,7 +1080,7 @@ $('chat-mode').addEventListener('click', (e) => { const b = e.target.closest('[d
 // Feedback → numbered, concrete commands read against THIS cover (vague feedback made the image model change ~nothing),
 // shown in the chat as "Applying to …". null = it isn't a change request. Every edit path goes through this.
 async function refineEdit(b, text, { fallback = false } = {}) {
-  const { instruction, byline } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text, title: b.title }) }); // title: a just-applied rename may not be saved yet
+  const { instruction, byline } = await api(`${base()}/refine`, { method: 'POST', body: JSON.stringify({ bookId: b.id, text, title: coverText(b).title }) }); // the PRINTED title (and a just-applied rename may not be saved yet)
   // An author-line change is saved on the book too, so later regenerations keep it ("" = no author line).
   if (byline !== undefined && byline !== null) { b.byline = byline; patch('books', b.id, { byline }); }
   const none = !instruction || /^NONE\b/i.test(instruction);

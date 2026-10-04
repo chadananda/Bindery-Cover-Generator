@@ -124,9 +124,11 @@ function authorInTitle(title, author) {
   return hit ? m[1] : null;
 }
 export function coverText(book) {
-  const title = (book?.title || '').trim(), by = bylineOf(book);
+  const custom = (book?.coverTitle || '').trim(); // the user's printed title, if set
+  const title = custom || (book?.title || '').trim(), by = bylineOf(book);
   if (book?.byline != null) return { title, byline: by };
   const rest = authorInTitle(title, book?.author);
+  if (custom) return { title, byline: rest == null ? by : '' }; // their words exactly; the name only once
   if (rest == null) return { title, byline: by };
   return nameWords(rest).filter((w) => !['a', 'an', 'the'].includes(w)).length >= 2 ? { title: rest, byline: by } : { title, byline: '' };
 }
@@ -201,7 +203,7 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
  *  "Same Style" on a set edited the model's single-book photograph instead and lost the set. */
 export function composeSetStylePrompt(project, book, refTitle) {
   const k = keyColor(project);
-  const title = (book?.title || '').trim();
+  const title = coverText(book).title;
   // The set's own credit ("J.M. Rodwell translation") stays unless the book has a byline setting.
   const credit = book?.byline == null ? 'keep any author or translator line already on the set, restyled to match'
     : book.byline ? `with "${book.byline}" smaller beneath` : "print no author's name";
