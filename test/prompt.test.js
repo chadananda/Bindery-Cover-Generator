@@ -366,7 +366,8 @@ describe('effectiveStyles', () => {
   it('the default title lettering is decorative, never forced to plain block capitals', async () => {
     const { DEFAULT_APP_STYLE } = await import('../core/prompt.js');
     expect(DEFAULT_APP_STYLE).not.toMatch(/capital letters/i);
-    expect(DEFAULT_APP_STYLE).toMatch(/decorative typeface/i);
+    expect(DEFAULT_APP_STYLE).toMatch(/chosen for this particular book/i);
+    expect(DEFAULT_APP_STYLE).toMatch(/differ from book to book/i);   // one prescribed recipe made every title alike
     expect(DEFAULT_APP_STYLE).toMatch(/never plain block capitals/i);
   });
 });

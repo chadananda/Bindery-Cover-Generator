@@ -13,8 +13,8 @@ export const DEFAULT_APP_STYLE =
   'An antique hand-crafted leather-bound book. Rich aged leather with visible grain, wear marks and patina; ' +
   'a deeply embossed and tooled illustration in the centre, raised leather relief with hand-painted details in ' +
   'jewel tones and gold leaf; an ornate gold-leaf border frames the illustration. The title is deeply stamped in ' +
-  'gold leaf at the top, large and legible, in an elegant decorative typeface that suits the book — engraved small ' +
-  'capitals, a classical serif with swash initials, or period display lettering — never plain block capitals. ' +
+  'gold leaf at the top, large and legible, in lettering chosen for this particular book — its era, culture and mood — ' +
+  'so that titles differ from book to book; decorative and handsome, never plain block capitals. ' +
   'Hyper-detailed macro photography of a real, physical book — skeuomorphic, never a flat graphic or a plaque. No modern elements.';
 
 const norm = (x) => String(x || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/['’‘ʻʼ`]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
