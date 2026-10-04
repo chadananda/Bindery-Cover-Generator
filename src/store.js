@@ -6,7 +6,7 @@ const COLS = {
   libraries: ['name', 'style', 'keyColor', 'lookId', 'modelBookId'],
   shelves: ['id', 'name', 'style', 'override'],
   collections: ['id', 'shelfId', 'name', 'style', 'override'],
-  books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample', 'override', 'refBookId', 'refMode', 'byline', 'coverTitle'],
+  books: ['id', 'title', 'author', 'subtitle', 'type', 'description', 'source', 'shelfId', 'collectionId', 'content', 'style', 'selected', 'sample', 'override', 'refBookId', 'refMode', 'byline', 'coverTitle', 'pos'],
   versions: ['id', 'bookId', 'raw', 'cover', 'prompt', 'basePrompt', 'inputKey', 'styleKey', 'aspect', 'edit', 'lookId', 'at', 'w', 'h'],
   looks: ['id', 'name', 'styles', 'notes', 'at'],
 };

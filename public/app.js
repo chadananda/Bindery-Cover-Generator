@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=98';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=99';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -241,6 +241,8 @@ function renderShelves() {
 const openColls = new Set(store.get('openColls', []));
 let lastPick = null; // anchor for ⇧-click range selection
 const isHead = (b) => b.type === 'Collection' && b.collectionId;
+// A collection's volumes in their set order (books.pos, e.g. the Bible's canon); unnumbered ones keep their order after.
+const byPos = (list) => list.map((b, i) => [b, i]).sort(([a, i], [b, j]) => (a.pos ?? 1e9) - (b.pos ?? 1e9) || i - j).map(([b]) => b);
 // Where a collection cover takes its look from when no ★ model is set: its most recently made volume (not a site cover).
 const volumeSource = (head) => project.books.filter((x) => x.collectionId === head.collectionId && x.id !== head.id)
   .map((x) => [x, currentVersion(x)]).filter(([, v]) => v && v.edit !== 'current site cover' && (v.raw || v.cover))
@@ -265,7 +267,7 @@ function shelfCards(books) {
   const grouped = new Set(series.flatMap(([, v]) => v));
   loose = loose.filter((b) => !grouped.has(b));
   return loose.map((b) => cardHtml(b)).join('')
-    + heads.map((h) => { const vols = books.filter((b) => b !== h && b.collectionId === h.collectionId), open = openColls.has(h.collectionId);
+    + heads.map((h) => { const vols = byPos(books.filter((b) => b !== h && b.collectionId === h.collectionId)), open = openColls.has(h.collectionId);
       return cardHtml(h, { vols: vols.length, open }) + (open ? tray(h.collectionId, h.title, vols) : ''); }).join('')
     + series.map(([stem, vols]) => { const key = `series:${stem}`, open = openColls.has(key);
       return seriesCard(key, stem, vols, open) + (open ? tray(key, stem, vols) : ''); }).join('');

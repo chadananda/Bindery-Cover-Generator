@@ -168,5 +168,11 @@ describe('store', () => {
     expect(s.byKind[0]).toMatchObject({ kind: 'generate', n: 2 });
     expect(s.byLib.map((x) => x.lib).sort()).toEqual(['ocean', 'other']);
   });
+
+  it('stores a book position (collection order)', async () => {
+    await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'Genesis' }]);
+    await patchRow(db, 'ocean', 'books', 'b1', { pos: 1 });
+    expect((await loadLibrary(db, 'ocean')).books[0].pos).toBe(1);
+  });
 });
 
