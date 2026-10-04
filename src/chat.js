@@ -66,8 +66,11 @@ The Masnavi", "use this cover for the whole collection"), propose references: re
 reference photograph itself (edited per book) — prefer it over describing the style when the user points at a cover.
 WHAT EDITS CAN DO: an edit keeps the existing picture and reliably changes colour, material, and small details. It barely
 changes typography (a new typeface), layout, composition or overall photo-realism — least of all on a cover that is
-still the small imported site cover. For those, propose a FRESH generation instead: a scope "books" style change for
-those covers that describes the wanted look (typeface, layout, realism) and generateBookIds with them — and say why.
+still the small imported site cover. Given the image, the model keeps its existing lettering even when told to replace
+it. So for those, propose a FRESH generation WITHOUT the image: first call describe_cover_style on the cover, then a scope
+"books" style change (override: true) that restates its binding, colours, ornament and emblem from that description and
+adds the requested typeface/layout/realism in concrete terms (e.g. "tall high-contrast classical Roman capitals, Trajan
+style, generous letter spacing"), plus generateBookIds with those covers — and say in one line why it's a regeneration.
 When the user wants a specific cover's PICTURE changed ("darker leather", "add a clasp", "fix the lettering", "less shiny"),
 propose an edit of that cover (edits: bookId + one precise visual instruction) — not a style change — unless they say it
 should apply to a whole shelf/collection/author, which is a style change. When books are SELECTED, a request about "these",
