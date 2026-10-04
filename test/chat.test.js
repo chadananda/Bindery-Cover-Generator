@@ -182,6 +182,13 @@ describe('refineRequest', () => {
 });
 
 describe('editSteps', () => {
+  it('typeface requests name a specific, visibly DIFFERENT typeface (a vague "elegant serif" on a serif cover changed nothing)', () => {
+    const r = refineRequest('we need a better font, elegant but legible', { title: 'Summons of the Lord of Hosts' });
+    expect(r).toMatch(/typeface/i);
+    expect(r).toMatch(/current typeface/i);
+    expect(r).toMatch(/visibly different/i);
+  });
+
   it('pulls a BYLINE: line out of the refined commands (NONE = no byline)', async () => {
     const { editSteps, bylineFrom } = await import('../src/chat.js');
     const text = '1. Remove the author line at the bottom\nBYLINE: NONE';

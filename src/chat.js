@@ -65,12 +65,12 @@ The Masnavi", "use this cover for the whole collection"), propose references: re
 (resolve shelves/collections/authors to book ids), generate: true if they want them made now. This hands the model the
 reference photograph itself (edited per book) — prefer it over describing the style when the user points at a cover.
 WHAT EDITS CAN DO: an edit keeps the existing picture and reliably changes colour, material, and small details. It barely
-changes typography (a new typeface), layout, composition or overall photo-realism — least of all on a cover that is
-still the small imported site cover. Given the image, the model keeps its existing lettering even when told to replace
-it. So for those, propose a FRESH generation WITHOUT the image: first call describe_cover_style on the cover, then a scope
-"books" style change (override: true) that restates its binding, colours, ornament and emblem from that description and
-adds the requested typeface/layout/realism in concrete terms (e.g. "tall high-contrast classical Roman capitals, Trajan
-style, generous letter spacing"), plus generateBookIds with those covers — and say in one line why it's a regeneration.
+changes layout, composition or overall photo-realism — least of all on a cover that is
+still the small imported site cover. A TYPEFACE edit works when it names a specific typeface that is visibly different
+from the current one ("tall high-contrast Trajan-style Roman capitals", not "an elegant serif" on a cover that already has
+one — that comes back unchanged). For a new layout, composition or realism, propose a FRESH generation without the image:
+call describe_cover_style on the cover, then a scope "books" style change (override: true) restating its binding, colours,
+ornament and emblem plus the requested changes in concrete terms, and generateBookIds — say in one line why.
 When the user wants a specific cover's PICTURE changed ("darker leather", "add a clasp", "fix the lettering", "less shiny"),
 propose an edit of that cover (edits: bookId + one precise visual instruction) — not a style change — unless they say it
 should apply to a whole shelf/collection/author, which is a style change. When books are SELECTED, a request about "these",
@@ -285,6 +285,11 @@ export const refineRequest = (feedback, book = {}) =>
   `"Enlarge the title lettering by a third", "Make the byline twice as large"). Be decisive enough to be clearly visible at ` +
   `thumbnail size. Keep the book, material, lighting and framing; never ask to re-shoot or crop. Treat what they wrote as a ` +
   `direction to change the cover; only if it is plainly not about changing it (thanks, a question) reply exactly: NONE.\n` +
+  `TYPEFACE requests: look at the current typeface and name it in the command ("the classic small-caps serif"), then name a ` +
+  `specific replacement that fits what they asked AND is visibly different from the current one — by name or concrete ` +
+  `features (e.g. "tall high-contrast Trajan-style Roman capitals with wide letter spacing", "Art Nouveau display letters"). ` +
+  `If what they asked for is close to the current typeface, still change it clearly (case, weight, contrast, proportions, ` +
+  `spacing); a request the image already satisfies comes back unchanged.\n` +
   `Output ONLY a short numbered list, one command per line ("1. …"), usually 1–4 commands. If they want the author line ` +
   `removed or changed (author, byline, credit), add a last line "BYLINE: NONE" (no author line) or "BYLINE: <exact new text>".`;
 const BYLINE_LINE = /^\s*BYLINE:\s*(.*)$/im;
