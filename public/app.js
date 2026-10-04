@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { detectKey, KEYS, composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=109';
+import { detectKey, KEYS, composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=110';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -301,8 +301,25 @@ function seriesCard(key, stem, vols, open) {
     <div class="thumb"><div class="book" data-coll-toggle="${esc(key)}" title="${esc(stem)} — show the volumes"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
       ${src ? pic(src, stem, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(stem)}</span>`}</div></div>
     <div class="meta"><span class="t">${esc(stem)}</span><span class="tags">Series</span>
-      <button type="button" class="vols" data-coll-toggle="${esc(key)}" aria-expanded="${open}">${open ? '▴ Hide' : '▾ Show'} ${vols.length} volumes</button></div>
+      <button type="button" class="vols" data-coll-toggle="${esc(key)}" aria-expanded="${open}">${open ? '▴ Hide' : '▾ Show'} ${vols.length} volumes</button>
+      <button type="button" class="vols make-coll" data-make-coll="${esc(key)}" data-write title="Make these volumes a real collection, with its own cover you can select, generate and restyle">＋ Make a collection</button></div>
   </article>`;
+}
+// A series (volumes grouped by a shared title stem) is not a book: its tile can't be selected or given a cover. This makes
+// it a real collection: a collections row, a head "book" (type Collection, no cover yet) and every volume linked, in
+// volume-number order (books.pos).
+async function makeCollection(stem, vols) {
+  const id = `col-${slug(stem)}`.slice(0, 64), shelfId = vols[0].shelfId || '';
+  if (project.collections.some((c) => c.id === id) || project.books.some((b) => b.id === id)) throw new Error('A collection with that name already exists');
+  const coll = { id, name: stem, shelfId, style: '', override: false };
+  const head = { id, title: stem, author: vols[0].author || '', subtitle: '', type: 'Collection', description: '', source: '', shelfId, collectionId: id, content: '', style: '', selected: null, sample: false, versions: [] };
+  await insert('collections', [coll]); project.collections.push(coll);
+  await insert('books', [{ ...head, versions: undefined }]); project.books.push(head);
+  const num = (t) => +(String(t).match(/\d+/)?.[0] ?? NaN);
+  vols.forEach((b, i) => { const pos = Number.isFinite(num(b.title)) ? num(b.title) : 1000 + i; Object.assign(b, { collectionId: id, pos }); patch('books', b.id, { collectionId: id, pos }); });
+  openColls.add(id); store.set('openColls', [...openColls]);
+  uiLog('make-collection', { input: { stem }, output: { id, volumes: vols.length } });
+  return head;
 }
 // Re-render one card in place (status changes, new versions) without rebuilding every shelf.
 function renderCard(bookId) {
@@ -331,6 +348,13 @@ function renderSelbar() {
 $('app').addEventListener('click', (e) => {
   const sec = e.target.closest('[data-shelf]'); if (!sec) return;
   const shelfId = sec.dataset.shelf;
+  const mk = e.target.closest('[data-make-coll]');
+  if (mk && authed) {
+    const key = mk.dataset.makeColl, stem = key.replace(/^series:/, '');
+    const vols = project.books.filter((b) => !b.collectionId && seriesStem(b.title) === stem);
+    makeCollection(stem, vols).then((h) => { renderAll(); openManager(h.id); }).catch((err) => alert(err.message));
+    return;
+  }
   const tog = e.target.closest('[data-coll-toggle]');
   if (tog) { const c = tog.dataset.collToggle; openColls.has(c) ? openColls.delete(c) : openColls.add(c); store.set('openColls', [...openColls]); renderShelves(); return; }
   const card = e.target.closest('[data-book]');
