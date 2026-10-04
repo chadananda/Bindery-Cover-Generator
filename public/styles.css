@@ -234,7 +234,7 @@ input[type=checkbox]:disabled { opacity: .5; cursor: not-allowed; }
 .actions { margin: .9rem 0 .8rem; }
 .im-preview-wrap { position: relative; }
 .im-preview { position: relative; aspect-ratio: 3 / 4; display: grid; place-items: center; border-radius: 4px; border: 1px solid var(--line-2); overflow: hidden; }
-.im-preview img { position: absolute; inset: 6% 9% 12%; width: 82%; height: 82%; object-fit: contain; filter: var(--adj, none) drop-shadow(0 18px 18px rgba(0, 0, 0, .45)); }
+.im-preview img { position: absolute; inset: 6% 9% 12%; width: 82%; height: 82%; object-fit: contain; filter: var(--adj, none) drop-shadow(0 18px 18px rgba(0, 0, 0, .45)); transform: scaleX(var(--adj-w, 1)); }
 .im-preview .hint { font-size: 16px; }
 /* Backdrops to judge the cut-out: an animated sweep through dark, colour and light, or a fixed one. */
 .bd-sweep { background: linear-gradient(120deg, #0b0906, #3a1d4a, #1d4a6b, #e9e2d3, #ffffff, #c96b2c, #0b0906); background-size: 600% 600%; animation: sweep 14s ease-in-out infinite; }
@@ -582,3 +582,23 @@ body.bench-open .libhead { margin-right: var(--bench-w); }
 .cover-side .ver { flex-basis: 60px; grid-template-rows: 72px auto; padding: .2rem; }
 .cover-side .ver img { height: 72px; }
 .cover-side .ver-lab { font-size: 11px; }
+.adj-ratio { margin: .2rem 0 .5rem; font-size: 12.5px; color: #6b6150; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
+.adj-ratio b { color: #2a1d08; } :root[data-theme="dark"] .adj-ratio { color: #a99e8c; } :root[data-theme="dark"] .adj-ratio b { color: #f2dea8; }
+.range-wrap { position: relative; display: block; }
+.range-wrap input[type=range] { position: relative; z-index: 1; }
+/* Tick marks under the Width slider: where it matches the original cover / the library's typical proportions.
+   The native thumb is ~16px, so positions run from 8px to (100% - 8px). */
+.ticks { position: absolute; inset: 0; pointer-events: none; }
+.tick { position: absolute; top: 50%; left: calc(8px + (100% - 16px) * var(--at)); width: 2px; height: 16px; margin: -8px 0 0 -1px; background: #a0571f; border-radius: 1px; }
+.tick i { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); font: 600 10px var(--sans); font-style: normal; color: #a0571f; white-space: nowrap; }
+.tick.library { background: #6b6150; } .tick.library i { color: #6b6150; }
+.sliders label:has(.range-wrap) { padding-bottom: .55rem; }
+/* The cover tools sit in the column beside the preview, so the preview gets the full height of the top area */
+.cover-side .tools { padding: .2rem 0 0; margin-top: auto; }
+.cover-top { align-items: stretch; }
+.cover { --pv-h: min(440px, 48vh); }
+.bench.chat-on .cover { --pv-h: min(360px, 38vh); }
+.cover-top + .drawer, .cover .drawer { margin-top: .6rem; }
+/* (re-stated after the larger defaults above so they still win) */
+@container (min-width: 660px) { .cover { --pv-h: min(480px, 50vh); } .bench.chat-on .cover { --pv-h: min(400px, 40vh); } }
+@media (max-height: 820px) { .cover { --pv-h: min(320px, 40vh); } .bench.chat-on .cover { --pv-h: min(250px, 30vh); } }

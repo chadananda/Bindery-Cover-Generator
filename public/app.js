@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=86';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=90';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -787,14 +787,42 @@ const adjSliders = () => [...document.querySelectorAll('#im-adjust [data-adj]')]
 const ZERO = { sepia: 0, gamma: 0 };
 const neutralOf = (s) => ZERO[s.dataset.adj] ?? 100;
 const gammaExp = () => 1 / (1 + (+document.querySelector('[data-adj="gamma"]').value) / 30);
-const cssFilters = () => adjSliders().filter((s) => s.dataset.adj !== 'gamma').map((s) => `${s.dataset.adj}(${s.value}%)`).join(' ');
+const cssFilters = () => adjSliders().filter((s) => !['gamma', 'width'].includes(s.dataset.adj)).map((s) => `${s.dataset.adj}(${s.value}%)`).join(' ');
 const adjNeutral = () => adjSliders().every((s) => +s.value === neutralOf(s));
 function applyAdjust() {
   adjSliders().forEach((s) => { s.nextElementSibling.textContent = s.value; });
   document.querySelectorAll('#adj-gamma feComponentTransfer > *').forEach((f) => f.setAttribute('exponent', gammaExp()));
-  $('im-preview').style.setProperty('--adj', adjNeutral() ? 'none' : `${gammaExp() < 1 ? 'url(#adj-gamma) ' : ''}${cssFilters()}`);
+  const f = cssFilters(), wide = widthPct() / 100;
+  $('im-preview').style.setProperty('--adj', f || gammaExp() < 1 ? `${gammaExp() < 1 ? 'url(#adj-gamma) ' : ''}${f}` : 'none');
+  $('im-preview').style.setProperty('--adj-w', wide);
   $('adj-save').disabled = adjNeutral();
+  renderRatio();
 }
+// Width: a sideways stretch, done here because Gemini won't reliably change a book's proportions. Ratio = height ÷ width;
+// "typical" = the median of the library's current generated covers.
+const widthPct = () => +document.querySelector('[data-adj="width"]').value;
+const coverRatio = (v) => v?.aspect || (v?.w && v?.h ? v.h / v.w : null);
+function typicalRatio() {
+  const r = project.books.filter((b) => b.type !== 'Collection').map((b) => currentVersion(b)).filter((v) => v?.aspect).map((v) => v.aspect).sort((x, y) => x - y);
+  return r.length ? r[Math.floor(r.length / 2)] : null;
+}
+function renderRatio() {
+  const b = imBook(), v = b && currentVersion(b), cur = coverRatio(v), typ = typicalRatio();
+  // The original = the book's site cover (its first imported version), when it has one with a known size.
+  const site = b?.versions.find((x) => x.edit === 'current site cover'), orig = site && site !== v ? coverRatio(site) : null;
+  if (!cur) { $('adj-ratio').innerHTML = ''; $('adj-width-ticks').innerHTML = ''; return; }
+  const at = (r) => { const p = Math.round(100 * cur / r); return p >= 85 && p <= 120 ? p : null; };
+  const marks = [['original', orig, at(orig || 0)], ['library', typ, at(typ || 0)]].filter(([, r, p]) => r && p);
+  // Tick marks on the slider at the widths that match the original cover and the library's typical cover.
+  const pos = (p) => (p - 85) / (120 - 85);
+  $('adj-width-ticks').innerHTML = marks.map(([k, , p]) => `<span class="tick ${k}" style="--at:${pos(p)}" title="${k === 'original' ? 'Original cover' : 'Library typical'} — width ${p}"><i>${k === 'original' ? 'orig' : 'lib'}</i></span>`).join('');
+  $('adj-ratio').innerHTML = `Height ÷ width: <b>${(cur / (widthPct() / 100)).toFixed(2)}</b>`
+    + marks.map(([k, r, p]) => ` · ${k === 'original' ? 'original cover' : 'library typical'} <b>${r.toFixed(2)}</b> <button type="button" class="btn small ghost" data-match-w="${p}" ${p === widthPct() ? 'disabled' : ''}>${p === widthPct() ? '✓ matched' : `Match (width ${p})`}</button>`).join('');
+}
+$('adj-ratio').addEventListener('click', (e) => {
+  const m = e.target.closest('[data-match-w]'); if (!m) return;
+  document.querySelector('[data-adj="width"]').value = m.dataset.matchW; applyAdjust();
+});
 function resetAdjust() { adjSliders().forEach((s) => { s.value = neutralOf(s); }); applyAdjust(); }
 $('im-adjust').addEventListener('input', (e) => { if (e.target.matches('[data-adj]')) applyAdjust(); });
 $('adj-reset').addEventListener('click', resetAdjust);
@@ -803,18 +831,20 @@ $('adj-save').addEventListener('click', async () => {
   imBusy(true, 'Saving…');
   try {
     const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
-    const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
+    const W = Math.round(bmp.width * widthPct() / 100); // the width stretch, if any
+    const c = Object.assign(document.createElement('canvas'), { width: W, height: bmp.height });
     const ctx = c.getContext('2d', { willReadFrequently: true });
     const g = gammaExp();
     if (g < 1) { // shadow lift first, per pixel (alpha untouched), then the CSS-style filters
       const t = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height }), tx = t.getContext('2d', { willReadFrequently: true });
       tx.drawImage(bmp, 0, 0); const d = tx.getImageData(0, 0, t.width, t.height), lut = Uint8ClampedArray.from({ length: 256 }, (_, i) => 255 * (i / 255) ** g);
       for (let i = 0; i < d.data.length; i += 4) { d.data[i] = lut[d.data[i]]; d.data[i + 1] = lut[d.data[i + 1]]; d.data[i + 2] = lut[d.data[i + 2]]; }
-      tx.putImageData(d, 0, 0); ctx.filter = cssFilters(); ctx.drawImage(t, 0, 0);
-    } else { ctx.filter = cssFilters(); ctx.drawImage(bmp, 0, 0); }
+      tx.putImageData(d, 0, 0); ctx.filter = cssFilters() || 'none'; ctx.drawImage(t, 0, 0, W, bmp.height);
+    } else { ctx.filter = cssFilters() || 'none'; ctx.drawImage(bmp, 0, 0, W, bmp.height); }
     const label = adjSliders().filter((s) => +s.value !== neutralOf(s)).map((s) => `${s.closest('label').querySelector('span').textContent.toLowerCase()} ${s.value}`).join(', ');
     const key = await storeImage(b, 'covers', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
-    await addVersion(b, { raw: v.raw, cover: key, prompt: v.prompt, aspect: v.aspect, w: bmp.width, h: bmp.height, lookId: v.lookId, edit: `adjust: ${label}` });
+    // raw: none — a later edit or re-key must start from THIS adjusted cover, not the unadjusted original.
+    await addVersion(b, { raw: null, cover: key, prompt: v.prompt, aspect: bmp.height / W, w: W, h: bmp.height, lookId: v.lookId, edit: `adjust: ${label}` });
     resetAdjust(); imStatus('Adjusted ✓ — saved as a new version', 'ok');
   } catch (err) { imStatus(err.message, 'err'); }
   finally { imBusy(false); renderCard(b.id); }

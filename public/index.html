@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=53" />
+  <link rel="stylesheet" href="/styles.css?v=57" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -175,12 +175,12 @@
             <h3 class="hist-h" title="Click a version to make it the current cover · × deletes a generated version">History</h3>
             <div id="im-strip" class="strip"></div>
           </div>
+          <nav class="tools" aria-label="Cover tools">
+            <button type="button" class="tool" data-drawer="adjust" aria-expanded="false" title="Brightness, colour, width — free and instant">Adjust</button>
+            <button type="button" class="tool" data-drawer="details" aria-expanded="false" title="Centre illustration, this book's style, titles and byline, the full prompt">Details</button>
+          </nav>
         </div>
       </div>
-      <nav class="tools" aria-label="Cover tools">
-        <button type="button" class="tool" data-drawer="adjust" aria-expanded="false">Adjust <small>brightness · colour</small></button>
-        <button type="button" class="tool" data-drawer="details" aria-expanded="false">Details <small>illustration · style · titles · prompt</small></button>
-      </nav>
       <div class="drawer" id="im-adjust" data-for="adjust" hidden>
         <div class="sliders">
           <label><span>Shadows</span><input type="range" min="0" max="100" value="0" data-adj="gamma" title="Lift the dark tones (dark leather) without blowing out the light ones" /><output>0</output></label>
@@ -188,7 +188,9 @@
           <label><span>Contrast</span><input type="range" min="50" max="200" value="100" data-adj="contrast" /><output>100</output></label>
           <label><span>Saturation</span><input type="range" min="0" max="200" value="100" data-adj="saturate" /><output>100</output></label>
           <label><span>Warmth</span><input type="range" min="0" max="50" value="0" data-adj="sepia" /><output>0</output></label>
+          <label><span>Width</span><span class="range-wrap"><input type="range" min="85" max="120" value="100" data-adj="width" title="Stretch the cover sideways — Gemini can't reliably change a book's proportions" /><span class="ticks" id="adj-width-ticks" aria-hidden="true"></span></span><output>100</output></label>
         </div>
+        <p class="adj-ratio" id="adj-ratio"></p>
         <div class="row wrap"><button type="button" class="btn small ghost" id="adj-reset">Reset</button><button type="button" class="btn small gold" id="adj-save" data-write>Save as new version</button><small>free · instant</small></div>
       </div>
       <div class="drawer" data-for="details" hidden>
@@ -252,6 +254,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=86"></script>
+  <script type="module" src="/app.js?v=90"></script>
 </body>
 </html>
