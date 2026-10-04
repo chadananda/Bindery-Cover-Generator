@@ -99,7 +99,7 @@ export function composePrompt(project, book, opts = {}) {
 // Shiny gold mirrors its surroundings — the key-colour backdrop came back as pink/cyan specks in the tooling.
 const metal = (k) => `The book is lit only by neutral white studio light: no ${k.name.toLowerCase()} light falls on it — its spine and edges keep the binding's own colour, and metallic surfaces reflect only neutral warm light, with no ${k.name.toLowerCase()}, pink, cyan, rainbow or iridescent tints.`;
 // Edits re-photograph the previous result against the backdrop, so a light binding gained a little more pink each time.
-const noDrift = (k) => `Keep the binding's true colours: whites, creams and ivories stay clean and neutral — if the photograph has picked up a ${k.name.toLowerCase()} or pink cast, correct it; never add one.`;
+const noDrift = (k) => `The backdrop must not tint the book: whites, creams and ivories stay clean and neutral — if the photograph has picked up a ${k.name.toLowerCase()} or pink cast, correct it; never add one.`;
 function finish(out, k, bgName) {
   out.push(
     metal(k),
