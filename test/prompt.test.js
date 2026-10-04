@@ -187,11 +187,11 @@ describe('effectiveStyles', () => {
     const modelPrompt = compose(proj, { title: 'The Masnavi', author: 'Rumi', shelfId: 's', description: 'Persian mystical poetry about love.', style: 'copper corner guards' });
     // later the defaults change — Similar Style must not care
     proj.app.style = 'CLOTH NOW';
-    const p = retitlePrompt(modelPrompt, proj, { title: 'Divan of Hafiz', author: 'Hafiz', shelfId: 's', content: 'a nightingale on a rose' });
+    const p = retitlePrompt(modelPrompt, proj, { title: 'The Divan', author: 'Hafiz', shelfId: 's', content: 'a nightingale on a rose' });
     expect(p).toContain('library leather');
     expect(p).toContain('copper corner guards');
     expect(p).not.toContain('CLOTH NOW');
-    expect(p).toContain('"Divan of Hafiz"');
+    expect(p).toContain('"The Divan"');
     expect(p).toContain('"Hafiz"');
     expect(p).toContain('a nightingale on a rose');
     expect(p).not.toContain('The Masnavi');
@@ -332,6 +332,26 @@ describe('effectiveStyles', () => {
     expect(p).toMatch(/do not copy[^.]*title/i);                  // the model's own title must not leak onto the set
     expect(p).toContain('#FF00FF');
     expect(p).toMatch(/metallic surfaces reflect only neutral/i);
+  });
+
+  it('a title ending "of/by <author>" prints the author once: cut the title, or keep it whole and drop the byline', async () => {
+    const { coverText, composePrompt: compose, composeBasedOnPrompt } = await import('../core/prompt.js');
+    expect(coverText({ title: 'Poems from the Divan of Hafiz', author: 'Hafiz' })).toEqual({ title: 'Poems from the Divan', byline: 'Hafiz' });
+    expect(coverText({ title: 'The Hidden Words of Bahá’u’lláh', author: 'Bahá’u’lláh' })).toEqual({ title: 'The Hidden Words', byline: 'Bahá’u’lláh' });
+    expect(coverText({ title: 'The Bustan of Saadi', author: "Sa'adi Shirazi" }).title).toBe('The Bustan of Saadi'); // one word left → whole title…
+    expect(coverText({ title: 'The Bustan of Saadi', author: "Sa'adi Shirazi" }).byline).toBe('');                  // …and no second name
+    expect(coverText({ title: 'Selections from the Writings of the Báb', author: 'The Báb' })).toEqual({ title: 'Selections from the Writings', byline: 'The Báb' });
+    expect(coverText({ title: 'The Gospel of John', author: 'John' })).toEqual({ title: 'The Gospel of John', byline: '' });
+    expect(coverText({ title: 'The Fairy Tales of Madame D\' Aulnoy', author: "Madame d'Aulnoy" }).title).toBe('The Fairy Tales');
+    expect(coverText({ title: 'Additional Prayers Revealed by Bahá’u’lláh', author: 'Bahá’u’lláh' }).title).toBe('Additional Prayers Revealed');
+    // not the author → untouched
+    expect(coverText({ title: 'Life of George Washington Vol. I', author: 'Washington Irving' })).toEqual({ title: 'Life of George Washington Vol. I', byline: 'Washington Irving' });
+    // an explicit byline setting is the user's call → untouched
+    expect(coverText({ title: 'Poems from the Divan of Hafiz', author: 'Hafiz', byline: 'Tr. Bell' })).toEqual({ title: 'Poems from the Divan of Hafiz', byline: 'Tr. Bell' });
+    const p = compose({ app: {} }, { title: 'Poems from the Divan of Hafiz', author: 'Hafiz' });
+    expect(p).toContain('The title "Poems from the Divan" is stamped');
+    expect(p).toContain('The line "Hafiz"');
+    expect(composeBasedOnPrompt({ app: {} }, { title: 'Poems from the Divan of Hafiz', author: 'Hafiz' }, 'X', { refAuthor: 'Y' })).toContain('"Poems from the Divan"');
   });
 });
 

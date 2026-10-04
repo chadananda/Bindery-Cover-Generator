@@ -90,9 +90,8 @@ function finish(out, k, bgName) {
 /** The lines of a prompt that belong to ONE book: title, byline, context, illustration brief. Everything else is style. */
 function bookLines(project, book) {
   const out = [];
-  const title = (book?.title || '').trim();
+  const { title, byline: by } = coverText(book);
   if (title) out.push(`The title "${title}" is stamped on the cover${book?.subtitle ? `, with the subtitle "${book.subtitle}" smaller beneath it` : ''}.`);
-  const by = bylineOf(book);
   if (by) out.push(`The line "${by}" is stamped smaller at the bottom of the cover.`);
   else if (book?.byline === '') out.push(NO_BYLINE);
   // Book metadata as CONTEXT: it informs the imagery, never the printed text. Capped so a long blurb
@@ -111,6 +110,26 @@ function bookLines(project, book) {
 // Model prompts are recognised by these line openings (see bookLines).
 const NO_BYLINE = 'Print no author name, byline or credit line anywhere on the cover.';
 const BOOK_LINE = /^(The title "|The line "|Print no author name|ABOUT THIS BOOK|The embossed centre illustration shows|Choose a centre illustration)/;
+
+// "Poems from the Divan of Hafiz" by Hafiz: the author is IN the title. Print it once — cut "of/by <author>" off the
+// title when a real title remains (two or more words besides articles), else keep the whole title and print no separate
+// author line. Only the author's own name matches (whole, or a whole-word start/end of it: "Saadi" ⊂ "Sa'adi Shirazi");
+// an explicit byline setting is the user's call and is left alone.
+const nameWords = (s) => norm(s).replace(/^the /, '').split(' ').filter(Boolean);
+function authorInTitle(title, author) {
+  const m = String(title || '').match(/^(.*\S)\s+(?:of|by)\s+(.+?)\s*$/i); if (!m || !author) return null;
+  const x = nameWords(m[2]).join(''), a = nameWords(author);
+  if (!x) return null;
+  const hit = x === a.join('') || a.some((_, n) => n > 0 && n < a.length && (a.slice(0, n).join('') === x || a.slice(-n).join('') === x));
+  return hit ? m[1] : null;
+}
+export function coverText(book) {
+  const title = (book?.title || '').trim(), by = bylineOf(book);
+  if (book?.byline != null) return { title, byline: by };
+  const rest = authorInTitle(title, book?.author);
+  if (rest == null) return { title, byline: by };
+  return nameWords(rest).filter((w) => !['a', 'an', 'the'].includes(w)).length >= 2 ? { title: rest, byline: by } : { title, byline: '' };
+}
 
 /** What the cover prints as its author line: the book's byline setting ("" = none) or, unset, its author. */
 export const bylineOf = (book) => (book?.byline != null ? String(book.byline) : book?.author || '').trim();
@@ -143,11 +162,10 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
   // The model prints no author line: neither does this book, unless it has its own byline.
   if (book?.byline == null && refByline === '') book = { ...book, byline: '' };
   const k = keyColor(project);
-  const title = (book?.title || '').trim(), sub = (book?.subtitle || '').trim(), author = (book?.author || '').trim();
+  const { title, byline: by } = coverText(book), sub = (book?.subtitle || '').trim(), author = (book?.author || '').trim();
   // Same author as the model (every sura is "Muhammad"): its byline/credit ("TRANSLATION BY J.M. RODWELL") is right as it is.
   // The book's own byline setting always wins ("" = none).
   const sameAuthor = book?.byline == null && refAuthor !== undefined && norm(refAuthor) === norm(author);
-  const by = bylineOf(book);
   // Series titles ("Sura LXXXI. The Folded up") are often set as two lines (a small number line over the name): map them
   // part for part, or the model can't tell which line is which and prints the whole string in one place.
   const a = titleParts(refTitle), t = titleParts(title);
