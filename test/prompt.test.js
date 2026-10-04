@@ -362,5 +362,12 @@ describe('effectiveStyles', () => {
     expect(coverText({ title: 'X', author: 'Hafiz', coverTitle: '  ' }).title).toBe('X');
     expect(compose({ app: {} }, { title: 'Long Catalogue Title', author: 'A', coverTitle: 'Short' })).toContain('The title "Short"');
   });
+
+  it('the default title lettering is decorative, never forced to plain block capitals', async () => {
+    const { DEFAULT_APP_STYLE } = await import('../core/prompt.js');
+    expect(DEFAULT_APP_STYLE).not.toMatch(/capital letters/i);
+    expect(DEFAULT_APP_STYLE).toMatch(/decorative typeface/i);
+    expect(DEFAULT_APP_STYLE).toMatch(/never plain block capitals/i);
+  });
 });
 
