@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=90';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=91';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -639,7 +639,16 @@ const refRaws = new Map();
 const refRaw = (book, v) => v.raw ? Promise.resolve(v.raw) : refRaws.get(v.id) || (refRaws.set(v.id, rawFromCover(book, v)), refRaws.get(v.id));
 
 /** Generate (or img2img-edit) one cover, key it, store it, record a version stamped with its look. */
-async function produce(book, { removeBg = true, change = '', lookId = null, own = false } = {}) {
+// One job per cover at a time: a second request waits for the first and starts from ITS result. (A font edit sent while
+// a leather edit ran started from the same old image and threw the leather change away.)
+const coverJobs = new Map();
+function produce(book, opts = {}) {
+  const run = (coverJobs.get(book.id) || Promise.resolve()).then(() => produceNow(book, opts));
+  const tail = run.catch(() => {}); coverJobs.set(book.id, tail);
+  tail.then(() => { if (coverJobs.get(book.id) === tail) coverJobs.delete(book.id); });
+  return run;
+}
+async function produceNow(book, { removeBg = true, change = '', lookId = null, own = false } = {}) {
   const from = change ? currentVersion(book) : null;
   if (change && !from?.raw && !from?.cover) throw new Error('No cover to edit — Generate one first');
   // Based on another book: EDIT that book's current cover for this one (same photograph; new title, byline, illustration).

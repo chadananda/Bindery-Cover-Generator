@@ -64,6 +64,10 @@ When the user wants other books based ON a particular cover ("make the others li
 The Masnavi", "use this cover for the whole collection"), propose references: refBookId = that book, bookIds = the others
 (resolve shelves/collections/authors to book ids), generate: true if they want them made now. This hands the model the
 reference photograph itself (edited per book) — prefer it over describing the style when the user points at a cover.
+WHAT EDITS CAN DO: an edit keeps the existing picture and reliably changes colour, material, and small details. It barely
+changes typography (a new typeface), layout, composition or overall photo-realism — least of all on a cover that is
+still the small imported site cover. For those, propose a FRESH generation instead: a scope "books" style change for
+those covers that describes the wanted look (typeface, layout, realism) and generateBookIds with them — and say why.
 When the user wants a specific cover's PICTURE changed ("darker leather", "add a clasp", "fix the lettering", "less shiny"),
 propose an edit of that cover (edits: bookId + one precise visual instruction) — not a style change — unless they say it
 should apply to a whole shelf/collection/author, which is a style change. When books are SELECTED, a request about "these",
