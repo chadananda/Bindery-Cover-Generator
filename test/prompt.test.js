@@ -376,5 +376,14 @@ describe('effectiveStyles', () => {
     expect(coverText({ title: 'Joshua', author: 'Joshua' })).toEqual({ title: 'Joshua', byline: '' });
     expect(coverText({ title: 'Joshua', author: 'Joshua', byline: 'KJV' }).byline).toBe('KJV'); // explicit setting wins
   });
+
+  it('a collection volume with its own style may differ in leather (every Bible division came out the same maroon)', async () => {
+    const { composePrompt: compose } = await import('../core/prompt.js');
+    const proj = { app: {}, shelves: [], collections: [{ id: 'c', name: 'The Bible', style: 'morocco', override: true }] };
+    const own = compose(proj, { title: 'Joshua', collectionId: 'c', style: 'Vivid cardinal-red leather.' });
+    expect(own).not.toMatch(/match the other volumes exactly in leather/i);
+    expect(own).toMatch(/sets its own leather colour/i);
+    expect(compose(proj, { title: 'Ruth', collectionId: 'c' })).toMatch(/match the other volumes exactly in leather/i);
+  });
 });
 
