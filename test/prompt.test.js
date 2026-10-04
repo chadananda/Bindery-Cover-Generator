@@ -370,5 +370,11 @@ describe('effectiveStyles', () => {
     expect(DEFAULT_APP_STYLE).toMatch(/differ from book to book/i);   // one prescribed recipe made every title alike
     expect(DEFAULT_APP_STYLE).toMatch(/never plain block capitals/i);
   });
+
+  it('an author identical to the title is not printed again ("Joshua" by Joshua)', async () => {
+    const { coverText } = await import('../core/prompt.js');
+    expect(coverText({ title: 'Joshua', author: 'Joshua' })).toEqual({ title: 'Joshua', byline: '' });
+    expect(coverText({ title: 'Joshua', author: 'Joshua', byline: 'KJV' }).byline).toBe('KJV'); // explicit setting wins
+  });
 });
 

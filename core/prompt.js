@@ -128,6 +128,7 @@ export function coverText(book) {
   const custom = (book?.coverTitle || '').trim(); // the user's printed title, if set
   const title = custom || (book?.title || '').trim(), by = bylineOf(book);
   if (book?.byline != null) return { title, byline: by };
+  if (norm(by) && norm(by) === norm(title)) return { title, byline: '' }; // "Joshua" by Joshua: the name is the title
   const rest = authorInTitle(title, book?.author);
   if (custom) return { title, byline: rest == null ? by : '' }; // their words exactly; the name only once
   if (rest == null) return { title, byline: by };
