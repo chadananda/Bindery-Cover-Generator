@@ -401,5 +401,11 @@ describe('effectiveStyles', () => {
     expect(composeEditPrompt({ app: {} }, 'x', 'green')).toContain('#00FF00');
     expect(composeBasedOnPrompt({ app: {} }, { title: 'A' }, 'B', { key: 'green' })).toContain('#00FF00');
   });
+
+  it('every prompt that edits a photograph corrects a pink/backdrop cast (white bindings got pinker with each edit)', async () => {
+    const { composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt } = await import('../core/prompt.js');
+    for (const x of [composeEditPrompt({ app: {} }, 'x'), composeBasedOnPrompt({ app: {} }, { title: 'A' }, 'B'), composeSetStylePrompt({ app: {} }, { title: 'A' }, 'B')])
+      expect(x).toMatch(/whites, creams and ivories stay clean and neutral.*correct it; never add one/i);
+  });
 });
 

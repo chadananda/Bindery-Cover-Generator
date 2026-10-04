@@ -98,6 +98,8 @@ export function composePrompt(project, book, opts = {}) {
 /** The fixed closing of every generation prompt: lighting and the key-colour requirements. */
 // Shiny gold mirrors its surroundings — the key-colour backdrop came back as pink/cyan specks in the tooling.
 const metal = (k) => `The book is lit only by neutral white studio light: no ${k.name.toLowerCase()} light falls on it — its spine and edges keep the binding's own colour, and metallic surfaces reflect only neutral warm light, with no ${k.name.toLowerCase()}, pink, cyan, rainbow or iridescent tints.`;
+// Edits re-photograph the previous result against the backdrop, so a light binding gained a little more pink each time.
+const noDrift = (k) => `Keep the binding's true colours: whites, creams and ivories stay clean and neutral — if the photograph has picked up a ${k.name.toLowerCase()} or pink cast, correct it; never add one.`;
 function finish(out, k, bgName) {
   out.push(
     metal(k),
@@ -208,7 +210,7 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
   ];
   const keep = `Keep the book itself exactly as it is: the same binding and material, colour and texture, wear and patina, border and ` +
     `ornaments, typeface and layout, lighting, camera angle, scale and position in the frame. Do not re-shoot, re-light, re-frame, ` +
-    `crop or zoom. Do not print any other text. ${metal(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and ` +
+    `crop or zoom. Do not print any other text. ${metal(k)} ${noDrift(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and ` +
     `keep the same ${k.name.toLowerCase()} margin around all edges of the book.`;
   if (exact) {
     return `Edit this exact photograph. It is the cover of "${refTitle}". Make it the cover of another volume of the same set by ` +
@@ -239,7 +241,7 @@ export function composeSetStylePrompt(project, book, refTitle, key) {
     `Keep the first image's set exactly as it is: the boxed set, the number of volumes, their arrangement, the camera angle, ` +
     `scale and position in the frame. The front cover reads "${title}"; ${credit}. Do not ` +
     `copy the second image's title, number or centre illustration onto it — choose a fitting emblem for the whole set in the ` +
-    `same technique. Do not re-shoot, crop or zoom. ${metal(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, ` +
+    `same technique. Do not re-shoot, crop or zoom. ${metal(k)} ${noDrift(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, ` +
     `with NO shadow, and keep the same ${k.name.toLowerCase()} margin around the set.`;
 }
 
@@ -252,7 +254,7 @@ export function composeEditPrompt(project, change, key) {
     `needs, and no more. What the change touches must change, decisively — if it names a typeface, the letters are redrawn ` +
     `in a visibly different typeface. It is still the same photograph of the same book: the parts the request does not ` +
     `mention stay as they are, and the lighting, camera angle, scale and position in the frame are unchanged. Do not re-shoot, ` +
-    `re-light, re-frame, crop or zoom. ${metal(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and keep the ` +
+    `re-light, re-frame, crop or zoom. ${metal(k)} ${noDrift(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, with NO shadow, and keep the ` +
     `same ${k.name.toLowerCase()} margin around all edges of the book.`;
 }
 
