@@ -385,5 +385,21 @@ describe('effectiveStyles', () => {
     expect(own).toMatch(/sets its own leather colour/i);
     expect(compose(proj, { title: 'Ruth', collectionId: 'c' })).toMatch(/match the other volumes exactly in leather/i);
   });
+
+  it('picks the backdrop opposite the cover: green behind purple/pink bindings, magenta otherwise', async () => {
+    const { chooseKey, composePrompt: compose, composeEditPrompt, composeBasedOnPrompt } = await import('../core/prompt.js');
+    expect(chooseKey('Royal purple leather with gold')).toBe('green');
+    expect(chooseKey('a rose-pink vellum binding')).toBe('green');
+    expect(chooseKey('Emerald-green leather')).toBe('magenta');
+    expect(chooseKey('Vivid cardinal-red leather')).toBe('magenta');
+    expect(chooseKey('Deep burnt-orange leather — clearly NOT red, brown, tan, blue or purple.')).toBe('magenta'); // named only to exclude it
+    expect(chooseKey('violet glass panes on deep forest-green leather, green border')).toBe('magenta'); // more green than purple
+    const p = compose({ app: {} }, { title: 'Isaiah', style: 'Royal purple leather.' });
+    expect(p).toContain('SOLID PURE GREEN (#00FF00)');
+    expect(compose({ app: {} }, { title: 'X', style: 'Emerald-green leather.' })).toContain('#FF00FF');
+    // edits keep the starting image's backdrop
+    expect(composeEditPrompt({ app: {} }, 'x', 'green')).toContain('#00FF00');
+    expect(composeBasedOnPrompt({ app: {} }, { title: 'A' }, 'B', { key: 'green' })).toContain('#00FF00');
+  });
 });
 

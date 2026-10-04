@@ -22,6 +22,13 @@ export function sampleBackground({ data, width: W, height: H }, block = 15) {
   return acc.map((v) => v / n);
 }
 
+/** Which backdrop an image was generated on: the key whose colour is nearest its corners. */
+export const KEYS = { magenta: [255, 0, 255], green: [0, 255, 0] };
+export function detectKey(img) {
+  const bg = sampleBackground(img);
+  return Object.entries(KEYS).sort(([, a], [, b]) => Math.hypot(...a.map((v, i) => v - bg[i])) - Math.hypot(...b.map((v, i) => v - bg[i])))[0][0];
+}
+
 /**
  * Remove the key-colour background from a generated cover.
  * @param {{data: Uint8ClampedArray|Uint8Array, width: number, height: number}} img

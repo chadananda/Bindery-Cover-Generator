@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=104';
+import { detectKey, KEYS, composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=106';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -613,7 +613,9 @@ async function keyRaw(rawKey) {
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(bmp, 0, 0);
   const src = ctx.getImageData(0, 0, c.width, c.height);
-  const out = keyOut({ data: src.data, width: src.width, height: src.height }, { key: keyColor(project).rgb });
+  // The image's own backdrop (magenta, or green behind a purple/pink binding) — detected, never assumed.
+  const keyName = detectKey(src); rawKeys.set(rawKey, keyName);
+  const out = keyOut({ data: src.data, width: src.width, height: src.height }, { key: KEYS[keyName] });
   if (!out) throw new Error('Nothing left after keying — the generation was all background');
   const oc = Object.assign(document.createElement('canvas'), { width: out.width, height: out.height });
   oc.getContext('2d').putImageData(new ImageData(out.data, out.width, out.height), 0, 0);
@@ -635,10 +637,27 @@ async function addVersion(book, v) {
 async function rawFromCover(book, v) {
   const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
   const c = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * 1.24), height: Math.round(bmp.height * 1.16) });
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = keyColor(project).hex; ctx.fillRect(0, 0, c.width, c.height);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  // The backdrop opposite the cover: a purple/pink cover goes on green, anything else on magenta.
+  ctx.drawImage(bmp, 0, 0); const mid = ctx.getImageData(Math.round(bmp.width * 0.2), Math.round(bmp.height * 0.2), Math.round(bmp.width * 0.6), Math.round(bmp.height * 0.6)).data;
+  const casts = []; for (let i = 0; i < mid.length; i += 64) if (mid[i + 3] > 200) casts.push(Math.min(mid[i], mid[i + 2]) - mid[i + 1]);
+  casts.sort((x, y) => x - y); const keyName = (casts[casts.length >> 1] || 0) > 30 ? 'green' : 'magenta';
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.fillStyle = `rgb(${KEYS[keyName].join(',')})`; ctx.fillRect(0, 0, c.width, c.height);
   ctx.drawImage(bmp, Math.round((c.width - bmp.width) / 2), Math.round((c.height - bmp.height) / 2));
-  return storeImage(book, 'raw', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
+  const key = await storeImage(book, 'raw', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
+  rawKeys.set(key, keyName); return key;
+}
+// Which backdrop a stored raw image has (an edit must keep it): remembered when keyed, else detected from its corners.
+const rawKeys = new Map();
+async function keyOfRaw(rawKey) {
+  if (!rawKey) return null;
+  if (!rawKeys.has(rawKey)) {
+    const bmp = await createImageBitmap(await (await fetch(`${img(rawKey)}?tr=w-160`)).blob());
+    const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height }), ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bmp, 0, 0); rawKeys.set(rawKey, detectKey(ctx.getImageData(0, 0, c.width, c.height)));
+  }
+  return rawKeys.get(rawKey);
 }
 
 // The generation prompt a version's look descends from: its own (a generation), the one it carries (an edit, or a cover
@@ -695,7 +714,8 @@ async function produceNow(book, { removeBg = true, change = '', lookId = null, o
   const mp = refBook ? modelPrompt(refBook) : null;
   const basePrompt = change ? (basePromptOf(book, from) && retitlePrompt(basePromptOf(book, from), project, book))
     : mp && !asSet ? retitlePrompt(mp, project, book, { keepByline: sameAuthor }) : null;
-  let prompt = change ? composeEditPrompt(project, change) : asSet ? composeSetStylePrompt(project, book, refBook.title) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { exact: book.refMode === 'exact', refAuthor: refBook.author, refByline: refBook.byline }) : null;
+  const inKey = await keyOfRaw(inputKey); // edits keep the backdrop of the image they edit
+  let prompt = change ? composeEditPrompt(project, change, inKey) : asSet ? composeSetStylePrompt(project, book, refBook.title, inKey) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { key: inKey, exact: book.refMode === 'exact', refAuthor: refBook.author, refByline: refBook.byline }) : null;
   if (!prompt && similar) // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
     prompt = basePrompt || composePrompt(project, sameAuthor && book.byline == null ? { ...book, author: '' } : book, { styleText: await describedStyle(refBook) });
   prompt ||= composePrompt(project, book);
@@ -1114,7 +1134,7 @@ async function refineEdit(b, text, { fallback = false } = {}) {
 // The same edit request again from a given starting image (the one the first run used), with new wording.
 function replayEdit(book, text, inputKey, removeBg = true) {
   const run = (coverJobs.get(book.id) || Promise.resolve()).then(async () => {
-    const prompt = composeEditPrompt(project, text), from = currentVersion(book);
+    const prompt = composeEditPrompt(project, text, await keyOfRaw(inputKey)), from = currentVersion(book);
     const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, why: `edit (resubmitted): ${text}` }) });
     let cover = null, aspect = null, w = null, h = null;
     if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }

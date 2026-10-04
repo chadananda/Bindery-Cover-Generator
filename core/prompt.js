@@ -9,6 +9,27 @@ export const KEY_COLORS = {
 };
 export const keyColor = (project) => KEY_COLORS[project?.app?.keyColor] || KEY_COLORS.magenta;
 
+// The backdrop OPPOSITE the cover: a purple or pink binding against magenta lost its edges to the keyer, so it gets a
+// green backdrop; everything else (green bindings included) stays on magenta. Decided from the style text before the
+// image exists; the keyer later detects which backdrop the image really has (keyer.js detectKey).
+const PURPLISH = /\b(purple|violet|magenta|fuchsia|pink|rose|lavender|lilac|plum|aubergine|mauve|amethyst|orchid|mulberry)\b/gi;
+const GREENISH = /\b(green|emerald|olive|moss|jade|verdant|viridian|sage|malachite|teal)\b/gi;
+// "clearly NOT red, brown or purple" names purple only to exclude it: drop negated phrases before counting.
+const affirmed = (text) => String(text || '').replace(/\b(not|no|never|nor|without|rather than|instead of)\b[^.;:—()]*/gi, ' ');
+export function chooseKey(text) {
+  const t = affirmed(text), purple = (t.match(PURPLISH) || []).length, green = (t.match(GREENISH) || []).length;
+  return purple > green ? 'green' : 'magenta';
+}
+// The most specific style layer that names a colour decides (THIS BOOK over COLLECTION over SHELF over library).
+function autoKey(project, layers) {
+  for (const l of [...layers].reverse()) {
+    const t = affirmed(l.style);
+    if (PURPLISH.test(t) || GREENISH.test(t)) { PURPLISH.lastIndex = 0; GREENISH.lastIndex = 0; return KEY_COLORS[chooseKey(t)]; }
+    PURPLISH.lastIndex = 0; GREENISH.lastIndex = 0;
+  }
+  return keyColor(project);
+}
+
 export const DEFAULT_APP_STYLE =
   'An antique hand-crafted leather-bound book. Rich aged leather with visible grain, wear marks and patina; ' +
   'a deeply embossed and tooled illustration in the centre, raised leather relief with hand-painted details in ' +
@@ -39,7 +60,7 @@ export function effectiveStyles(project, book) {
  *  model": same recipe, fresh generation) — this book keeps its own title, byline and illustration. */
 export function composePrompt(project, book, opts = {}) {
   const styleBook = opts.styleFrom || book;
-  const k = keyColor(project);
+  const k = opts.key ? KEY_COLORS[opts.key] : opts.styleText ? KEY_COLORS[chooseKey(opts.styleText)] : autoKey(project, effectiveStyles(project, styleBook).filter((l) => !l.overridden && l.style));
   const bgName = `${k.name} (${k.hex})`;
   const out = [
     `Front cover of a book, photographed from directly above against a SOLID BRIGHT ${bgName} background. ` +
@@ -165,10 +186,10 @@ const titleParts = (t) => { const m = String(t || '').trim().match(/^(.{2,40}?[.
 /** A book based on another: EDIT that cover's photograph for this book — same binding, wear, light and framing. Style
  *  mode replaces title, byline AND centre illustration (from the book's content/description, never printed); exact mode
  *  changes only the title and byline and keeps the illustration as it is. */
-export function composeBasedOnPrompt(project, book, refTitle, { exact = false, refAuthor, refByline } = {}) {
+export function composeBasedOnPrompt(project, book, refTitle, { exact = false, refAuthor, refByline, key } = {}) {
   // The model prints no author line: neither does this book, unless it has its own byline.
   if (book?.byline == null && refByline === '') book = { ...book, byline: '' };
-  const k = keyColor(project);
+  const k = KEY_COLORS[key] || keyColor(project); // the model photograph's own backdrop
   const { title, byline: by } = coverText(book), sub = (book?.subtitle || '').trim(), author = (book?.author || '').trim();
   // Same author as the model (every sura is "Muhammad"): its byline/credit ("TRANSLATION BY J.M. RODWELL") is right as it is.
   // The book's own byline setting always wins ("" = none).
@@ -206,8 +227,8 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
 /** A collection cover (a photograph of the boxed set) in the model's style: edit the FIRST image — the set itself stays
  *  (its shape, number of volumes, angle, framing) — so its books look like the SECOND image (the model volume).
  *  "Same Style" on a set edited the model's single-book photograph instead and lost the set. */
-export function composeSetStylePrompt(project, book, refTitle) {
-  const k = keyColor(project);
+export function composeSetStylePrompt(project, book, refTitle, key) {
+  const k = KEY_COLORS[key] || keyColor(project); // the set photograph's own backdrop
   const title = coverText(book).title;
   // The set's own credit ("J.M. Rodwell translation") stays unless the book has a byline setting.
   const credit = book?.byline == null ? 'keep any author or translator line already on the set, restyled to match'
@@ -222,8 +243,8 @@ export function composeSetStylePrompt(project, book, refTitle) {
     `with NO shadow, and keep the same ${k.name.toLowerCase()} margin around the set.`;
 }
 
-export function composeEditPrompt(project, change) {
-  const k = keyColor(project);
+export function composeEditPrompt(project, change, key) {
+  const k = KEY_COLORS[key] || keyColor(project); // the edited image's own backdrop
   // In-place, but VISIBLE: "pixel-for-pixel" wording made the model change almost nothing (3–9/255 average difference), and
   // a fixed "keep the lettering/colours/illustration" list vetoed edits aimed at exactly those (a font change did nothing).
   return `Edit this photograph of a book cover. Make this change: ${change.trim()}\n\n` +

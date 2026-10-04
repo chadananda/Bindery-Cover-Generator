@@ -2,7 +2,7 @@
 // a Worker or Node. Each test builds a synthetic "generation" with one of the failure modes the recipe
 // documents, and asserts the pass that exists to handle it actually does.
 import { describe, it, expect } from 'vitest';
-import { keyOut, sampleBackground } from '../core/keyer.js';
+import { keyOut, sampleBackground, detectKey } from '../core/keyer.js';
 
 const MAGENTA = [255, 0, 255];
 const LEATHER = [110, 70, 40];
@@ -129,4 +129,10 @@ describe('keyOut — the four passes, then trim + pad', () => {
     const out = keyOut(canvas(60, 80), { pad: 0 });
     expect(out.aspect).toBeCloseTo(64 / 44, 3);
   });
+
+  it('detects which backdrop an image was generated on (magenta or green)', () => {
+    expect(detectKey(canvas(60, 80))).toBe('magenta');
+    expect(detectKey(canvas(60, 80, { bg: [10, 250, 20] }))).toBe('green');
+  });
 });
+
