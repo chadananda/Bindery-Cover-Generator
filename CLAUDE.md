@@ -36,3 +36,4 @@ Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read;
 - Chat scope: with books selected, plans touch only them unless the message names a wider scope (chat.js scopePlan).
 - The editor only ever shows a SELECTED cover (opening selects; deselecting moves/closes it). With nothing selected, the Binder's plans are scoped to the open cover.
 - SELECTION RULE (Chad): every action that makes or edits covers acts on the SELECTION (open cover = selection of one). No buttons that act on a group implicitly; group headers may only select. "Generate" = own style layers; model buttons = from the ★ model.
+- SPEND: every Gemini call is priced from usageMetadata (core/pricing.js — list prices; update there) and stored in logs.cost; GET /api/spend sums it; navbar shows today's. Pre-logging calls (Oct 2–3) backfilled from R2 raw counts; Claude's own test calls logged as kind 'claude-tests' — log future ones too.

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { d1 } from './d1-shim.js';
-import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest } from '../src/store.js';
+import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest, spendSummary } from '../src/store.js';
 
 let db;
 beforeEach(async () => {
@@ -155,6 +155,18 @@ describe('store', () => {
     await insertRows(db, 'ocean', 'books', [{ id: 'b1', title: 'A' }]);
     await insertRows(db, 'ocean', 'versions', [{ id: 'v1', bookId: 'b1', prompt: 'p', inputKey: 'sets/ocean/raw/m/1.png', at: 1 }]);
     expect((await loadLibrary(db, 'ocean')).books[0].versions[0].inputKey).toBe('sets/ocean/raw/m/1.png');
+  });
+
+  it('sums spend from logged costs: today, month, by kind and library', async () => {
+    await addLog(db, 'ocean', { kind: 'generate', cost: 0.134, model: 'gemini-3-pro-image-preview' });
+    await addLog(db, 'ocean', { kind: 'chat', cost: 0.01 });
+    await addLog(db, 'other', { kind: 'generate', cost: 0.134 });
+    await addLog(db, 'ocean', { kind: 'ui:plan' }); // no cost: not a model call
+    const s = await spendSummary(db);
+    expect(s.today.s).toBeCloseTo(0.278, 6);
+    expect(s.today.n).toBe(3);
+    expect(s.byKind[0]).toMatchObject({ kind: 'generate', n: 2 });
+    expect(s.byLib.map((x) => x.lib).sort()).toEqual(['ocean', 'other']);
   });
 });
 

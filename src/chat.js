@@ -253,21 +253,22 @@ export async function runChat({ project, messages, focusBookId, selectedIds = []
 }
 
 // ---- Gemini adapters (REST, no SDK) ----
-async function gemini(apiKey, model, body) {
+async function gemini(apiKey, model, body, meter) {
   const res = await fetch(`${ENDPOINT}/${model}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${json?.error?.message || 'request failed'}`);
+  meter?.add(model, json.usageMetadata); // spend (core/pricing.js)
   return json?.candidates?.[0]?.content?.parts || [];
 }
-export const geminiChat = (apiKey, model = CHAT_MODEL) => (contents) =>
-  gemini(apiKey, model, { systemInstruction: { parts: [{ text: SYSTEM }] }, contents, tools: TOOLS });
+export const geminiChat = (apiKey, model = CHAT_MODEL, meter) => (contents) =>
+  gemini(apiKey, model, { systemInstruction: { parts: [{ text: SYSTEM }] }, contents, tools: TOOLS }, meter);
 
 /** Vision: a reusable style paragraph for one cover (webp bytes + the prompt that made it). */
-export const geminiDescribe = (apiKey, model = CHAT_MODEL) => async (imageB64, mimeType, prompt) => {
+export const geminiDescribe = (apiKey, model = CHAT_MODEL, meter) => async (imageB64, mimeType, prompt) => {
   const parts = await gemini(apiKey, model, { contents: [{ role: 'user', parts: [
     { inlineData: { mimeType, data: imageB64 } },
     { text: `Describe the visual style of this book cover so an image model could reproduce the same look on OTHER books: material and colour, texture and wear, border and ornament, typography of the title, illustration technique and palette, lighting and photography. Do not mention this book's title, author or the specific subject of its illustration. One dense paragraph, under 120 words.${prompt && !prompt.startsWith('(') ? `\n\nFor reference, the prompt that generated it:\n${prompt}` : ''}` },
-  ] }] });
+  ] }] }, meter);
   return parts.filter((p) => p.text).map((p) => p.text).join(' ').trim();
 };
 
@@ -302,8 +303,8 @@ export const bylineFrom = (text) => { const m = String(text || '').match(BYLINE_
 /** The refined edit as a list of commands (accepts "1." / "2)" / "-" bullets; a single sentence stays one command). */
 export const editSteps = (text) => /^\s*NONE\b/i.test(text || '') ? []
   : String(text || '').split('\n').filter((l) => !BYLINE_LINE.test(l)).map((l) => l.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, '').trim()).filter(Boolean);
-export const geminiRefine = (apiKey, model = CHAT_MODEL) => async (imageB64, mimeType, feedback, book) => {
-  const parts = await gemini(apiKey, model, { contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageB64 } }, { text: refineRequest(feedback, book) }] }] });
+export const geminiRefine = (apiKey, model = CHAT_MODEL, meter) => async (imageB64, mimeType, feedback, book) => {
+  const parts = await gemini(apiKey, model, { contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageB64 } }, { text: refineRequest(feedback, book) }] }] }, meter);
   return parts.filter((p) => p.text).map((p) => p.text).join(' ').trim();
 };
 

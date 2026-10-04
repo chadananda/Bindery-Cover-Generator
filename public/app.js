@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=97';
+import { composePrompt, composeEditPrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=98';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -81,7 +81,7 @@ $('logout').addEventListener('click', async () => { await fetch('/api/logout'); 
 
 // Read-only mode: [data-write] controls hidden by CSS, dialog fields locked.
 function setAuthed(on) {
-  authed = on;
+  authed = on; setTimeout(refreshSpend, 0); // spend shows for logged-in users
   const u = document.querySelector('.user-btn');
   u.title = on ? 'Logged in — editing enabled' : 'Not logged in — browsing only';
   u.setAttribute('aria-label', on ? 'Account (logged in)' : 'Account (not logged in)');
@@ -601,7 +601,7 @@ const storeImage = async (book, kind, base64) => (await api(`${base()}/store`, {
 async function addVersion(book, v) {
   const row = { id: `${Date.now()}${rid().slice(0, 3)}`, at: Date.now(), raw: null, cover: null, prompt: '', basePrompt: null, inputKey: null, styleKey: null, aspect: null, edit: null, lookId: null, w: null, h: null, ...v };
   await insert('versions', [{ ...row, bookId: book.id }]);
-  book.versions.push(row); book.selected = row.id;
+  book.versions.push(row); book.selected = row.id; refreshSpendSoon();
   patch('books', book.id, { selected: row.id });
   return row;
 }
@@ -1248,7 +1248,7 @@ async function sendChat(text) {
   let s = 0; const tick = setInterval(() => { const el = $('chat-stage'); if (el) el.textContent = STAGES[++s % STAGES.length]; }, 3500);
   try {
     const r = await api(`${base()}/chat`, { method: 'POST', body: JSON.stringify({ messages: chat.messages.map(({ role, text, refs }) => ({ role, text, refs })), focusBookId: im?.bookId || chat.focus, selectedIds: [...selected], modelBookId: project.app.modelBookId || '' }) });
-    chat.messages.push({ role: 'assistant', text: r.reply, plan: r.plan, books: r.books || [] });
+    chat.messages.push({ role: 'assistant', text: r.reply, plan: r.plan, books: r.books || [] }); refreshSpendSoon();
     if (r.mode) { setMode(r.mode); renderMode(); }
   } catch (e) { chat.messages.push({ role: 'assistant', text: `Something went wrong: ${e.message}`, error: true }); }
   finally { clearInterval(tick); chat.busy = false; renderChat(); }
@@ -1365,6 +1365,28 @@ $('chat-body').addEventListener('click', (e) => {
     renderChat(); if (books[0]) openManager(books[0].id, { follow: true }); generate(books, { own });
   }
 });
+
+// ---------------------------------------------------------------- spend
+// Estimated Gemini spend (every call is priced from its token usage and logged; earlier calls were backfilled). The navbar
+// shows today's; the dialog breaks it down. Refreshed after each finished job.
+const usd = (x) => `$${(+x || 0).toFixed(2)}`;
+let spend = null;
+async function refreshSpend() {
+  if (!authed) { $('spend-btn').hidden = true; return; }
+  try { spend = await api('/api/spend'); $('spend-btn').hidden = false; $('spend-btn').textContent = `${usd(spend.today.s)} today`; if ($('dlg-spend').open) renderSpend(); } catch {}
+}
+const refreshSpendSoon = () => { clearTimeout(refreshSpend.t); refreshSpend.t = setTimeout(refreshSpend, 1500); };
+const KIND = { generate: 'Image generations & edits', chat: 'Binder chat', refine: 'Edit commands', describe: 'Style descriptions', backfill: 'Before logging began (estimated)', 'claude-tests': "Claude's test calls" };
+function renderSpend() {
+  const s = spend; if (!s) return;
+  const day = (t) => new Date(t).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  $('spend-body').innerHTML = `<div class="spend-tiles">${[['Today', s.today], ['Last 7 days', s.week], ['This month', s.month], ['All time', s.all]].map(([k, v]) => `<div class="tile"><b>${usd(v.s)}</b><span>${k}</span><small>${v.n} calls</small></div>`).join('')}</div>
+    <h3>By day</h3><table class="spend-t">${s.byDay.map((r) => `<tr><td>${day(r.day)}</td><td>${usd(r.s)}</td><td>${r.n} calls</td></tr>`).join('')}</table>
+    <h3>By kind</h3><table class="spend-t">${s.byKind.map((r) => `<tr><td>${esc(KIND[r.kind] || r.kind)}</td><td>${usd(r.s)}</td><td>${r.n}</td></tr>`).join('')}</table>
+    <h3>By library</h3><table class="spend-t">${s.byLib.map((r) => `<tr><td>${esc(r.lib)}</td><td>${usd(r.s)}</td><td>${r.n}</td></tr>`).join('')}</table>
+    <p class="hint">Estimates from Gemini's reported token usage at list prices (a 2K image ≈ $0.13; a chat turn ≈ $0.01–0.03). Days are UTC. Calls before logging began (Oct 2–3) are counted from the images in storage. Check Google Cloud billing for the exact figure.</p>`;
+}
+$('spend-btn').addEventListener('click', () => { renderSpend(); $('dlg-spend').showModal(); refreshSpend(); });
 
 // ---------------------------------------------------------------- new-version notice
 // The page is a single load: an open tab keeps running old code after a deploy. Compare the app.js version this page

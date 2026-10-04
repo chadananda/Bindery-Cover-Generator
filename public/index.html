@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=60" />
+  <link rel="stylesheet" href="/styles.css?v=61" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -22,6 +22,7 @@
       <select id="lib-select" class="nav-select lib-select" aria-label="Library"></select>
       <span class="spacer"></span>
       <button type="button" class="nav-link gold" id="login-nav" data-read>Log in to edit</button>
+      <button type="button" class="nav-link spend" id="spend-btn" data-write hidden title="Estimated Gemini spend — click for the breakdown"></button>
       <span id="save-state" class="save-state" aria-live="polite"></span>
       <button type="button" class="nav-icon" id="theme-btn" title="Light / dark — covers must read on both" aria-label="Switch light or dark">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor"/></svg></button>
@@ -113,6 +114,12 @@
         <button type="button" class="btn small ghost danger" id="shelf-delete" data-write>Delete bookshelf</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- Spend: estimated Gemini cost from the logged calls (core/pricing.js). -->
+  <dialog id="dlg-spend" class="dlg">
+    <header class="dlg-head"><h2>Spend</h2><button type="button" class="x" data-close aria-label="Close">&times;</button></header>
+    <div class="dlg-body" id="spend-body"></div>
   </dialog>
 
   <!-- Add books -->
@@ -255,6 +262,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=97"></script>
+  <script type="module" src="/app.js?v=98"></script>
 </body>
 </html>

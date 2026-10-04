@@ -95,9 +95,23 @@ export async function deleteRows(db, lib, table, ids) {
 // Prompt log (audit trail of every model call and plan decision). input/output: text, or objects stored as JSON.
 const enc = (x) => (x == null ? null : typeof x === 'string' ? x : JSON.stringify(x));
 const dec = (x) => { if (x == null) return null; try { return /^[[{]/.test(x) ? JSON.parse(x) : x; } catch { return x; } };
-export async function addLog(db, lib, { kind, bookId = null, input = null, output = null }) {
-  await db.prepare('INSERT INTO logs (lib, at, kind, bookId, input, output) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(lib, Date.now(), String(kind).slice(0, 40), bookId, enc(input), enc(output)).run();
+export async function addLog(db, lib, { kind, bookId = null, input = null, output = null, cost = null, model = null }) {
+  await db.prepare('INSERT INTO logs (lib, at, kind, bookId, input, output, cost, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(lib, Date.now(), String(kind).slice(0, 40), bookId, enc(input), enc(output), cost, model).run();
+}
+// Spend (estimated $, from logs.cost) across every library: today / last 7 days / this month / all time (UTC days),
+// the last 30 days day by day, and totals by kind and by library.
+export async function spendSummary(db, now = Date.now()) {
+  const day = 86400000, today = Math.floor(now / day) * day, d = new Date(now), month = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  const sum = async (since) => (await db.prepare('SELECT COALESCE(SUM(cost), 0) s, COUNT(cost) n FROM logs WHERE cost IS NOT NULL AND at >= ?').bind(since).first());
+  const [t, w, m, all] = await Promise.all([sum(today), sum(today - 6 * day), sum(month), sum(0)]);
+  const rows = async (sql, ...b) => (await db.prepare(sql).bind(...b).all()).results;
+  const [byDay, byKind, byLib] = await Promise.all([
+    rows('SELECT CAST(at / 86400000 AS INTEGER) * 86400000 AS day, SUM(cost) s, COUNT(*) n FROM logs WHERE cost IS NOT NULL AND at >= ? GROUP BY 1 ORDER BY 1 DESC', today - 29 * day),
+    rows("SELECT kind, SUM(cost) s, COUNT(*) n FROM logs WHERE cost IS NOT NULL GROUP BY kind ORDER BY s DESC"),
+    rows('SELECT lib, SUM(cost) s, COUNT(*) n FROM logs WHERE cost IS NOT NULL GROUP BY lib ORDER BY s DESC'),
+  ]);
+  return { today: t, week: w, month: m, all, byDay, byKind, byLib };
 }
 export async function listLogs(db, lib, limit = 50, kind = null) {
   const { results } = await db.prepare(`SELECT rowid AS id, at, kind, bookId, input, output FROM logs WHERE lib = ?${kind ? ' AND kind = ?' : ''} ORDER BY at DESC, rowid DESC LIMIT ?`)

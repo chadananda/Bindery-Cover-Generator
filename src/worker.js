@@ -3,7 +3,8 @@
 // R2 layout: sets/<lib>/raw/<book>/<ts>.png · sets/<lib>/covers/<book>/<ts>.png · fx/v<N>/<key>/<recipe> (resized
 // renditions, generate-once). Only a deleted generated version's own images are ever removed from R2.
 import { generateImage } from '../core/gemini.js';
-import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest } from './store.js';
+import { meter } from '../core/pricing.js';
+import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest, spendSummary } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
 import { renderImage, initCodecs } from './render.js';
 import { runChat, geminiChat, geminiDescribe, geminiRefine, editSteps, bylineFrom } from './chat.js';
@@ -19,7 +20,7 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
 // Audit trail: every model call and plan decision goes to the D1 logs table (scripts/logs.mjs reads it). Never blocks.
-const audit = (env, ctx, lib, entry) => ctx.waitUntil(addLog(env.DB, lib, entry).catch((e) => console.error('log failed', e)));
+const audit = (env, ctx, lib, entry, m) => ctx.waitUntil(addLog(env.DB, lib, m ? { ...entry, cost: m.cost, model: [...m.models].join(','), output: entry.output && typeof entry.output === 'object' ? { ...entry.output, usage: { calls: m.calls, ...m.tokens, cost: m.cost } } : entry.output } : entry).catch((e) => console.error('log failed', e)));
 const fail = (status, error) => json({ ok: false, error }, status);
 
 async function sha256(text) {
@@ -60,6 +61,8 @@ export default {
     // Anyone may browse (GET libraries, covers); every change needs the passcode cookie.
     const isAuthed = await authed(req, env);
     if (path === '/api/me') return json({ ok: true, authed: isAuthed });
+    // GET /api/spend → estimated Gemini spend across all libraries (logged in only): today, 7 days, month, all time, by day/kind/library.
+    if (path === '/api/spend' && req.method === 'GET') return isAuthed ? json({ ok: true, ...(await spendSummary(env.DB)) }) : fail(401, 'Passcode required');
     if (req.method !== 'GET' && !isAuthed) return fail(401, 'Passcode required');
 
     // GET /img/<r2 key>[?tr=w-320,...] — originals, or a resized rendition (ImageKit grammar, see src/image.js).
@@ -130,14 +133,15 @@ export default {
         let inputImage, styleImage;
         try { if (inputKey) inputImage = await load(inputKey); if (inputKey && styleKey) styleImage = await load(styleKey); }
         catch (e) { return fail(e.status || 400, e.message); }
+        const gm = meter(); // spend: every Gemini call is priced (core/pricing.js) and logged
         try {
-          const r = await generateImage({ apiKey: env.GEMINI_API_KEY, prompt, inputImage, styleImage, model: env.GEMINI_MODEL || undefined });
+          const r = await generateImage({ apiKey: env.GEMINI_API_KEY, prompt, inputImage, styleImage, meter: gm, model: env.GEMINI_MODEL || undefined });
           const rawKey = `sets/${lib}/raw/${bookId}/${Date.now()}.png`;
           await env.COVERS.put(rawKey, b64ToBytes(r.base64), { httpMetadata: { contentType: r.mimeType } });
-          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null }, output: { rawKey, text: r.text || '' } });
+          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null }, output: { rawKey, text: r.text || '' } }, gm);
           return json({ ok: true, rawKey, text: r.text });
         } catch (e) {
-          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null }, output: { error: String(e.message || e) } });
+          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null }, output: { error: String(e.message || e) } }, gm);
           return fail(502, String(e.message || e));
         }
       }
@@ -166,13 +170,13 @@ export default {
         if (!obj) return fail(404, 'Cover image missing');
         await initCodecs(webpEncWasm);
         const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
-        const input = { feedback: text, title: b.title, versionId: v.id };
+        const input = { feedback: text, title: b.title, versionId: v.id }, rm = meter();
         try {
-          const out = await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', text, { title: b.title, subtitle: b.subtitle, author: b.author });
+          const out = await geminiRefine(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined, rm)(bytesToB64(webp), 'image/webp', text, { title: b.title, subtitle: b.subtitle, author: b.author });
           const steps = editSteps(out), byline = bylineFrom(out) ?? null;
-          audit(env, ctx, lib, { kind: 'refine', bookId, input, output: { raw: out, steps, byline } });
+          audit(env, ctx, lib, { kind: 'refine', bookId, input, output: { raw: out, steps, byline } }, rm);
           return json({ ok: true, steps, byline, instruction: steps.length ? steps.map((x, i) => `${i + 1}. ${x}`).join('\n') : 'NONE' });
-        } catch (e) { audit(env, ctx, lib, { kind: 'refine', bookId, input, output: { error: String(e.message || e) } }); return fail(502, String(e.message || e)); }
+        } catch (e) { audit(env, ctx, lib, { kind: 'refine', bookId, input, output: { error: String(e.message || e) } }, rm); return fail(502, String(e.message || e)); }
       }
 
       // POST /api/libraries/<lib>/describe {bookId} → {style}: the visual style of that book's current cover, in words
@@ -188,8 +192,8 @@ export default {
         await initCodecs(webpEncWasm);
         const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
         try {
-          const style = await geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined)(bytesToB64(webp), 'image/webp', v.prompt);
-          audit(env, ctx, lib, { kind: 'describe', bookId, input: { versionId: v.id }, output: style });
+          const dm = meter(); const style = await geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined, dm)(bytesToB64(webp), 'image/webp', v.prompt);
+          audit(env, ctx, lib, { kind: 'describe', bookId, input: { versionId: v.id }, output: { style } }, dm);
           return json({ ok: true, style, versionId: v.id });
         } catch (e) { return fail(502, String(e.message || e)); }
       }
@@ -201,7 +205,7 @@ export default {
         const project = await loadLibrary(env.DB, lib);
         if (!project) return fail(404, 'No such library');
         project.app.modelBookId = modelBookId; // the model is the user's own (browser) choice, sent with each message
-        const describe = geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined);
+        const cm = meter(); const describe = geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined, cm);
         const describeCover = async (book, v) => {
           const obj = await env.COVERS.get(v.cover || v.raw);
           if (!obj) return '(cover image missing)';
@@ -210,13 +214,13 @@ export default {
           return describe(bytesToB64(webp), 'image/webp', v.prompt);
         };
         try {
-          const { trace, unscopedPlan, ...r } = await runChat({ project, messages, focusBookId, selectedIds, callModel: geminiChat(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined), describeCover });
+          const { trace, unscopedPlan, ...r } = await runChat({ project, messages, focusBookId, selectedIds, callModel: geminiChat(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined, cm), describeCover });
           const titled = (ids) => ids.map((x) => `${x} “${project.books.find((b) => b.id === x)?.title || '?'}”`);
           audit(env, ctx, lib, { kind: 'chat', bookId: focusBookId || null,
             input: { message: messages.at(-1)?.text, refs: titled(messages.at(-1)?.refs || []), selected: titled(selectedIds), focus: focusBookId || null, model: modelBookId || null, history: messages.length },
-            output: { reply: r.reply, trace, plan: r.plan, ...(unscopedPlan ? { unscopedPlan } : {}), mode: r.mode || null } });
+            output: { reply: r.reply, trace, plan: r.plan, ...(unscopedPlan ? { unscopedPlan } : {}), mode: r.mode || null } }, cm);
           return json({ ok: true, ...r });
-        } catch (e) { audit(env, ctx, lib, { kind: 'chat', input: { message: messages.at(-1)?.text }, output: { error: String(e.message || e) } }); return fail(502, String(e.message || e)); }
+        } catch (e) { audit(env, ctx, lib, { kind: 'chat', input: { message: messages.at(-1)?.text }, output: { error: String(e.message || e) } }, cm); return fail(502, String(e.message || e)); }
       }
 
       // POST /api/libraries/<lib>/retrysource {rawKey} → {request: {prompt, inputKey}}: the exact request that made a raw

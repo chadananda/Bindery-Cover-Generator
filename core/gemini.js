@@ -8,11 +8,11 @@ const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
  * @param {{apiKey: string, prompt: string, inputImage?: string, inputMime?: string, model?: string,
  *          aspectRatio?: string, imageSize?: '1K'|'2K'|'4K', fetch?: typeof fetch, retries?: number}} o
  *   inputImage: base64 (no data: prefix) — present means an img2img edit of that image.
- *   styleImage: a second image the edit takes its look from (sent after inputImage).
+ *   styleImage: a second image the edit takes its look from (sent after inputImage). meter: core/pricing.js meter().
  * @returns {Promise<{base64: string, mimeType: string, text: string}>}
  */
 export async function generateImage({
-  apiKey, prompt, inputImage, styleImage, inputMime = 'image/png', model = DEFAULT_MODEL,
+  apiKey, prompt, inputImage, styleImage, meter, inputMime = 'image/png', model = DEFAULT_MODEL,
   aspectRatio = '3:4', imageSize = '2K', fetch: f = globalThis.fetch, retries = 2,
 }) {
   if (!apiKey) throw new Error('No Gemini API key');
@@ -43,6 +43,7 @@ export async function generateImage({
   }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${json?.error?.message || 'request failed'}`);
+  meter?.add(model, json.usageMetadata, { image: true }); // spend: billed even when no image comes back
 
   const got = json?.candidates?.[0]?.content?.parts || [];
   const text = got.filter((p) => p.text).map((p) => p.text).join('\n').trim();
