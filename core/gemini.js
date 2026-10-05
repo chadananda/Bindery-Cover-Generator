@@ -19,9 +19,10 @@ export async function generateImage({
   const parts = [];
   // Gemini returns JPEG at 2K, stored under .png keys: label inputs by their actual bytes (base64 "/9j/" = JPEG).
   const mimeOf = (b64, fallback) => (b64.startsWith('/9j/') ? 'image/jpeg' : b64.startsWith('iVBOR') ? 'image/png' : fallback);
-  if (inputImage) parts.push({ inlineData: { mimeType: mimeOf(inputImage, inputMime), data: inputImage } });
-  // styleImage alone: a fresh generation that takes its look from a reference (Similar Style) — framing stays 3:4.
+  // styleImage: the look to take (alone = a fresh generation in a reference's look, Similar Style). It goes FIRST and the
+  // image being edited LAST — Gemini edits the last image: with the set first, it repainted the volume and lost the set.
   if (styleImage) parts.push({ inlineData: { mimeType: mimeOf(styleImage, 'image/png'), data: styleImage } });
+  if (inputImage) parts.push({ inlineData: { mimeType: mimeOf(inputImage, inputMime), data: inputImage } });
   parts.push({ text: prompt });
   const init = {
     method: 'POST',

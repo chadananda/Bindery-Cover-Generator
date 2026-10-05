@@ -52,11 +52,11 @@ describe('generateImage', () => {
     await expect(generateImage({ apiKey: 'k', prompt: 'p', fetch })).rejects.toThrow(/400.*API key not valid/);
   });
 
-  it('sends a style reference image after the image being edited (collection set restyled like the model)', async () => {
+  it('sends a style reference BEFORE the image being edited (Gemini edits the last image)', async () => {
     const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
     await generateImage({ apiKey: 'k', prompt: 'restyle', inputImage: 'U0VU', styleImage: 'TU9E', fetch });
     const parts = JSON.parse(fetch.mock.calls[0][1].body).contents[0].parts;
-    expect(parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'U0VU' } }, { inlineData: { mimeType: 'image/png', data: 'TU9E' } }, { text: 'restyle' }]);
+    expect(parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'TU9E' } }, { inlineData: { mimeType: 'image/png', data: 'U0VU' } }, { text: 'restyle' }]);
   });
 
   it('sends a style reference alone for a fresh generation (Similar Style), keeping the 3:4 frame', async () => {
@@ -71,8 +71,8 @@ describe('generateImage', () => {
     const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
     await generateImage({ apiKey: 'k', prompt: 'p', inputImage: '/9j/4AAQ', styleImage: 'iVBORw0K', fetch });
     const parts = JSON.parse(fetch.mock.calls[0][1].body).contents[0].parts;
-    expect(parts[0].inlineData.mimeType).toBe('image/jpeg');
-    expect(parts[1].inlineData.mimeType).toBe('image/png');
+    expect(parts[1].inlineData.mimeType).toBe('image/jpeg');
+    expect(parts[0].inlineData.mimeType).toBe('image/png');
   });
 });
 

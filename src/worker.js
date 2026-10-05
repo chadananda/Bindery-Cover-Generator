@@ -123,7 +123,7 @@ export default {
       if (part === 'generate' && req.method === 'POST') {
         const { bookId, prompt, inputKey, styleKey, inputWidth, why = null } = await body(); // why: the client's reason (edit text, Same Style from …)
         if (!ID.test(bookId || '') || !prompt) return fail(400, 'bookId and prompt required');
-        // inputKey: the image to edit; styleKey: an image it takes its look from (a set restyled like the model; Similar Style).
+        // inputKey: the image to edit; styleKey: an image it takes its look from (Similar Style; older set restyles).
         const load = async (k) => {
           if (!KEY.test(k) || !k.startsWith(`sets/${lib}/`)) throw Object.assign(new Error('Bad image key'), { status: 400 });
           const src = await env.COVERS.get(k);

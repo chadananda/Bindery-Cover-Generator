@@ -336,13 +336,14 @@ describe('effectiveStyles', () => {
   it('restyles a collection\'s boxed-set picture like the model, keeping the set itself (shape, volumes, angle)', async () => {
     const { composeSetStylePrompt } = await import('../core/prompt.js');
     const p = composeSetStylePrompt({ app: { keyColor: 'magenta' } }, { title: "The Qur'an", byline: null, author: '' }, 'Sura LXXXI. The Folded up');
-    expect(p).toMatch(/first image/i);
-    expect(p).toMatch(/second image/i);
+    expect(p).toMatch(/^Edit this photograph/);
     expect(p).toMatch(/keep[^.]*(number of volumes|boxed set)/i);
     expect(p).toContain("The Qur'an");
-    expect(p).toMatch(/do not copy[^.]*title/i);                  // the model's own title must not leak onto the set
+    expect(p).toMatch(/reads "The Qur'an"/);                       // the set's own title, not the model's
     expect(p).toContain('#FF00FF');
     expect(p).toMatch(/metallic surfaces reflect only neutral/i);
+    // the volume's look goes in as WORDS (a second photograph got edited instead of the set)
+    expect(composeSetStylePrompt({ app: {} }, { title: 'Avesta' }, 'The Yasna', 'magenta', 'crimson leather, rosette border')).toContain('looks like this: crimson leather, rosette border');
   });
 
   it('a title ending "of/by <author>" prints the author once: cut the title, or keep it whole and drop the byline', async () => {
