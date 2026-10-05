@@ -120,6 +120,13 @@ describe('keyOut — the four passes, then trim + pad', () => {
     expect([out.width, out.height]).toEqual([44, 64]);
   });
 
+  it('clears a soft dark-magenta drop shadow under the book (purity 0.56–0.58, just under the strict cut-off)', () => {
+    const img = canvas(60, 80);
+    for (let y = 72; y <= 75; y++) for (let x = 8; x <= 51; x++) img.set(x, y, [189, 39, 145]); // the shadow band, touching the book
+    const out = keyOut(img, { pad: 0 });
+    expect(out.height).toBe(64);
+  });
+
   it('despills a magenta fringe but keeps it FULLY opaque (semi-transparent edges look chewed)', () => {
     const img = canvas(60, 80);
     // Left edge column with magenta spill. Uneven R/B on purpose: (R+B)/2−G > 30 makes it spill, while

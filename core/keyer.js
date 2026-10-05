@@ -86,8 +86,12 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
   // key channel ≥ 0.6. Backdrop and shadow score ~0.75; leather merely TINTED by the backdrop (a spine lit magenta scored
   // 0.3–0.54) is part of the book — clearing it ate the spine in jagged bites.
   const keyPurity = (i) => (Math.min(...keyChannels.map((c) => d[i + c])) - Math.max(...offChannels.map((o) => d[i + o]))) / Math.max(1, ...keyChannels.map((c) => d[i + c]));
-  const shadowLike = (i) => offChannels.length > 0 && keyChannels.length > 0 &&
+  const strictShadow = (i) => offChannels.length > 0 && keyChannels.length > 0 &&
     keyChannels.every((c) => offChannels.every((o) => d[i + c] > d[i + o] + 30)) && keyPurity(i) >= 0.6;
+  // A soft drop shadow under a book scored 0.56–0.58 — just under 0.6 — and stayed as a pink slab. Bright, mostly-key
+  // pixels (purity ≥ 0.5 with the weakest key channel ≥ 120) are shadow too; tinted spines (≤ 94), purple bindings
+  // (purity ~0.4) and pink-lit ivory (~0.2) never reach that.
+  const shadowLike = (i) => strictShadow(i) || (keyChannels.length > 0 && offChannels.length > 0 && keyPurity(i) >= 0.5 && Math.min(...keyChannels.map((c) => d[i + c])) >= 120);
   // Fixpoint as a queue, not repeated full scans: seed with shadow-like pixels already touching
   // transparency; clearing one can expose its neighbours, so they are re-tested. Same result as
   // "loop until nothing changes", in one sweep — a wide shadow on a 1MP image would otherwise
@@ -110,7 +114,7 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
   //     scores 0.57–0.64 on purity (straddling the shadow cut-off) and never touches a cleared pixel. Clear it from the
   //     image border inward, through pixels that are bright and mostly key-coloured (purity ≥ 0.5, weakest key channel
   //     ≥ 120) — a backdrop-tinted spine or a purple binding is darker in its key channels and never qualifies.
-  const floorLike = (i) => shadowLike(i) || (keyChannels.length && offChannels.length && keyPurity(i) >= 0.5 && Math.min(...keyChannels.map((c) => d[i + c])) >= 120);
+  const floorLike = shadowLike;
   head = 0; tail = 0;
   for (let p = 0; p < W * H; p++) {
     const x = p % W, y = (p - x) / W;
