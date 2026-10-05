@@ -210,3 +210,27 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
 // squarer than 1.37. The check exists to catch CROPPED art, which reads far wider or narrower.
 export const ASPECT_RANGE = [1.30, 1.53];
 export const aspectOk = (aspect) => aspect >= ASPECT_RANGE[0] && aspect <= ASPECT_RANGE[1];
+
+/** Pink drift: the magenta cast on a cover's NEAR-NEUTRAL pixels (whites, creams, greys, gilt highlights — saturation
+ *  spread ≤ 45, not dark), as the Tint to cancel it: negative = take magenta out. A deliberately pink or red binding has
+ *  few neutral pixels and leaves this near 0. Returns 0 when there aren't enough neutral pixels to judge. */
+export function estimateTint({ data }) {
+  const casts = [];
+  for (let i = 0; i < data.length; i += 16) { // every 4th pixel is plenty
+    if (data[i + 3] < 250) continue;
+    const r = data[i], g = data[i + 1], b = data[i + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx - mn <= 45 && (r + g + b) / 3 >= 70) casts.push((r + b) / 2 - g);
+  }
+  if (casts.length < 200) return 0;
+  casts.sort((x, y) => x - y);
+  const m = casts[casts.length >> 1];
+  return Math.abs(m) < 2 ? 0 : Math.max(-40, Math.min(40, -Math.round(m)));
+}
+/** Apply a Tint (green ↔ magenta) to RGBA in place: negative takes magenta out. */
+export function applyTint(data, t) {
+  if (!t) return data;
+  // shifts the magenta measure ((R+B)/2 − G) by exactly t, brightness about the same
+  for (let i = 0; i < data.length; i += 4) { data[i] += t / 3; data[i + 1] -= (2 * t) / 3; data[i + 2] += t / 3; }
+  return data;
+}
+

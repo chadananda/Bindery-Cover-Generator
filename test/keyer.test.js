@@ -2,7 +2,7 @@
 // a Worker or Node. Each test builds a synthetic "generation" with one of the failure modes the recipe
 // documents, and asserts the pass that exists to handle it actually does.
 import { describe, it, expect } from 'vitest';
-import { keyOut, sampleBackground, detectKey } from '../core/keyer.js';
+import { keyOut, sampleBackground, detectKey, estimateTint, applyTint } from '../core/keyer.js';
 
 const MAGENTA = [255, 0, 255];
 const LEATHER = [110, 70, 40];
@@ -162,6 +162,15 @@ describe('keyOut — the four passes, then trim + pad', () => {
   it('detects which backdrop an image was generated on (magenta or green)', () => {
     expect(detectKey(canvas(60, 80))).toBe('magenta');
     expect(detectKey(canvas(60, 80, { bg: [10, 250, 20] }))).toBe('green');
+  });
+
+  it('measures pink drift on near-neutral pixels and cancels it with Tint', () => {
+    const px = (rgb, n = 4000) => { const d = new Uint8ClampedArray(n * 4); for (let i = 0; i < n; i++) d.set([...rgb, 255], i * 4); return { data: d }; };
+    expect(estimateTint(px([160, 145, 172]))).toBe(-21);          // lilac-grey paper: magenta cast ~21
+    expect(estimateTint(px([237, 216, 193]))).toBe(0);            // warm cream is not pink
+    expect(estimateTint(px([200, 40, 60]))).toBe(0);              // a red binding: no neutral pixels to judge
+    const d = new Uint8ClampedArray([160, 145, 172, 255]); applyTint(d, -21);
+    expect(Math.abs((d[0] + d[2]) / 2 - d[1])).toBeLessThan(2);   // neutral after correction
   });
 });
 

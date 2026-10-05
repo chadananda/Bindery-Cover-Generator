@@ -41,7 +41,7 @@
 
   <!-- Shadow lift for the Adjust preview (CSS has no gamma filter); exponent set from the Shadows slider. -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="adj-gamma" color-interpolation-filters="sRGB"><feComponentTransfer>
-    <feFuncR type="gamma" exponent="1" /><feFuncG type="gamma" exponent="1" /><feFuncB type="gamma" exponent="1" /></feComponentTransfer></filter></svg>
+    <feFuncR type="gamma" exponent="1" /><feFuncG type="gamma" exponent="1" /><feFuncB type="gamma" exponent="1" /></feComponentTransfer></filter><filter id="adj-tint" color-interpolation-filters="sRGB"><feColorMatrix id="adj-tint-m" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" /></filter></svg>
   <!-- Library header: this library's own controls, sticky under the navbar (global) and above the shelf headers. -->
   <header class="libhead" id="libhead" hidden>
     <h1 id="lib-name" class="lib-name"></h1>
@@ -202,10 +202,11 @@
           <label><span>Contrast</span><input type="range" min="50" max="200" value="100" data-adj="contrast" /><output>100</output></label>
           <label><span>Saturation</span><input type="range" min="0" max="200" value="100" data-adj="saturate" /><output>100</output></label>
           <label><span>Warmth</span><input type="range" min="0" max="50" value="0" data-adj="sepia" /><output>0</output></label>
+          <label><span>Tint</span><input type="range" min="-40" max="40" value="0" data-adj="tint" title="Green ↔ magenta. Left takes out the pink cast that builds up over edits" /><output>0</output></label>
           <label><span>Width</span><span class="range-wrap"><input type="range" min="85" max="120" value="100" data-adj="width" title="Stretch the cover sideways — Gemini can't reliably change a book's proportions" /><span class="ticks" id="adj-width-ticks" aria-hidden="true"></span></span><output>100</output></label>
         </div>
         <p class="adj-ratio" id="adj-ratio"></p>
-        <div class="row wrap"><button type="button" class="btn small ghost" id="adj-reset">Reset</button><button type="button" class="btn small gold" id="adj-save" data-write>Save as new version</button><small>free · instant</small></div>
+        <div class="row wrap"><button type="button" class="btn small ghost" id="adj-reset">Reset</button><button type="button" class="btn small" id="adj-auto" title="Measure the pink cast on the cover's neutral areas (whites, creams, greys) and set Tint to cancel it">✨ Auto (remove pink)</button><button type="button" class="btn small gold" id="adj-save" data-write>Save as new version</button><small>free · instant</small></div>
       </div>
       <div class="drawer" data-for="details" hidden>
         <details class="inherit" id="im-about-wrap" hidden><summary>About this book <small>· guides the imagery, never printed</small></summary><p id="im-about"></p></details>
@@ -264,6 +265,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=126"></script>
+  <script type="module" src="/app.js?v=127"></script>
 </body>
 </html>

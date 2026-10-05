@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=126';
+import { estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=127';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -909,16 +909,19 @@ $('lightbox').addEventListener('click', () => $('lightbox').close());
 // Shadows = a gamma lift (exponent < 1 raises dark tones most): CSS has no gamma, so the preview uses an SVG filter
 // and Save applies the same curve per pixel.
 const adjSliders = () => [...document.querySelectorAll('#im-adjust [data-adj]')];
-const ZERO = { sepia: 0, gamma: 0 };
+const ZERO = { sepia: 0, gamma: 0, tint: 0 };
 const neutralOf = (s) => ZERO[s.dataset.adj] ?? 100;
 const gammaExp = () => 1 / (1 + (+document.querySelector('[data-adj="gamma"]').value) / 30);
-const cssFilters = () => adjSliders().filter((s) => !['gamma', 'width'].includes(s.dataset.adj)).map((s) => `${s.dataset.adj}(${s.value}%)`).join(' ');
+const cssFilters = () => adjSliders().filter((s) => !['gamma', 'width', 'tint'].includes(s.dataset.adj)).map((s) => `${s.dataset.adj}(${s.value}%)`).join(' ');
 const adjNeutral = () => adjSliders().every((s) => +s.value === neutralOf(s));
 function applyAdjust() {
   adjSliders().forEach((s) => { s.nextElementSibling.textContent = s.value; });
   document.querySelectorAll('#adj-gamma feComponentTransfer > *').forEach((f) => f.setAttribute('exponent', gammaExp()));
-  const f = cssFilters(), wide = widthPct() / 100;
-  $('im-preview').style.setProperty('--adj', f || gammaExp() < 1 ? `${gammaExp() < 1 ? 'url(#adj-gamma) ' : ''}${f}` : 'none');
+  const f = cssFilters(), wide = widthPct() / 100, t = tintVal();
+  // Tint preview: the same shift as applyTint, as an SVG colour matrix (offsets in 0–1)
+  $('adj-tint-m').setAttribute('values', `1 0 0 0 ${t / 3 / 255}  0 1 0 0 ${-2 * t / 3 / 255}  0 0 1 0 ${t / 3 / 255}  0 0 0 1 0`);
+  const pre = `${gammaExp() < 1 ? 'url(#adj-gamma) ' : ''}${t ? 'url(#adj-tint) ' : ''}`;
+  $('im-preview').style.setProperty('--adj', f || pre ? `${pre}${f}` : 'none');
   $('im-preview').style.setProperty('--adj-w', wide);
   $('adj-save').disabled = adjNeutral();
   renderRatio();
@@ -948,6 +951,15 @@ $('adj-ratio').addEventListener('click', (e) => {
   const m = e.target.closest('[data-match-w]'); if (!m) return;
   document.querySelector('[data-adj="width"]').value = m.dataset.matchW; applyAdjust();
 });
+const tintVal = () => +document.querySelector('[data-adj="tint"]').value;
+$('adj-auto').addEventListener('click', async () => {
+  const b = imBook(), v = b && currentVersion(b); if (!v?.cover) return imStatus('Only a cut-out cover can be measured.', 'err');
+  const bmp = await createImageBitmap(await (await fetch(`${img(v.cover)}?tr=w-480`)).blob());
+  const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height }), ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0); const t = estimateTint(ctx.getImageData(0, 0, c.width, c.height));
+  document.querySelector('[data-adj="tint"]').value = t; applyAdjust();
+  imStatus(t ? `Pink cast measured — Tint ${t}. Check the preview, then Save as new version.` : 'No pink cast found on the neutral areas.', t ? 'ok' : '');
+});
 function resetAdjust() { adjSliders().forEach((s) => { s.value = neutralOf(s); }); applyAdjust(); }
 $('im-adjust').addEventListener('input', (e) => { if (e.target.matches('[data-adj]')) applyAdjust(); });
 $('adj-reset').addEventListener('click', resetAdjust);
@@ -959,11 +971,12 @@ $('adj-save').addEventListener('click', async () => {
     const W = Math.round(bmp.width * widthPct() / 100); // the width stretch, if any
     const c = Object.assign(document.createElement('canvas'), { width: W, height: bmp.height });
     const ctx = c.getContext('2d', { willReadFrequently: true });
-    const g = gammaExp();
-    if (g < 1) { // shadow lift first, per pixel (alpha untouched), then the CSS-style filters
+    const g = gammaExp(), tint = tintVal();
+    if (g < 1 || tint) { // per pixel first (alpha untouched): shadow lift, tint — then the CSS-style filters
       const t = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height }), tx = t.getContext('2d', { willReadFrequently: true });
       tx.drawImage(bmp, 0, 0); const d = tx.getImageData(0, 0, t.width, t.height), lut = Uint8ClampedArray.from({ length: 256 }, (_, i) => 255 * (i / 255) ** g);
-      for (let i = 0; i < d.data.length; i += 4) { d.data[i] = lut[d.data[i]]; d.data[i + 1] = lut[d.data[i + 1]]; d.data[i + 2] = lut[d.data[i + 2]]; }
+      if (g < 1) for (let i = 0; i < d.data.length; i += 4) { d.data[i] = lut[d.data[i]]; d.data[i + 1] = lut[d.data[i + 1]]; d.data[i + 2] = lut[d.data[i + 2]]; }
+      applyTint(d.data, tint);
       tx.putImageData(d, 0, 0); ctx.filter = cssFilters() || 'none'; ctx.drawImage(t, 0, 0, W, bmp.height);
     } else { ctx.filter = cssFilters() || 'none'; ctx.drawImage(bmp, 0, 0, W, bmp.height); }
     const label = adjSliders().filter((s) => +s.value !== neutralOf(s)).map((s) => `${s.closest('label').querySelector('span').textContent.toLowerCase()} ${s.value}`).join(', ');
