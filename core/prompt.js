@@ -158,7 +158,9 @@ function authorInTitle(title, author) {
 }
 export function coverText(book) {
   const custom = (book?.coverTitle || '').trim(); // the user's printed title, if set
-  const title = custom || (book?.title || '').trim(), by = bylineOf(book);
+  const title = custom || (book?.title || '').trim();
+  // A placeholder author ("Unknown", "Anonymous", "Various", "N/A") is never printed on a cover.
+  const raw = bylineOf(book), by = /^(unknown|anonymous|anon\.?|various|n\/?a|none|-+|\?+|unknown author|author unknown)$/i.test(raw) ? '' : raw;
   if (book?.byline != null) return { title, byline: by };
   if (norm(by) && norm(by) === norm(title)) return { title, byline: '' }; // "Joshua" by Joshua: the name is the title
   const rest = authorInTitle(title, book?.author);

@@ -427,5 +427,12 @@ describe('effectiveStyles', () => {
     expect(p).toMatch(/The line "Rumi" is stamped at the bottom of the cover — about half the height of the title letters/);
     expect(p).toMatch(/reads clearly even as a small thumbnail/);
   });
+
+  it('never prints a placeholder author ("Unknown", "Anonymous", "Various")', async () => {
+    const { coverText, composePrompt: compose } = await import('../core/prompt.js');
+    for (const a of ['Unknown', 'unknown', 'Anonymous', 'Various', 'N/A', 'Unknown author']) expect(coverText({ title: 'The Cloud of Unknowing', author: a }).byline).toBe('');
+    expect(compose({ app: {} }, { title: 'The Cloud of Unknowing', author: 'Unknown' })).not.toContain('Unknown"');
+    expect(coverText({ title: 'X', author: 'Rumi' }).byline).toBe('Rumi');
+  });
 });
 
