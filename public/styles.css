@@ -634,3 +634,6 @@ body.bench-open .libhead { margin-right: var(--bench-w); }
 .cover-filter { width: 15rem; max-width: 40vw; font: 14px var(--sans); padding: .4rem .7rem; border: 1px solid var(--edge); border-radius: 999px; background: var(--bg); color: var(--ink); }
 .cover-filter:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .filter-count { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
+/* The working overlay covers the cover image only: its frame keeps the preview's own height (the side column stretches) */
+.cover-top > .im-preview-wrap { align-self: start; }
+.im-spin { padding: 1rem; text-align: center; }
