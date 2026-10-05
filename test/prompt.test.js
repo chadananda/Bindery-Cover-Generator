@@ -293,7 +293,7 @@ describe('effectiveStyles', () => {
     const { composePrompt: compose, composeEditPrompt, composeBasedOnPrompt } = await import('../core/prompt.js');
     const p = { app: { keyColor: 'magenta' } };
     for (const x of [compose(p, { title: 'A' }), composeEditPrompt(p, 'x'), composeBasedOnPrompt(p, { title: 'A' }, 'B'), composeBasedOnPrompt(p, { title: 'A' }, 'B', { exact: true })])
-      expect(x).toMatch(/no magenta light falls on it.*spine and edges keep the binding's own colour.*metallic surfaces reflect only neutral warm light/i);
+      expect(x).toMatch(/no magenta light falls on it.*edges and sides keep their own colour.*metallic surfaces reflect only neutral warm light/i);
   });
 
   it('Same Cover maps a two-part title line by line ("SURA LXXXI" over "The Folded Up" → "SURA I" over "The Opening")', async () => {
