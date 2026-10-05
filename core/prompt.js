@@ -206,6 +206,16 @@ export function restorePrompt(project, key, materials = '') {
     (materials.trim() ? `\n\nWHAT IT IS MADE OF (render these real materials, not the texture seen in the small reference): ${materials.trim()}` : '');
 }
 /** Is this a full generation prompt (one Similar Style can reuse)? */
+// Similar Style with the model's photograph attached: words alone ("indigo stab-bound…") came back as a loose cousin.
+// The paragraph goes right after the framing line; a prompt that already carries one (a model that was itself Similar) is re-pointed.
+export function withStyleReference(prompt, refTitle) {
+  const para = `REFERENCE PHOTOGRAPH — the attached image is "${refTitle}", another volume of this same series. Make this book its ` +
+    `sibling: the same physical object — the same materials, colours, texture, binding, stitching and ageing, and the same ` +
+    `layout, placement and style of lettering, title slips, panels, seals and ornament — as if both were made side by side ` +
+    `in one workshop. Only three things are this book's own: its title, its author line, and a new illustration chosen for its subject.`;
+  const parts = String(prompt).split('\n\n').filter((p) => !p.startsWith('REFERENCE PHOTOGRAPH'));
+  return [parts[0], para, ...parts.slice(1)].join('\n\n');
+}
 export const isGenerationPrompt = (p) => /^Front cover of a book/.test(p || '');
 
 // "Sura LXXXI. The Folded up" → ["Sura LXXXI.", "The Folded up"]; "Book 3: The Road" → ["Book 3:", "The Road"]. One part otherwise.

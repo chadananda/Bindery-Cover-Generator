@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=127';
+import { withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=128';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -754,7 +754,8 @@ async function produceNow(book, { removeBg = true, change = '', lookId = null, o
   const similar = !!refBook && book.refMode === 'similar' && !asSet && !firstSet;
   const basedOn = !similar && !!(refV?.cover || refV?.raw);
   const inputKey = change ? from.raw || await rawFromCover(book, from) : asSet ? ownV.raw || await rawFromCover(book, ownV) : basedOn ? await refRaw(refBook, refV) : undefined;
-  const styleKey = asSet ? await refRaw(refBook, refV) : null;
+  // Similar sends the model's photograph too: from words alone the result was only a loose cousin of the model.
+  const styleKey = asSet || (similar && (refV?.cover || refV?.raw)) ? await refRaw(refBook, refV) : null;
   const sameAuthor = !!refBook && norm(refBook.author) === norm(book.author);
     // A model with no author line passes that on to every book ("" = none); a credit only to books by the same author.
   if (refBook && !asSet && !firstSet && book.byline == null && (refBook.byline === '' || (sameAuthor && refBook.byline != null))) { book.byline = refBook.byline; patch('books', book.id, { byline: book.byline }); }
@@ -768,6 +769,7 @@ async function produceNow(book, { removeBg = true, change = '', lookId = null, o
   let prompt = change ? composeEditPrompt(project, change, inKey) : firstSet ? composeSetFromVolumePrompt(project, book, refBook.title, vols, inKey) : asSet ? composeSetStylePrompt(project, book, refBook.title, inKey) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { key: inKey, exact: book.refMode === 'exact', refAuthor: refBook.author, refByline: refBook.byline }) : null;
   if (!prompt && similar) // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
     prompt = basePrompt || composePrompt(project, sameAuthor && book.byline == null ? { ...book, author: '' } : book, { styleText: await describedStyle(refBook) });
+  if (similar && styleKey) prompt = withStyleReference(prompt, refBook.title);
   prompt ||= composePrompt(project, book);
   const why = change ? `edit: ${change}` : firstSet ? `first set cover from ${refBook.title}` : asSet ? `set restyled like ${refBook.title}` : basedOn ? `${book.refMode === 'exact' ? 'same cover' : 'same style'} from ${refBook.title}` : similar ? `similar style from ${refBook.title}` : 'generate (own style layers)';
   const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, styleKey, why }) });

@@ -20,7 +20,8 @@ export async function generateImage({
   // Gemini returns JPEG at 2K, stored under .png keys: label inputs by their actual bytes (base64 "/9j/" = JPEG).
   const mimeOf = (b64, fallback) => (b64.startsWith('/9j/') ? 'image/jpeg' : b64.startsWith('iVBOR') ? 'image/png' : fallback);
   if (inputImage) parts.push({ inlineData: { mimeType: mimeOf(inputImage, inputMime), data: inputImage } });
-  if (inputImage && styleImage) parts.push({ inlineData: { mimeType: mimeOf(styleImage, 'image/png'), data: styleImage } });
+  // styleImage alone: a fresh generation that takes its look from a reference (Similar Style) — framing stays 3:4.
+  if (styleImage) parts.push({ inlineData: { mimeType: mimeOf(styleImage, 'image/png'), data: styleImage } });
   parts.push({ text: prompt });
   const init = {
     method: 'POST',

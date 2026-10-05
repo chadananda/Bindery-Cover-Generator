@@ -123,7 +123,7 @@ export default {
       if (part === 'generate' && req.method === 'POST') {
         const { bookId, prompt, inputKey, styleKey, inputWidth, why = null } = await body(); // why: the client's reason (edit text, Same Style from …)
         if (!ID.test(bookId || '') || !prompt) return fail(400, 'bookId and prompt required');
-        // inputKey: the image to edit; styleKey: a second image it takes its look from (a set restyled like the model).
+        // inputKey: the image to edit; styleKey: an image it takes its look from (a set restyled like the model; Similar Style).
         const load = async (k) => {
           if (!KEY.test(k) || !k.startsWith(`sets/${lib}/`)) throw Object.assign(new Error('Bad image key'), { status: 400 });
           const src = await env.COVERS.get(k);
@@ -133,7 +133,7 @@ export default {
         let inputImage, styleImage;
         try {
           if (inputKey) inputImage = await load(inputKey);
-          if (inputKey && styleKey) styleImage = await load(styleKey);
+          if (styleKey) styleImage = await load(styleKey); // alone: a fresh generation in a reference's look (Similar Style)
           // inputWidth: send the input SHRUNK (Restore) — a design reference too small to carry texture damage.
           if (inputImage && inputWidth > 0 && inputWidth <= 1024) {
             await initCodecs(webpEncWasm);

@@ -211,6 +211,17 @@ describe('effectiveStyles', () => {
     expect(p).toMatch(/^Front cover of a book/);
   });
 
+  it('Similar Style with the model photograph attached: a sibling of the same object, own title and illustration; once only', async () => {
+    const { composePrompt: compose, withStyleReference } = await import('../core/prompt.js');
+    const base = compose({ app: { style: 'x' } }, { title: 'The Shih King' }, { styleText: 'indigo stab-bound' });
+    const p = withStyleReference(withStyleReference(base, 'The Great Learning'), 'The Great Learning');
+    expect(p).toMatch(/^Front cover of a book/);
+    expect(p.match(/REFERENCE PHOTOGRAPH/g)).toHaveLength(1);
+    expect(p).toContain('"The Great Learning"');
+    expect(p.indexOf('REFERENCE PHOTOGRAPH')).toBeLessThan(p.indexOf('STYLE'));
+    expect(p).toContain('"The Shih King"');
+  });
+
   it('Same Style REPLACES the model\'s art (explicitly, first), with a concrete subject even without a description', async () => {
     const { composeBasedOnPrompt } = await import('../core/prompt.js');
     const p = composeBasedOnPrompt({ app: {} }, { title: 'Centres of Bahá’í Learning', author: 'Research Department' }, 'Divorce');

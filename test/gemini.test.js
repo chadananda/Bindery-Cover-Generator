@@ -59,6 +59,14 @@ describe('generateImage', () => {
     expect(parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'U0VU' } }, { inlineData: { mimeType: 'image/png', data: 'TU9E' } }, { text: 'restyle' }]);
   });
 
+  it('sends a style reference alone for a fresh generation (Similar Style), keeping the 3:4 frame', async () => {
+    const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
+    await generateImage({ apiKey: 'k', prompt: 'new cover', styleImage: 'TU9E', fetch });
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.contents[0].parts).toEqual([{ inlineData: { mimeType: 'image/png', data: 'TU9E' } }, { text: 'new cover' }]);
+    expect(body.generationConfig.imageConfig.aspectRatio).toBe('3:4');
+  });
+
   it('labels an input image by its bytes (2K results are JPEG under .png keys)', async () => {
     const fetch = vi.fn(async () => ok([{ inlineData: { mimeType: 'image/png', data: 'QQ==' } }]));
     await generateImage({ apiKey: 'k', prompt: 'p', inputImage: '/9j/4AAQ', styleImage: 'iVBORw0K', fetch });
