@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=125';
+import { restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=126';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -714,6 +714,9 @@ function basePromptOf(book, cur = currentVersion(book)) {
 // The prompt behind the model's current look, re-synced to the model's own title/byline/illustration lines (its byline
 // setting may have changed since it was generated).
 function modelPrompt(book) { const p = basePromptOf(book); return p && retitlePrompt(p, project, book); }
+// Similar Style reuses a prompt only when the model's CURRENT version IS that generation, unedited. Once edited, restored
+// or adjusted, the old prompt no longer describes what you see — then the model's look is read from its current image.
+function similarPrompt(book) { const cur = currentVersion(book); return isGenerationPrompt(cur?.prompt) ? modelPrompt(book) : null; }
 // A model with no generation prompt (site cover, upload, or edits of one): Gemini describes its look once per version.
 const described = new Map();
 function describedStyle(book) {
@@ -757,7 +760,7 @@ async function produceNow(book, { removeBg = true, change = '', lookId = null, o
   if (refBook && !asSet && !firstSet && book.byline == null && (refBook.byline === '' || (sameAuthor && refBook.byline != null))) { book.byline = refBook.byline; patch('books', book.id, { byline: book.byline }); }
   // The generation prompt this version descends from, copied forward (with this book's lines) so later regenerations and
   // models reuse it instead of rebuilding from metadata — an author the user removed can't creep back.
-  const mp = refBook ? modelPrompt(refBook) : null;
+  const mp = refBook ? similarPrompt(refBook) : null;
   const basePrompt = change ? (basePromptOf(book, from) && retitlePrompt(basePromptOf(book, from), project, book))
     : mp && !asSet && !firstSet ? retitlePrompt(mp, project, book, { keepByline: sameAuthor }) : null;
   const inKey = await keyOfRaw(inputKey); // edits keep the backdrop of the image they edit
@@ -991,7 +994,7 @@ function renderManager() {
     $('im-model-lab').innerHTML = `<button type="button" class="ref-img" data-open-ref="${src.id}" title="Open ${esc(src.title)}">${pic(srcV.cover || srcV.raw, src.title, '40px', [160], true, srcV)}</button>
       <span class="im-model-t" title="${esc(src.title)}${refV && src === libModel && refB.id !== libModel.id ? ` — previously based on “${refB.title}”; these buttons use the model` : ''}">${src === libModel ? 'Model' : src === vol ? 'Style from its volume' : 'Based on'}: <b>${esc(src.title)}</b></span>${src !== libModel && src !== vol ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
       ;
-    $('im-model').querySelector('[data-like="similar"]').title = modelPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
+    $('im-model').querySelector('[data-like="similar"]').title = similarPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
       : "A fresh generation in its look (read from its image — it has no prompt to reuse), with this book's title, author and illustration";
     likeLabels(b, src);
   }
@@ -999,7 +1002,7 @@ function renderManager() {
   genLabel(b, src);
   $('im-prompt').textContent = isHead(b) && src && !currentVersion(b) ? composeSetFromVolumePrompt(project, b, src.title, project.books.filter((x) => x.collectionId === b.collectionId && x.type !== 'Collection').length)
     : isHead(b) && src && currentVersion(b) ? composeSetStylePrompt(project, b, src.title) : !refV ? composePrompt(project, b) : b.refMode === 'similar'
-    ? (modelPrompt(refB) ? retitlePrompt(modelPrompt(refB), project, b, { keepByline: norm(refB.author) === norm(b.author) }) : `(The look of “${refB.title}” is read from its image when you generate, then:)\n\n` + composePrompt(project, b, { styleText: '…its described look…' }))
+    ? (similarPrompt(refB) ? retitlePrompt(similarPrompt(refB), project, b, { keepByline: norm(refB.author) === norm(b.author) }) : `(The look of “${refB.title}” is read from its image when you generate, then:)\n\n` + composePrompt(project, b, { styleText: '…its described look…' }))
     : composeBasedOnPrompt(project, b, refB.title, { exact: b.refMode === 'exact', refAuthor: refB.author, refByline: refB.byline });
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');

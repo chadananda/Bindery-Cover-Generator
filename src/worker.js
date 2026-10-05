@@ -200,7 +200,7 @@ export default {
         await initCodecs(webpEncWasm);
         const webp = await renderImage(new Uint8Array(await obj.arrayBuffer()), { width: 640, fit: 'inside', focus: 'center', quality: 85 }, 'webp');
         try {
-          const dm = meter(); const style = await geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined, dm)(bytesToB64(webp), 'image/webp', v.prompt);
+          const dm = meter(); const style = await geminiDescribe(env.GEMINI_API_KEY, env.CHAT_MODEL || undefined, dm)(bytesToB64(webp), 'image/webp', /^Front cover of a book/.test(v.prompt || '') ? v.prompt : ''); // an edit prompt isn't how it looks
           audit(env, ctx, lib, { kind: 'describe', bookId, input: { versionId: v.id }, output: { style } }, dm);
           return json({ ok: true, style, versionId: v.id });
         } catch (e) { return fail(502, String(e.message || e)); }
