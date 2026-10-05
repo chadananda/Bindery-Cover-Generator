@@ -106,6 +106,18 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
     for (const q of neighbours(p)) if (!transparent(q) && shadowLike(q * 4)) enqueue(q);
   }
 
+  // 3b. A painted "floor": Gemini sometimes lays a darker band of key colour along an image edge under the book. It
+  //     scores 0.57–0.64 on purity (straddling the shadow cut-off) and never touches a cleared pixel. Clear it from the
+  //     image border inward, through pixels that are bright and mostly key-coloured (purity ≥ 0.5, weakest key channel
+  //     ≥ 120) — a backdrop-tinted spine or a purple binding is darker in its key channels and never qualifies.
+  const floorLike = (i) => shadowLike(i) || (keyChannels.length && offChannels.length && keyPurity(i) >= 0.5 && Math.min(...keyChannels.map((c) => d[i + c])) >= 120);
+  head = 0; tail = 0;
+  for (let p = 0; p < W * H; p++) {
+    const x = p % W, y = (p - x) / W;
+    if ((x === 0 || y === 0 || x === W - 1 || y === H - 1) && !transparent(p) && floorLike(p * 4)) { queued[p] = 1; queue[tail++] = p; }
+  }
+  while (head < tail) { const p = queue[head++]; queued[p] = 0; if (transparent(p) || !floorLike(p * 4)) continue; clear(p); for (const q of neighbours(p)) if (!transparent(q) && !queued[q] && floorLike(q * 4)) { queued[q] = 1; queue[tail++] = q; } }
+
   // The binding's OWN cast: a purple or magenta-ish book is that colour all over. Measure the median cast (what all key
   // channels share above the others) in a ring a little way inside the edge, and only treat the EXCESS at the edge as
   // spill — otherwise a purple binding gets a dark band round its edge.
@@ -154,6 +166,20 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
       const excess = castOf(i) - baseCast;
       if (excess > 20) for (const c of keyChannels) d[i + c] = Math.round(d[i + c] - excess * 0.7);
     }
+  }
+
+  // 6. Specks: stray opaque pixels left in the backdrop (the rim of a cleared floor band) stretched the trim to the image
+  //    edge. Keep the largest connected area (the book) and any piece at least 0.5% of its size; drop the rest.
+  {
+    const label = new Int32Array(W * H), sizes = [0]; let id = 0;
+    for (let p = 0; p < W * H; p++) {
+      if (transparent(p) || label[p]) continue;
+      id++; let n = 0; head = 0; tail = 0; queue[tail++] = p; label[p] = id;
+      while (head < tail) { const q = queue[head++]; n++; for (const r of neighbours(q)) if (!label[r] && !transparent(r)) { label[r] = id; queue[tail++] = r; } }
+      sizes.push(n);
+    }
+    const keep = Math.max(...sizes) * 0.005;
+    for (let p = 0; p < W * H; p++) if (label[p] && sizes[label[p]] < keep) clear(p);
   }
 
   // Trim to the opaque bounding box.

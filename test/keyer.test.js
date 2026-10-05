@@ -106,6 +106,20 @@ describe('keyOut — the four passes, then trim + pad', () => {
     expect(alphaAt(out, 2, 100)).toBe(255);
   });
 
+  it('clears a darker magenta band along the image edge (a painted "floor" under the book)', () => {
+    const img = canvas(60, 80);
+    for (let y = 74; y < 80; y++) for (let x = 0; x < 60; x++) img.set(x, y, [190, 28, 145]); // dark-magenta strip to the bottom edge
+    const out = keyOut(img, { pad: 0 });
+    expect(out.height).toBe(64);   // the book only — the strip went
+  });
+
+  it('drops tiny stray specks in the backdrop so the trim hugs the book', () => {
+    const img = canvas(60, 80);
+    img.set(2, 77, [40, 30, 40]); img.set(57, 2, [40, 30, 40]); // two dark specks near the corners
+    const out = keyOut(img, { pad: 0 });
+    expect([out.width, out.height]).toEqual([44, 64]);
+  });
+
   it('despills a magenta fringe but keeps it FULLY opaque (semi-transparent edges look chewed)', () => {
     const img = canvas(60, 80);
     // Left edge column with magenta spill. Uneven R/B on purpose: (R+B)/2−G > 30 makes it spill, while
