@@ -434,5 +434,10 @@ describe('effectiveStyles', () => {
     expect(compose({ app: {} }, { title: 'The Cloud of Unknowing', author: 'Unknown' })).not.toContain('Unknown"');
     expect(coverText({ title: 'X', author: 'Rumi' }).byline).toBe('Rumi');
   });
+
+  it('the book is alone in the picture, everything within its outline (props broke the proportions)', async () => {
+    const { composePrompt: compose } = await import('../core/prompt.js');
+    expect(compose({ app: {} }, { title: 'X' })).toMatch(/the only thing in the picture.*within its outline/);
+  });
 });
 

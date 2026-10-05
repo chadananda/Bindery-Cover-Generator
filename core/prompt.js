@@ -65,7 +65,9 @@ export function composePrompt(project, book, opts = {}) {
   const out = [
     `Front cover of a book, photographed from directly above against a SOLID BRIGHT ${bgName} background. ` +
       `The book should NOT fill the entire frame — show the complete book with its natural edges visible against ` +
-      `the ${k.name.toLowerCase()} background. Leave a visible margin of ${k.name.toLowerCase()} around all edges of the book.`,
+      `the ${k.name.toLowerCase()} background. Leave a visible margin of ${k.name.toLowerCase()} around all edges of the book. ` +
+      // Props (a wrapping cloth, a hanging tassel) widened the cut-out and broke its proportions.
+      `The book is the only thing in the picture, alone on the plain background, and everything it carries — cords, ties, tassels, clasps — lies within its outline.`,
     '',
   ];
   // opts.styleText: a described model look (Similar Style from a cover with no prompt) — the WHOLE style; no layers.
