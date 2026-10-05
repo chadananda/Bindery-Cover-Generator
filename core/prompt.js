@@ -192,7 +192,7 @@ export function retitlePrompt(modelPrompt, project, book, { keepByline = false }
 /** Restore ("re-upscale"): the cover's image goes in SHRUNK to a small design reference (~480px), too small to carry the
  *  blotches and smeared texture that compound with every edit; Gemini photographs a brand-new, full-detail physical copy
  *  of exactly that design, rendering each material fresh. Layout, lettering, art and colours are kept. */
-export function restorePrompt(project, key) {
+export function restorePrompt(project, key, materials = '') {
   const k = KEY_COLORS[key] || keyColor(project);
   return `The attached small picture is a DESIGN REFERENCE for a book cover — a low-resolution view of its layout. Make a ` +
     `brand-new, full-detail photograph of a real, physical copy of exactly this design: the same layout, the same lettering ` +
@@ -201,7 +201,9 @@ export function restorePrompt(project, key) {
     `soft creases, cloth with its weave, wood with its grain, real thread or cord with its own strands and shadow, gilt that ` +
     `catches the light, real ink and brushwork. True, clean colour with no pink, magenta or lilac cast; no blotches, smears, ` +
     `painterly or AI artefacts. The book is the only thing in the picture, photographed from directly above against a SOLID ` +
-    `PURE ${k.name} (${k.hex}) background, uniform, with NO shadow, and a ${k.name.toLowerCase()} margin all round. ${metal(k)}`;
+    `PURE ${k.name} (${k.hex}) background, uniform, with NO shadow, and a ${k.name.toLowerCase()} margin all round. ${metal(k)}` +
+    // The book's own style says what it is really made of — render that, not the (damaged) texture in the reference.
+    (materials.trim() ? `\n\nWHAT IT IS MADE OF (render these real materials, not the texture seen in the small reference): ${materials.trim()}` : '');
 }
 /** Is this a full generation prompt (one Similar Style can reuse)? */
 export const isGenerationPrompt = (p) => /^Front cover of a book/.test(p || '');

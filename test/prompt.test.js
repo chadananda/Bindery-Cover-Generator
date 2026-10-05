@@ -448,6 +448,7 @@ describe('effectiveStyles', () => {
     expect(p).toMatch(/no pink, magenta or lilac cast/);
     expect(p).toContain('#FF00FF');
     expect(restorePrompt({ app: {} }, 'green')).toContain('#00FF00');
+    expect(restorePrompt({ app: {} }, null, 'indigo-dyed paper, white silk thread')).toMatch(/WHAT IT IS MADE OF[^:]*: indigo-dyed paper, white silk thread/);
   });
 
 
