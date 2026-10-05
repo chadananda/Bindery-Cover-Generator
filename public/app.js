@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=115';
+import { detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=116';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -163,8 +163,13 @@ async function openLib(id, push = true) {
   $('app').hidden = false;
 }
 $('lib-select').addEventListener('change', (e) => openLib(e.target.value));
-$('cover-filter').addEventListener('input', (e) => { clearTimeout(renderShelves.f); renderShelves.f = setTimeout(() => { coverFilter = e.target.value; renderShelves(); scrollTo({ top: 0 }); }, 150); });
-$('cover-filter').addEventListener('keydown', (e) => { if (e.key === 'Escape' && e.target.value) { e.stopPropagation(); e.target.value = ''; coverFilter = ''; renderShelves(); } });
+// After filtering (or clearing it), bring the open/selected cover into view — jumping to the top lost your place.
+function scrollToSelection() {
+  const id = im?.bookId || [...selected][0], el = id && $('app').querySelector(`.card[data-book="${id}"]`);
+  if (el) el.scrollIntoView({ block: 'center' }); else scrollTo({ top: 0 });
+}
+$('cover-filter').addEventListener('input', (e) => { clearTimeout(renderShelves.f); renderShelves.f = setTimeout(() => { coverFilter = e.target.value; renderShelves(); scrollToSelection(); }, 150); });
+$('cover-filter').addEventListener('keydown', (e) => { if (e.key === 'Escape' && e.target.value) { e.stopPropagation(); e.target.value = ''; coverFilter = ''; renderShelves(); scrollToSelection(); } });
 // Coming back to the tab pulls the server's current styles and book settings (changed elsewhere — another person, or a
 // style rewritten from outside), so generations never use stale text. Fields with an unsaved local edit keep yours;
 // versions are left alone (they're appended locally as they're made).
