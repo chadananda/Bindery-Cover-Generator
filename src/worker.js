@@ -121,7 +121,7 @@ export default {
       // stored in R2. inputKey = img2img edit of that raw. Keying happens in the browser; the prompt goes to D1
       // with the version row the client writes next.
       if (part === 'generate' && req.method === 'POST') {
-        const { bookId, prompt, inputKey, styleKey, why = null } = await body(); // why: the client's reason (edit text, Same Style from …)
+        const { bookId, prompt, inputKey, styleKey, inputWidth, why = null } = await body(); // why: the client's reason (edit text, Same Style from …)
         if (!ID.test(bookId || '') || !prompt) return fail(400, 'bookId and prompt required');
         // inputKey: the image to edit; styleKey: a second image it takes its look from (a set restyled like the model).
         const load = async (k) => {
@@ -131,17 +131,25 @@ export default {
           return bytesToB64(new Uint8Array(await src.arrayBuffer()));
         };
         let inputImage, styleImage;
-        try { if (inputKey) inputImage = await load(inputKey); if (inputKey && styleKey) styleImage = await load(styleKey); }
+        try {
+          if (inputKey) inputImage = await load(inputKey);
+          if (inputKey && styleKey) styleImage = await load(styleKey);
+          // inputWidth: send the input SHRUNK (Restore) — a design reference too small to carry texture damage.
+          if (inputImage && inputWidth > 0 && inputWidth <= 1024) {
+            await initCodecs(webpEncWasm);
+            inputImage = bytesToB64(await renderImage(b64ToBytes(inputImage), { width: Math.round(inputWidth), fit: 'inside' }, 'png'));
+          }
+        }
         catch (e) { return fail(e.status || 400, e.message); }
         const gm = meter(); // spend: every Gemini call is priced (core/pricing.js) and logged
         try {
           const r = await generateImage({ apiKey: env.GEMINI_API_KEY, prompt, inputImage, styleImage, meter: gm, model: env.GEMINI_MODEL || undefined });
           const rawKey = `sets/${lib}/raw/${bookId}/${Date.now()}.png`;
           await env.COVERS.put(rawKey, b64ToBytes(r.base64), { httpMetadata: { contentType: r.mimeType } });
-          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null }, output: { rawKey, text: r.text || '' } }, gm);
+          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null, inputWidth: inputWidth || null }, output: { rawKey, text: r.text || '' } }, gm);
           return json({ ok: true, rawKey, text: r.text });
         } catch (e) {
-          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null }, output: { error: String(e.message || e) } }, gm);
+          audit(env, ctx, lib, { kind: 'generate', bookId, input: { why, prompt, inputKey: inputKey || null, styleKey: styleKey || null, inputWidth: inputWidth || null }, output: { error: String(e.message || e) } }, gm);
           return fail(502, String(e.message || e));
         }
       }

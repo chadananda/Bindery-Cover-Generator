@@ -439,5 +439,17 @@ describe('effectiveStyles', () => {
     const { composePrompt: compose } = await import('../core/prompt.js');
     expect(compose({ app: {} }, { title: 'X' })).toMatch(/the only thing in the picture.*within its outline/);
   });
+
+  it('restore: a fresh full-detail photograph of the small design reference, every material rendered anew', async () => {
+    const { restorePrompt } = await import('../core/prompt.js');
+    const p = restorePrompt({ app: {} });
+    expect(p).toMatch(/DESIGN REFERENCE/);
+    expect(p).toMatch(/brand-new, full-detail photograph of a real, physical copy of exactly this design/);
+    expect(p).toMatch(/no pink, magenta or lilac cast/);
+    expect(p).toContain('#FF00FF');
+    expect(restorePrompt({ app: {} }, 'green')).toContain('#00FF00');
+  });
+
+
 });
 

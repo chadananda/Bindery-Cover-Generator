@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=120';
+import { restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=124';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -783,11 +783,31 @@ async function retryRequest(v) {
 }
 async function tryAgain(book, removeBg = true, extra = '') {
   const v = currentVersion(book), req = await retryRequest(v), inputKey = req.inputKey, styleKey = req.styleKey || null, prompt = retryPrompt(req.prompt, extra);
-  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, styleKey, why: `try again${extra ? ` + ${extra}` : ''}: ${v.edit || 'generate'}` }) });
+  const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, styleKey, inputWidth: req.inputWidth || (v.edit === 'restored' ? 480 : undefined), why: `try again${extra ? ` + ${extra}` : ''}: ${v.edit || 'generate'}` }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
   else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
   return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: v.basePrompt || null, inputKey: inputKey || null, styleKey, aspect, w, h, edit: extra ? `${v.edit || 'generate'} + ${extra}` : v.edit, lookId: v.lookId });
+}
+// Restore ("re-upscale"): the current image goes to Gemini shrunk to a ~480px design reference — the blotches and smeared
+// texture that compound with every edit can't survive that — and comes back as a fresh, full-detail photograph of a
+// real copy of the same design. Layout, lettering, art and colours are kept; every material is rendered anew.
+async function restoreAll(books) {
+  if (books.length > 3 && !confirm(`Restore ${books.length} covers? Each one is a paid Gemini image call.`)) return;
+  uiLog('restore', { output: { targets: books.map((x) => `${x.id} “${x.title}”`) } });
+  for (const b of books) {
+    const cur = currentVersion(b); if (!cur) continue;
+    status.set(b.id, { state: 'busy', msg: 'Restoring…' }); renderCard(b.id);
+    if (im?.bookId === b.id) { imBusy(true, 'Restoring — a fresh, full-detail photograph of this design… (~20–40s)'); imStatus('Restoring…'); }
+    try {
+      const inputKey = cur.raw || await rawFromCover(b, cur), key = await keyOfRaw(inputKey), prompt = restorePrompt(project, key);
+      const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: b.id, prompt, inputKey, inputWidth: 480, why: 'restore: fresh photograph of the same design' }) });
+      const k = await keyRaw(rawKey), cover = await storeImage(b, 'covers', k.base64);
+      await addVersion(b, { raw: rawKey, cover, prompt, basePrompt: cur.basePrompt || null, aspect: k.aspect, w: k.w, h: k.h, edit: 'restored', lookId: cur.lookId || null });
+      status.delete(b.id); if (im?.bookId === b.id) imStatus('Restored ✓ — saved as a new version', 'ok');
+    } catch (e) { status.set(b.id, { state: 'err', msg: e.message }); if (im?.bookId === b.id) imStatus(e.message, 'err'); }
+    renderCard(b.id); if (im?.bookId === b.id) { imBusy(false); renderManager(); }
+  }
 }
 async function tryAgainAll(books, extra = '') {
   if (books.length > 3 && !confirm(`Try ${books.length} covers again? Each one is a paid Gemini image call.`)) return;
@@ -1075,6 +1095,7 @@ $('imgmgr').addEventListener('click', async (e) => {
   const removeBg = $('im-removebg').checked;
   try {
     if (act === 'retry') { await tryAgainAll(selTargets(b)); return; }
+    if (act === 'restore') { await restoreAll(selTargets(b)); return; }
     if (act === 'generate') {
       const targets = selTargets(b);
       uiLog('generate', { bookId: b.id, input: { from: 'editor' }, output: { targets: targets.map((x) => `${x.id} “${x.title}”`) } });
@@ -1374,6 +1395,11 @@ $('chat-form').addEventListener('submit', (e) => {
   }
   // "try again" (alone): the same request once more for the selected/open covers — no Binder, no reinterpretation.
   // "try again, but make the font smaller": the same request + that instruction.
+  if (/^\s*(restore|re-?render|enhance|clean (it |this )?up|make (it )?photo-?real(istic)?( again)?)\b[\s.!]*$/i.test(t) && (im?.bookId || selected.size)) {
+    const targets = (selected.size ? selBooks() : [imBook()]).filter((b) => b && currentVersion(b));
+    chat.messages.push({ role: 'user', text: t }, { role: 'assistant', text: `Restoring photographic quality, design unchanged (edits applied in one clean pass where there are several): ${targets.map((b) => b.title).join(' · ')}…`, books: targets.map((b) => b.id) }); renderChat();
+    restoreAll(targets); return;
+  }
   const again = tryAgainIntent(t);
   if (again && (im?.bookId || selected.size)) {
     const targets = (selected.size ? selBooks() : [imBook()]).filter((b) => b && currentVersion(b));
