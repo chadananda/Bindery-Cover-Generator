@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=112';
+import { detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=114';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -163,6 +163,8 @@ async function openLib(id, push = true) {
   $('app').hidden = false;
 }
 $('lib-select').addEventListener('change', (e) => openLib(e.target.value));
+$('cover-filter').addEventListener('input', (e) => { clearTimeout(renderShelves.f); renderShelves.f = setTimeout(() => { coverFilter = e.target.value; renderShelves(); scrollTo({ top: 0 }); }, 150); });
+$('cover-filter').addEventListener('keydown', (e) => { if (e.key === 'Escape' && e.target.value) { e.stopPropagation(); e.target.value = ''; coverFilter = ''; renderShelves(); } });
 // Coming back to the tab pulls the server's current styles and book settings (changed elsewhere — another person, or a
 // style rewritten from outside), so generations never use stale text. Fields with an unsaved local edit keep yours;
 // versions are left alone (they're appended locally as they're made).
@@ -240,9 +242,22 @@ const cardHtml = (b, head = null) => {
   </article>`;
 };
 
+// The library-header filter: every word must appear in the title, printed title or author (accents and case ignored).
+// A match on a collection keeps all its volumes; empty shelves hide; matching shelves open.
+let coverFilter = '';
+const fnorm = (s) => String(s || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/['’‘ʻʼ`]/g, '').toLowerCase();
+function filterBooks(books) {
+  const words = fnorm(coverFilter).split(/\s+/).filter(Boolean); if (!words.length) return books;
+  const hit = (b) => { const t = fnorm(`${b.title} ${b.coverTitle || ''} ${b.author || ''} ${b.subtitle || ''}`); return words.every((w) => t.includes(w)); };
+  const heads = new Set(books.filter((b) => b.type === 'Collection' && hit(b)).map((b) => b.collectionId));
+  return books.filter((b) => hit(b) || (b.collectionId && heads.has(b.collectionId)));
+}
 function renderShelves() {
-  $('app').innerHTML = groups().filter((g) => !focusShelf || (g.shelf?.id || '-') === focusShelf).map((g) => {
-    const id = g.shelf?.id || '-', open = !!focusShelf || !collapsed.has(id);
+  const filtering = !!coverFilter.trim(); let matches = 0;
+  const shown = groups().filter((g) => !focusShelf || (g.shelf?.id || '-') === focusShelf).map((g) => ({ ...g, books: filterBooks(g.books) })).filter((g) => !filtering || g.books.length);
+  if (filtering) { matches = shown.reduce((n, g) => n + g.books.length, 0); $('filter-count').textContent = matches ? `${matches} match${matches === 1 ? '' : 'es'}` : 'no matches'; } else $('filter-count').textContent = '';
+  $('app').innerHTML = shown.map((g) => {
+    const id = g.shelf?.id || '-', open = !!focusShelf || filtering || !collapsed.has(id);
     const covers = g.books.filter((b) => b.versions.length).length;
     const allSel = g.books.length && g.books.every((b) => selected.has(b.id));
     return `<section class="shelf" data-shelf="${id}">
@@ -254,7 +269,7 @@ function renderShelves() {
         ${g.shelf ? `<button type="button" class="btn small" data-shelf-style>Shelf style</button>` : ''}
         ${g.shelf?.style ? `<p class="shelf-style-line">${esc(g.shelf.style)}</p>` : ''}
       </header>
-      ${open ? `<div class="grid">${shelfCards(g.books)}</div>` : ''}
+      ${open ? `<div class="grid">${shelfCards(g.books, filtering)}</div>` : ''}
     </section>`;
   }).join('');
 }
@@ -280,7 +295,7 @@ const seriesStem = (t) => {
 const tray = (key, title, vols) => `<div class="tray" data-tray="${esc(key)}">
   <div class="tray-head"><b>${esc(title)}</b> · ${vols.length} volumes${(() => { const all = vols.length && vols.every((b) => selected.has(b.id)); return `<button type="button" class="btn small" data-pick-tray="${all ? 'off' : 'on'}">${all ? 'Deselect all' : `Select all ${vols.length}`}</button>`; })()}<button type="button" class="btn small ghost" data-coll-toggle="${esc(key)}">Collapse ▴</button></div>
   <div class="tray-grid">${vols.map((b) => cardHtml(b)).join('')}</div></div>`;
-function shelfCards(books) {
+function shelfCards(books, filtering = false) {
   const heads = books.filter(isHead);
   const inTray = new Set(heads.map((h) => h.collectionId));
   let loose = books.filter((b) => !isHead(b) && !inTray.has(b.collectionId));
@@ -289,7 +304,7 @@ function shelfCards(books) {
   const grouped = new Set(series.flatMap(([, v]) => v));
   loose = loose.filter((b) => !grouped.has(b));
   return loose.map((b) => cardHtml(b)).join('')
-    + heads.map((h) => { const vols = byPos(books.filter((b) => b !== h && b.collectionId === h.collectionId)), open = openColls.has(h.collectionId);
+    + heads.map((h) => { const vols = byPos(books.filter((b) => b !== h && b.collectionId === h.collectionId)), open = openColls.has(h.collectionId) || (filtering && vols.length > 0);
       return cardHtml(h, { vols: vols.length, open }) + (open ? tray(h.collectionId, h.title, vols) : ''); }).join('')
     + series.map(([stem, vols]) => { const key = `series:${stem}`, open = openColls.has(key);
       return seriesCard(key, stem, vols, open) + (open ? tray(key, stem, vols) : ''); }).join('');

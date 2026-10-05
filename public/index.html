@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=61" />
+  <link rel="stylesheet" href="/styles.css?v=62" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -47,6 +47,7 @@
     <h1 id="lib-name" class="lib-name"></h1>
     <span id="lib-stats" class="lib-stats"></span>
     <span class="spacer"></span>
+    <span class="filter-wrap"><input id="cover-filter" type="search" class="cover-filter" placeholder="Filter covers…" aria-label="Filter covers by title or author" autocomplete="off" /><span id="filter-count" class="filter-count" aria-live="polite"></span></span>
     <select id="shelf-jump" class="nav-select" aria-label="Show bookshelf"></select>
     <button type="button" class="btn small" id="open-libstyle">Library style</button>
     <button type="button" class="btn small" id="open-add" data-write>+ Books</button>
@@ -262,6 +263,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=112"></script>
+  <script type="module" src="/app.js?v=114"></script>
 </body>
 </html>

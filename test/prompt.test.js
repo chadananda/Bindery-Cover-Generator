@@ -420,5 +420,12 @@ describe('effectiveStyles', () => {
     const proj = { app: {}, shelves: [], collections: [{ id: 'c', name: 'Sahih Muslim' }], books: [{ id: 'c', collectionId: 'c', type: 'Collection' }, { id: 'v1', collectionId: 'c' }, { id: 'v2', collectionId: 'c' }] };
     expect(compose(proj, { id: 'c', title: 'Sahih Muslim', type: 'Collection', collectionId: 'c' })).toMatch(/boxed set of its 2 volumes/i);
   });
+
+  it('the author line is sized to read in a thumbnail, not just "smaller"', async () => {
+    const { composePrompt: compose } = await import('../core/prompt.js');
+    const p = compose({ app: {} }, { title: 'The Masnavi', author: 'Rumi' });
+    expect(p).toMatch(/The line "Rumi" is stamped at the bottom of the cover — about half the height of the title letters/);
+    expect(p).toMatch(/reads clearly even as a small thumbnail/);
+  });
 });
 

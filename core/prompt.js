@@ -124,7 +124,8 @@ function bookLines(project, book) {
     out.push(`This is the cover picture for a whole COLLECTION: photograph a boxed set${n ? ` of its ${n} volumes` : ''} — a slipcase or box holding the volumes, their spines showing side by side, in the binding described above; the set's title "${title}" on the front of the box.`);
   }
   if (title) out.push(`The title "${title}" is stamped on the cover${book?.subtitle ? `, with the subtitle "${book.subtitle}" smaller beneath it` : ''}.`);
-  if (by) out.push(`The line "${by}" is stamped smaller at the bottom of the cover.`);
+  // "smaller" came out too small to read in a thumbnail on nearly every cover.
+  if (by) out.push(`The line "${by}" is stamped at the bottom of the cover — about half the height of the title letters, bold and in strong contrast, so it reads clearly even as a small thumbnail.`);
   else if (book?.byline === '') out.push(NO_BYLINE);
   // Book metadata as CONTEXT: it informs the imagery, never the printed text. Capped so a long blurb
   // cannot outweigh the style layers.
