@@ -235,10 +235,16 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
   // Series titles ("Sura LXXXI. The Folded up") are often set as two lines (a small number line over the name): map them
   // part for part, or the model can't tell which line is which and prints the whole string in one place.
   const a = titleParts(refTitle), t = titleParts(title);
+  // Asked only for "the same typeface", Gemini re-lettered new words in a plain serif — swash capitals and flourishes
+  // gone, worst on longer titles. Spell out copying the letter shapes, and how a longer title fits.
+  const hand = ' Letter it by copying the existing letterforms: every letter shape, swash, flourish, serif, stroke weight, ' +
+    'ornament and finish of the current title carried over — letters the two titles share copied exactly, the rest drawn in ' +
+    'the same hand — so the new title looks set from the same decorative type. A longer title fits by using more lines or ' +
+    'slightly smaller letters, keeping every decorative detail.';
   const lettering = [
     a.length === 2 && t.length === 2
-      ? `Change the title text part for part, wherever and however each part is set on the cover (its own line, size and case): "${a[0]}" → "${t[0]}", and "${a[1]}" → "${t[1]}". Each new part takes the same typeface, size, letter case, colour, finish and placement as the part it replaces${sub ? `; add the subtitle "${sub}" beneath in the same style` : ''}.`
-      : `Replace the title lettering with "${title}"${sub ? ` and the subtitle "${sub}"` : ''}, in the same typeface, size, colour, finish and placement as the current title.`,
+      ? `Change the title text part for part, wherever and however each part is set on the cover (its own line, size and case): "${a[0]}" → "${t[0]}", and "${a[1]}" → "${t[1]}". Each new part takes the same typeface, size, letter case, colour, finish and placement as the part it replaces${sub ? `; add the subtitle "${sub}" beneath in the same style` : ''}.${hand}`
+      : `Replace the title lettering with "${title}"${sub ? ` and the subtitle "${sub}"` : ''}, in the same typeface, size, colour, finish and placement as the current title.${hand}`,
     sameAuthor ? 'Keep the byline and any credit line exactly as they are — same words, same place.'
       : by && book?.byline == null ? `If the cover has a byline or author line, replace it with "${by}" in the same style and place; if it has none, do not add one.`
       : by ? `Replace the byline with "${by}", in the same style and place.`

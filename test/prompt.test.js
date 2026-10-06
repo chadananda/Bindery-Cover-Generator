@@ -222,6 +222,15 @@ describe('effectiveStyles', () => {
     expect(p).toContain('"The Shih King"');
   });
 
+  it('Same Style / Same Cover re-letter by COPYING the model\'s letterforms (Gemini fell back to a plain serif for new words)', async () => {
+    const { composeBasedOnPrompt } = await import('../core/prompt.js');
+    for (const exact of [false, true]) {
+      const p = composeBasedOnPrompt({ app: {} }, { title: 'Additional Tablets, Extracts and Talks' }, 'Some Answered Questions', { exact });
+      expect(p).toMatch(/copy(ing)? the (existing|current) letterforms/i);
+      expect(p).toMatch(/more lines/i);              // long titles fit by lines, keeping the face
+    }
+  });
+
   it('Same Style REPLACES the model\'s art (explicitly, first), with a concrete subject even without a description', async () => {
     const { composeBasedOnPrompt } = await import('../core/prompt.js');
     const p = composeBasedOnPrompt({ app: {} }, { title: 'Centres of Bahá’í Learning', author: 'Research Department' }, 'Divorce');
