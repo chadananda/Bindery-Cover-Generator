@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=134';
+import { exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=135';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -191,6 +191,8 @@ async function refreshProject() {
   if (changed) { renderAll(); if (im) renderManager(); }
 }
 addEventListener('focus', refreshProject);
+// ⇩ Covers JSON: { bookId: cover url } for this library (worker /covers, core/export.js coverUrls).
+$('lib-export').addEventListener('click', (e) => { if (!lib) return e.preventDefault(); e.currentTarget.href = `${base()}/covers`; e.currentTarget.download = `${lib}-covers.json`; });
 // Before composing a prompt: styles written elsewhere (another tab, Claude) while this tab sat focused never arrived —
 // a Bahá'í cover went out with the shelf style replaced minutes earlier. One fetch serves a whole batch (15 s).
 let freshAt = 0, freshRun = null;

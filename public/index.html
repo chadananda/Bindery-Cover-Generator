@@ -49,6 +49,7 @@
     <span class="spacer"></span>
     <span class="filter-wrap"><input id="cover-filter" type="search" class="cover-filter" placeholder="Filter covers…" aria-label="Filter covers by title or author" autocomplete="off" /><span id="filter-count" class="filter-count" aria-live="polite"></span></span>
     <select id="shelf-jump" class="nav-select" aria-label="Show bookshelf"></select>
+    <a class="btn small" id="lib-export" href="#" download title="Download a JSON file of { book id: cover URL } for every book's current cover — the importer fetches each PNG by URL">⇩ Covers JSON</a>
     <button type="button" class="btn small" id="open-libstyle">Library style</button>
     <button type="button" class="btn small" id="open-add" data-write>+ Books</button>
   </header>
@@ -265,6 +266,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=134"></script>
+  <script type="module" src="/app.js?v=135"></script>
 </body>
 </html>

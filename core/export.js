@@ -7,3 +7,15 @@ export function parseExportName(name) {
   const [id, shelf, title] = String(name).replace(/\.[a-z0-9]+$/i, '').split('--');
   return { id, shelf, title };
 }
+
+// Library export: { bookId: url } of each book's current cut-out cover (full-size transparent PNG, served from R2 by
+// the Worker's /img/). newOnly drops books still on the imported site cover — the importer only fetches what changed.
+export function coverUrls(project, origin, { newOnly = false } = {}) {
+  const out = {};
+  for (const b of project.books || []) {
+    const v = (b.versions || []).find((x) => x.id === b.selected) || (b.versions || []).at(-1);
+    if (!v?.cover || (newOnly && v.edit === 'current site cover')) continue;
+    out[b.id] = `${origin}/img/${v.cover}`;
+  }
+  return out;
+}

@@ -3,5 +3,5 @@
 export { keyOut, sampleBackground, detectKey, KEYS, estimateTint, applyTint, aspectOk, ASPECT_RANGE } from './keyer.js';
 export { composePrompt, composeEditPrompt, composeBasedOnPrompt, retitlePrompt, restorePrompt, isGenerationPrompt, withStyleReference, bylineOf, coverText, tryAgainIntent, retryPrompt, composeSetStylePrompt, composeSetFromVolumePrompt, chooseKey, effectiveStyles, keyColor, KEY_COLORS, DEFAULT_APP_STYLE } from './prompt.js';
 export { parseCsv, csvToBooks } from './csv.js';
-export { exportName, parseExportName } from './export.js';
+export { exportName, parseExportName, coverUrls } from './export.js';
 export { generateImage, DEFAULT_MODEL } from './gemini.js';

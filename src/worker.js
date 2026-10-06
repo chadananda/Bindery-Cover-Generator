@@ -4,6 +4,7 @@
 // renditions, generate-once). Only a deleted generated version's own images are ever removed from R2.
 import { generateImage } from '../core/gemini.js';
 import { meter } from '../core/pricing.js';
+import { coverUrls } from '../core/export.js';
 import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest, spendSummary } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
 import { renderImage, initCodecs } from './render.js';
@@ -115,6 +116,15 @@ export default {
       if (!part) {
         if (req.method === 'GET') { const project = await loadLibrary(env.DB, lib); return project ? json({ ok: true, project }) : fail(404, 'No such library'); }
         if (req.method === 'PATCH') return json({ ok: true, changed: await patchRow(env.DB, lib, 'libraries', lib, await body()) });
+      }
+
+      // GET /api/libraries/<lib>/covers[?new=1] → { bookId: cover url } (core/export.js), a download — the importer fetches
+      // each full-size PNG by url instead of a big zip. Public, like the library itself.
+      if (part === 'covers' && req.method === 'GET') {
+        const project = await loadLibrary(env.DB, lib);
+        if (!project) return fail(404, 'No such library');
+        const map = coverUrls(project, url.origin, { newOnly: url.searchParams.get('new') === '1' });
+        return new Response(JSON.stringify(map, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="${lib}-covers.json"`, 'cache-control': 'no-store' } });
       }
 
       // POST /api/libraries/<lib>/generate {bookId, prompt, inputKey?} → a RAW generation (key colour intact)
