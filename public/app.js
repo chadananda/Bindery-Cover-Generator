@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=133';
+import { exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=134';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -468,22 +468,20 @@ $('sel-delete').addEventListener('click', async () => {
   await remove('books', ids);
 });
 
-// Download: a zip of <title>.png with the prompt that made it beside each (.txt), plus manifest.csv.
+// Download: a zip of <id>--<shelf-slug>--<title-slug>.png (core/export.js — parseable back to the book id) with the
+// prompt that made it beside each (.txt), plus manifest.csv.
 $('sel-download').addEventListener('click', async () => {
   const books = selBooks().filter((b) => currentVersion(b));
   if (!books.length) { alert('None of the selected books has a cover yet.'); return; }
   const btn = $('sel-download'); btn.disabled = true; btn.textContent = 'Zipping…';
   try {
     const { zipSync, strToU8 } = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
-    const files = {}, used = new Set(), manifest = [['file', 'title', 'author', 'bookshelf', 'collection']];
+    const files = {}, manifest = [['file', 'id', 'title', 'author', 'bookshelf', 'collection', 'source']];
     for (const b of books) {
-      const v = currentVersion(b);
-      let name = slug(b.author ? `${b.title}-${b.author}` : b.title);
-      while (used.has(name)) name += '-' + rid().slice(0, 3);
-      used.add(name);
-      files[`${name}.png`] = new Uint8Array(await (await fetch(img(v.cover || v.raw))).arrayBuffer());
-      files[`${name}.txt`] = strToU8(v.prompt || '');
-      manifest.push([`${name}.png`, b.title, b.author, shelfById(b.shelfId)?.name || '', collById(b.collectionId)?.name || '']);
+      const v = currentVersion(b), shelf = shelfById(b.shelfId)?.name || '', file = exportName(b, shelf);
+      files[file] = new Uint8Array(await (await fetch(img(v.cover || v.raw))).arrayBuffer());
+      files[file.replace(/\.png$/, '.txt')] = strToU8(v.prompt || '');
+      manifest.push([file, b.id, b.title, b.author, shelf, collById(b.collectionId)?.name || '', b.source || '']);
     }
     files['manifest.csv'] = strToU8(manifest.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'));
     const blob = new Blob([zipSync(files, { level: 0 })], { type: 'application/zip' });
