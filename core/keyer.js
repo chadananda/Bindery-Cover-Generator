@@ -114,7 +114,15 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
   //     scores 0.57–0.64 on purity (straddling the shadow cut-off) and never touches a cleared pixel. Clear it from the
   //     image border inward, through pixels that are bright and mostly key-coloured (purity ≥ 0.5, weakest key channel
   //     ≥ 120) — a backdrop-tinted spine or a purple binding is darker in its key channels and never qualifies.
-  const floorLike = shadowLike;
+  // A DEEP cast shadow (Gemini ignores "no shadow"): dark and reddish, (101,18,62)→(141,39,105), purity ~0.44 and key
+  // channels far under 120. It still has the key's make-up — off channel(s) under 45% of the weakest key channel, the key
+  // channels within ~2:1 of each other — which maroon leather (blue a third of red) and cream never have. Reached only
+  // from the image border; skipped when the binding itself leans to the key (a plum book on magenta).
+  const darkKey = (i) => {
+    const k = keyChannels.map((c) => d[i + c]), lo = Math.min(...k), hi = Math.max(...k), off = Math.max(...offChannels.map((o) => d[i + o]));
+    return off < 0.45 * lo && lo >= 0.55 * hi && lo - off >= 25;
+  };
+  const floorLike = (i) => shadowLike(i) || (lean <= 30 && keyChannels.length > 0 && offChannels.length > 0 && darkKey(i));
   head = 0; tail = 0;
   for (let p = 0; p < W * H; p++) {
     const x = p % W, y = (p - x) / W;

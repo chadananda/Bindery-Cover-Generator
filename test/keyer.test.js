@@ -113,6 +113,18 @@ describe('keyOut — the four passes, then trim + pad', () => {
     expect(out.height).toBe(64);   // the book only — the strip went
   });
 
+  it('clears a DEEP cast shadow from under the book to the image edge (dark, reddish magenta, purity ~0.44)', () => {
+    // Measured on a Bahá'í cover: (101,18,62) at the book's foot fading to (141,39,105) at the image edge.
+    for (const book of [LEATHER, [215, 182, 137], [90, 20, 30]]) { // brown, cream, and MAROON leather (must survive)
+      const img = canvas(60, 80);
+      for (let y = 8; y <= 71; y++) for (let x = 8; x <= 51; x++) img.set(x, y, book);
+      for (let y = 72; y < 80; y++) { const t = (y - 72) / 7; for (let x = 4; x < 56; x++) img.set(x, y, [101 + 40 * t, 18 + 21 * t, 62 + 43 * t].map(Math.round)); }
+      const out = keyOut(img, { pad: 0 });
+      expect([out.width, out.height]).toEqual([44, 64]);
+      expect(alphaAt(out, 22, 63)).toBe(255);
+    }
+  });
+
   it('drops tiny stray specks in the backdrop so the trim hugs the book', () => {
     const img = canvas(60, 80);
     img.set(2, 77, [40, 30, 40]); img.set(57, 2, [40, 30, 40]); // two dark specks near the corners
