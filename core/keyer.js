@@ -86,12 +86,31 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
   // key channel ≥ 0.6. Backdrop and shadow score ~0.75; leather merely TINTED by the backdrop (a spine lit magenta scored
   // 0.3–0.54) is part of the book — clearing it ate the spine in jagged bites.
   const keyPurity = (i) => (Math.min(...keyChannels.map((c) => d[i + c])) - Math.max(...offChannels.map((o) => d[i + o]))) / Math.max(1, ...keyChannels.map((c) => d[i + c]));
+  // A shadow is the backdrop darkened, so it keeps part of the backdrop's off-channel share. Gemini's backdrops are
+  // often pale — (248,128,226) — and their shadows keep ≥ 15% green, (101,18,62); a dark purple-maroon spine, (68,7,51),
+  // has 10% and was bitten off down the left edge. A pure #FF00FF backdrop asks nothing (its shadows have no green).
+  const bgShare = offChannels.length && keyChannels.length ? Math.max(...offChannels.map((o) => bg[o])) / Math.max(1, ...keyChannels.map((c) => bg[c])) : 0;
+  const keepsBackdrop = (i) => Math.max(...offChannels.map((o) => d[i + o])) >= 0.3 * bgShare * Math.max(...keyChannels.map((c) => d[i + c]));
   const strictShadow = (i) => offChannels.length > 0 && keyChannels.length > 0 &&
-    keyChannels.every((c) => offChannels.every((o) => d[i + c] > d[i + o] + 30)) && keyPurity(i) >= 0.6;
+    keyChannels.every((c) => offChannels.every((o) => d[i + c] > d[i + o] + 30)) && keyPurity(i) >= 0.6 && keepsBackdrop(i);
   // A soft drop shadow under a book scored 0.56–0.58 — just under 0.6 — and stayed as a pink slab. Bright, mostly-key
   // pixels (purity ≥ 0.5 with the weakest key channel ≥ 120) are shadow too; tinted spines (≤ 94), purple bindings
   // (purity ~0.4) and pink-lit ivory (~0.2) never reach that.
-  const shadowLike = (i) => strictShadow(i) || (keyChannels.length > 0 && offChannels.length > 0 && keyPurity(i) >= 0.5 && Math.min(...keyChannels.map((c) => d[i + c])) >= 120);
+  // Colour can't always tell a shadow from a dark key-coloured spine — Gemini drew one (124,0,98) on pure #FF00FF, the
+  // exact colour of a shadow. Texture can: a painted shadow is a smooth gradient (brightness range 3–6 over a 5×5 patch),
+  // leather grain and gilt bands are not (median 15, 90th percentile 47). Shadow passes only take smooth pixels.
+  // Only key-coloured neighbours count: next to the book the window takes in leather, and a shadow touching it is still smooth.
+  const keyish = (i) => Math.min(...keyChannels.map((c) => d[i + c])) - Math.max(...offChannels.map((o) => d[i + o])) >= 25;
+  const lum = (q) => (d[q * 4] * 3 + d[q * 4 + 1] * 6 + d[q * 4 + 2]) / 10;
+  const smooth = (p) => {
+    const x = p % W, y = (p - x) / W; let lo = 255, hi = 0;
+    for (let dy = -2; dy <= 2; dy += 2) for (let dx = -2; dx <= 2; dx += 2) {
+      const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+      const q = yy * W + xx; if (d[q * 4 + 3] === 0 || !keyish(q * 4)) continue; const v = lum(q); if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+    return hi - lo <= 12;
+  };
+  const shadowLike = (i) => smooth(i / 4) && (strictShadow(i) || (keyChannels.length > 0 && offChannels.length > 0 && keyPurity(i) >= 0.5 && Math.min(...keyChannels.map((c) => d[i + c])) >= 120));
   // Fixpoint as a queue, not repeated full scans: seed with shadow-like pixels already touching
   // transparency; clearing one can expose its neighbours, so they are re-tested. Same result as
   // "loop until nothing changes", in one sweep — a wide shadow on a 1MP image would otherwise
@@ -120,9 +139,9 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
   // from the image border; skipped when the binding itself leans to the key (a plum book on magenta).
   const darkKey = (i) => {
     const k = keyChannels.map((c) => d[i + c]), lo = Math.min(...k), hi = Math.max(...k), off = Math.max(...offChannels.map((o) => d[i + o]));
-    return off < 0.45 * lo && lo >= 0.55 * hi && lo - off >= 25;
+    return off < 0.45 * lo && lo >= 0.55 * hi && lo - off >= 25 && keepsBackdrop(i);
   };
-  const floorLike = (i) => shadowLike(i) || (lean <= 30 && keyChannels.length > 0 && offChannels.length > 0 && darkKey(i));
+  const floorLike = (i) => shadowLike(i) || (lean <= 30 && keyChannels.length > 0 && offChannels.length > 0 && darkKey(i) && smooth(i / 4));
   head = 0; tail = 0;
   for (let p = 0; p < W * H; p++) {
     const x = p % W, y = (p - x) / W;

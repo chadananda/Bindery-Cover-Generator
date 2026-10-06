@@ -116,13 +116,27 @@ describe('keyOut — the four passes, then trim + pad', () => {
   it('clears a DEEP cast shadow from under the book to the image edge (dark, reddish magenta, purity ~0.44)', () => {
     // Measured on a Bahá'í cover: (101,18,62) at the book's foot fading to (141,39,105) at the image edge.
     for (const book of [LEATHER, [215, 182, 137], [90, 20, 30]]) { // brown, cream, and MAROON leather (must survive)
-      const img = canvas(60, 80);
+      const img = canvas(60, 80, { bg: [248, 128, 226] }); // the pale pink backdrop it was measured on
       for (let y = 8; y <= 71; y++) for (let x = 8; x <= 51; x++) img.set(x, y, book);
       for (let y = 72; y < 80; y++) { const t = (y - 72) / 7; for (let x = 4; x < 56; x++) img.set(x, y, [101 + 40 * t, 18 + 21 * t, 62 + 43 * t].map(Math.round)); }
       const out = keyOut(img, { pad: 0 });
       expect([out.width, out.height]).toEqual([44, 64]);
       expect(alphaAt(out, 22, 63)).toBe(255);
     }
+  });
+
+  it('keeps a dark purple-maroon SPINE at the edge on a pale backdrop (the shadow rules bit it: (68,7,51), (96,0,48))', () => {
+    const img = canvas(60, 80, { bg: [248, 128, 226] });
+    for (let y = 8; y <= 71; y++) { img.set(8, y, [96, 0, 48]); img.set(9, y, [68, 7, 51]); img.set(10, y, [80, 5, 50]); }
+    // …and on PURE magenta, where colour alone can't tell it from shadow: a textured (grained, banded) spine survives
+    const pure = canvas(60, 80);
+    for (let y = 8; y <= 71; y++) for (let x = 8; x <= 13; x++) pure.set(x, y, (x + y) % 3 ? [124, 0, 98] : [70, 4, 52]);
+    const kept = keyOut(pure, { pad: 0 });
+    expect(kept.width).toBe(44);
+    for (let y = 2; y < 62; y += 5) expect(alphaAt(kept, 2, y)).toBe(255);
+    const out = keyOut(img, { pad: 0 });
+    expect(out.width).toBe(44);
+    for (let y = 2; y < 62; y += 5) expect(alphaAt(out, 1, y)).toBe(255);
   });
 
   it('drops tiny stray specks in the backdrop so the trim hugs the book', () => {
