@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=129';
+import { withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=130';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -191,6 +191,10 @@ async function refreshProject() {
   if (changed) { renderAll(); if (im) renderManager(); }
 }
 addEventListener('focus', refreshProject);
+// Before composing a prompt: styles written elsewhere (another tab, Claude) while this tab sat focused never arrived —
+// a Bahá'í cover went out with the shelf style replaced minutes earlier. One fetch serves a whole batch (15 s).
+let freshAt = 0, freshRun = null;
+const freshStyles = () => (Date.now() - freshAt < 15000 && freshRun) || (freshAt = Date.now(), freshRun = refreshProject().catch(() => {}));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshProject(); });
 $('new-lib').addEventListener('click', async () => {
   const name = (prompt('Name of the new library (e.g. WholeReader):') || '').trim();
@@ -739,6 +743,7 @@ function produce(book, opts = {}) {
   return run;
 }
 async function produceNow(book, { removeBg = true, change = '', lookId = null, own = false } = {}) {
+  await freshStyles();
   const from = change ? currentVersion(book) : null;
   if (change && !from?.raw && !from?.cover) throw new Error('No cover to edit — Generate one first');
   // Based on another book: EDIT that book's current cover for this one (same photograph; new title, byline, illustration).
