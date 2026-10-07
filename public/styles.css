@@ -637,3 +637,8 @@ body.bench-open .libhead { margin-right: var(--bench-w); }
 /* The working overlay covers the cover image only: its frame keeps the preview's own height (the side column stretches) */
 .cover-top > .im-preview-wrap { align-self: start; }
 .im-spin { padding: 1rem; text-align: center; }
+
+/* Adjust: thumbnail check line */
+.adj-thumb { margin: .2rem 0 .4rem; font-size: .82rem; color: var(--muted, #6b6258); }
+.adj-thumb.ok b { color: #2f7a3a; }
+.adj-thumb.warn b { color: #a4561c; }

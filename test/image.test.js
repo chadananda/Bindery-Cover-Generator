@@ -29,14 +29,6 @@ describe('parseTr (ImageKit grammar, as blogworks-image)', () => {
     expect(s.height).toBeUndefined();
   });
 
-  it('e-contrast (auto tone) and e-sharpen[-N] are separate recipes; plain widths keep their old keys', () => {
-    const s = parseTr('w-320,e-contrast,e-sharpen-40');
-    expect(s).toMatchObject({ width: 320, tone: true, sharpen: 0.4 });
-    expect(parseTr('w-320,e-sharpen').sharpen).toBe(0.5);
-    expect(recipeKey(s, 'webp')).not.toBe(recipeKey(parseTr('w-320'), 'webp'));
-    expect(recipeKey(parseTr('w-320'), 'webp')).toBe('w320h-cover-center-q82.webp');
-  });
-
   it('gives the same recipe key for equivalent requests', () => {
     expect(recipeKey(parseTr('w-300,q-82'), 'webp')).toBe(recipeKey(parseTr('q-82,w-320'), 'webp'));
   });

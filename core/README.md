@@ -9,6 +9,7 @@ Copy this folder to use the generator without the app.
 | `keyer.js` | `keyOut({data,width,height}, {key, tolerance, pad})` → transparent RGBA + `aspect`; `aspectOk` |
 | `gemini.js` | `generateImage({apiKey, prompt, inputImage?})` → `{base64, mimeType, text}` |
 | `csv.js` | `parseCsv(text)`, `csvToBooks(text)` |
+| `tone.js` | `autoAdjust(rgba, {force})` → `{shadows, brightness, contrast}` (Adjust slider values); `adjustPixels(rgba, values)`; `assessThumb(rgba, w, h)` → `{brightness, contrast, detail, issues, ok}` |
 | `export.js` | `exportName(book, shelfName)` → `<id>--<shelf-slug>--<title-slug>.png`; `parseExportName(name)` → `{id, shelf, title}`; `coverUrls(project, origin, {newOnly})` → `{bookId: url}` |
 | `looks.js` | `snapshotStyles(project)`, `sameStyles`, `applyStyles(project, look)`, `nextLookName` |
 

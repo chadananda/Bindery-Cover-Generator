@@ -1,11 +1,9 @@
 // Renders one image rendition in-Worker: Photon (WASM) decodes + resizes, libwebp (jSquash WASM) encodes LOSSY
 // webp with alpha — ~10× smaller than Photon's lossless-only webp, transparency intact. No per-transform billing.
 // initCodecs(wasmModule) must run once before renderImage (the Worker passes the bundled .wasm module).
-// spec.tone / spec.sharpen (e-contrast, e-sharpen): core/tone.js on the resized pixels.
 import { PhotonImage, resize, crop, SamplingFilter } from '@cf-wasm/photon';
 import encodeWebp, { init as initWebp } from '@jsquash/webp/encode.js';
 import { coverCrop } from './image.js';
-import { autoTone, sharpen } from '../core/tone.js';
 
 let ready;
 export const initCodecs = (webpEncWasm) => (ready ||= initWebp(webpEncWasm));
@@ -27,13 +25,6 @@ export async function renderImage(srcBytes, spec, format) {
       // browser lays the image out from that number — a smaller file would be drawn smaller than its slot.
       const s = Math.min(tw ? tw / sw : Infinity, th ? th / sh : Infinity);
       if (s !== 1) swap(resize(img, Math.max(1, Math.round(sw * s)), Math.max(1, Math.round(sh * s)), SamplingFilter.Lanczos3));
-    }
-    // Effects run on the resized pixels (cheap at thumbnail size), then the image is rebuilt for the PNG/JPEG encoders.
-    if (spec.tone || spec.sharpen) {
-      const w = img.get_width(), h = img.get_height(), px = new Uint8ClampedArray(img.get_raw_pixels()); // clamped: sharpen overshoots
-      if (spec.tone) autoTone(px);
-      if (spec.sharpen) sharpen(px, w, h, spec.sharpen);
-      swap(new PhotonImage(new Uint8Array(px.buffer), w, h));
     }
     if (format === 'png') return new Uint8Array(img.get_bytes());
     if (format === 'jpeg') return new Uint8Array(img.get_bytes_jpeg(spec.quality));

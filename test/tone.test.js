@@ -1,46 +1,59 @@
-// Auto tone for thumbnails: stretch levels and lift dark midtones from the cover's own histogram; light sharpen.
+// Cover tone: auto slider values for a cover (Adjust ✨ Auto, baked in at keying), the sliders' pixel math, and the
+// thumbnail check.
 import { describe, it, expect } from 'vitest';
-import { autoTone, sharpen } from '../core/tone.js';
+import { autoAdjust, adjustPixels, assessThumb } from '../core/tone.js';
 
 const img = (pixels) => { const d = new Uint8ClampedArray(pixels.length * 4); pixels.forEach(([r, g, b, a = 255], i) => d.set([r, g, b, a], i * 4)); return d; };
 const lum = (d, i) => (d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114);
 
-describe('autoTone', () => {
-  it('brightens a dark, flat cover: wider range, higher median', () => {
-    const px = Array.from({ length: 400 }, (_, i) => { const v = 30 + (i % 100); return [v + 10, v, v - 10]; }); // 20..140, dark
+describe('autoAdjust + adjustPixels', () => {
+  it('a dark, flat cover gets shadows, brightness and (most) contrast — brighter and wider after', () => {
+    const px = Array.from({ length: 400 }, (_, i) => { const v = 30 + (i % 100); return [v + 10, v, v - 10]; });
     const d = img(px), before = px.map((_, i) => lum(d, i)).sort((a, b) => a - b);
-    autoTone(d);
+    const a = autoAdjust(d, { force: true });
+    expect(a.contrast).toBeGreaterThan(100);
+    expect(a.shadows + (a.brightness - 100)).toBeGreaterThan(0);
+    adjustPixels(d, a);
     const after = px.map((_, i) => lum(d, i)).sort((a, b) => a - b);
-    expect(after[200]).toBeGreaterThan(before[200] + 15);                 // midtones lifted
-    expect(after[396] - after[4]).toBeGreaterThan(before[396] - before[4]); // more contrast
+    expect(after[200]).toBeGreaterThan(before[200] + 10);
+    expect(after[380] - after[20]).toBeGreaterThan(before[380] - before[20]);
   });
-  it('leaves a well-exposed cover almost unchanged', () => {
-    const px = Array.from({ length: 400 }, (_, i) => { const v = 5 + Math.round(i * 245 / 399); return [v, v, v]; });
-    const d = img(px), copy = d.slice();
-    autoTone(d);
-    for (let i = 0; i < 400; i += 37) expect(Math.abs(d[i * 4] - copy[i * 4])).toBeLessThanOrEqual(6);
+  it('baked in at keying, it does not compound: a second pass on a balanced cover is (near) neutral', () => {
+    const d = img(Array.from({ length: 400 }, (_, i) => { const v = 20 + (i % 90); return [v + 15, v, v - 10]; }));
+    const size = (a) => a.shadows + (a.brightness - 100) + (a.contrast - 100);
+    const first = autoAdjust(d); adjustPixels(d, first);
+    const second = autoAdjust(d); adjustPixels(d, second);   // a very dark cover can hit the slider limits once…
+    expect(size(second)).toBeLessThan(size(first));
+    expect(size(autoAdjust(d))).toBe(0);                     // …then it settles
+    expect(autoAdjust(d, { force: true }).contrast + autoAdjust(d, { force: true }).brightness).toBeGreaterThanOrEqual(200); // ✨ Auto still offers a nudge
   });
-  it('ignores transparent pixels and never touches alpha', () => {
-    const px = [...Array.from({ length: 200 }, () => [255, 0, 255, 0]), ...Array.from({ length: 200 }, (_, i) => [40 + i % 60, 40 + i % 60, 40 + i % 60, 255])];
-    const d = img(px);
-    autoTone(d);
-    expect(d[3]).toBe(0);
-    expect(d[200 * 4 + 3]).toBe(255);
+
+  it('a cover that already reads well stays near neutral', () => {
+    const d = img(Array.from({ length: 400 }, (_, i) => { const v = 10 + Math.round(i * 235 / 399); return [v, v, v]; }));
+    const a = autoAdjust(d);
+    expect(a.shadows).toBeLessThanOrEqual(10); expect(Math.abs(a.brightness - 100)).toBeLessThanOrEqual(5); expect(a.contrast).toBeLessThanOrEqual(110);
   });
-  it('keeps hue: one curve for all three channels', () => {
-    const d = img(Array.from({ length: 400 }, (_, i) => [60 + (i % 50), 30 + (i % 50), 20 + (i % 50)]));
-    autoTone(d);
-    expect(d[0]).toBeGreaterThan(d[1]); expect(d[1]).toBeGreaterThan(d[2]);
+  it('adjustPixels matches neutral sliders exactly, keeps alpha and hue order', () => {
+    const d = img([[60, 30, 20], [200, 100, 50, 0]]), copy = d.slice();
+    adjustPixels(d, {}); expect([...d]).toEqual([...copy]);
+    adjustPixels(d, { shadows: 20, brightness: 110, contrast: 130 });
+    expect(d[0]).toBeGreaterThan(d[1]); expect(d[1]).toBeGreaterThan(d[2]); expect(d[7]).toBe(0); expect(d[4]).toBe(200);
   });
 });
 
-describe('sharpen', () => {
-  it('increases local contrast at an edge, keeps flat areas', () => {
-    const W = 6, H = 3, d = new Uint8ClampedArray(W * H * 4);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) d.set(x < 3 ? [80, 80, 80, 255] : [160, 160, 160, 255], (y * W + x) * 4);
-    sharpen(d, W, H, 0.6);
-    expect(d[(W + 2) * 4]).toBeLessThan(80);   // dark side of the edge darker
-    expect(d[(W + 3) * 4]).toBeGreaterThan(160);
-    expect(d[(W + 0) * 4]).toBe(80);
+describe('assessThumb (how a cover reads at the app\'s thumbnail size)', () => {
+  const W = 20, H = 20;
+  const fill = (f) => { const d = new Uint8ClampedArray(W * H * 4); for (let p = 0; p < W * H; p++) { const v = f(p % W, Math.floor(p / W)); d.set([v, v, v, 255], p * 4); } return d; };
+  it('passes a balanced cover with readable detail', () => {
+    const r = assessThumb(fill((x, y) => (x + y) % 4 < 2 ? 40 : 200), W, H);
+    expect(r.ok).toBe(true);
+  });
+  it('flags murky, flat and soft covers', () => {
+    const r = assessThumb(fill(() => 25), W, H);
+    expect(r.issues).toEqual(expect.arrayContaining(['dark', 'flat', 'soft']));
+  });
+  it('ignores the transparent backdrop', () => {
+    const d = fill((x, y) => (x + y) % 4 < 2 ? 40 : 200); for (let p = 0; p < 40; p++) d.set([0, 0, 0, 0], p * 4);
+    expect(assessThumb(d, W, H).ok).toBe(true);
   });
 });

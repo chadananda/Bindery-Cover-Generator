@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=136';
+import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=137';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -12,10 +12,7 @@ const img = (key) => `/img/${key}`; // the full-size original: keying and downlo
 // Displayed images always go through the resize worker: srcset of allowed widths, the browser picks by size × DPR.
 // width/height = the image's pixel size (from D1): the browser reserves the box before loading — no layout shift, and
 // lazy loading works (zero-height images all count as on-screen, so every one would be fetched at once).
-// fx: thumbnails add auto tone + sharpen (covers come out a little dark and flat; detail sinks at thumbnail size). The
-// editor and lightbox show the true pixels — Adjust and every edit work on the original.
-const FX = ',e-contrast,e-sharpen';
-const pic = (key, alt, sizes, widths, eager = false, v = null, fx = '') => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}${fx}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w}${fx} ${w}w`).join(', ')}" sizes="${sizes}"${v?.w && v?.h ? ` width="${v.w}" height="${v.h}"` : ''} alt="${esc(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async" />`;
+const pic = (key, alt, sizes, widths, eager = false, v = null) => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w} ${w}w`).join(', ')}" sizes="${sizes}"${v?.w && v?.h ? ` width="${v.w}" height="${v.h}"` : ''} alt="${esc(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async" />`;
 const THUMB = ['160', '240', '320', '480'].map(Number);
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 const CONCURRENCY = 2;
@@ -247,7 +244,7 @@ const cardHtml = (b, head = null) => {
   return `<article class="card ${selected.has(b.id) ? 'sel' : ''} ${head ? `head ${head.open ? 'open' : ''}` : ''}" data-book="${b.id}"${head ? ` data-head="${b.collectionId}"` : ''}>
     ${badge}
     <div class="thumb"><div class="book" data-open title="Open the Image Manager"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
-      ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB, false, v, FX) : `<span class="none">${esc(b.title)}</span>`}
+      ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(b.title)}</span>`}
       <button type="button" class="star ${project.app.modelBookId === b.id ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${project.app.modelBookId === b.id}" title="${project.app.modelBookId === b.id ? 'The model — selected books can be regenerated from it (click to clear)' : 'Make this the model (the edit source for Regenerate from model)'}">★</button>
     </div></div>
     <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
@@ -328,7 +325,7 @@ function seriesCard(key, stem, vols, open) {
   const first = vols.find((b) => currentVersion(b)) || vols[0], v = currentVersion(first), src = v?.cover || v?.raw;
   return `<article class="card head series ${open ? 'open' : ''}" data-series="${esc(key)}">
     <div class="thumb"><div class="book" data-coll-toggle="${esc(key)}" title="${esc(stem)} — show the volumes"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
-      ${src ? pic(src, stem, '(max-width: 600px) 112px, 150px', THUMB, false, v, FX) : `<span class="none">${esc(stem)}</span>`}</div></div>
+      ${src ? pic(src, stem, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(stem)}</span>`}</div></div>
     <div class="meta"><span class="t">${esc(stem)}</span><span class="tags">Series</span>
       <button type="button" class="vols" data-coll-toggle="${esc(key)}" aria-expanded="${open}">${open ? '▴ Hide' : '▾ Show'} ${vols.length} volumes</button>
       <button type="button" class="vols make-coll" data-make-coll="${esc(key)}" data-write title="Make these volumes a real collection, with its own cover you can select, generate and restyle">＋ Make a collection</button></div>
@@ -668,6 +665,9 @@ async function keyRaw(rawKey) {
   const keyName = detectKey(src); rawKeys.set(rawKey, keyName);
   const out = keyOut({ data: src.data, width: src.width, height: src.height }, { key: KEYS[keyName] });
   if (!out) throw new Error('Nothing left after keying — the generation was all background');
+  // Gemini gives good detail but poor lighting: a dark or flat cover is balanced here, into the one stored original
+  // (core/tone.js — only what it needs, so an edit of an already-balanced cover doesn't brighten again).
+  adjustPixels(out.data, autoAdjust(out.data));
   const oc = Object.assign(document.createElement('canvas'), { width: out.width, height: out.height });
   oc.getContext('2d').putImageData(new ImageData(out.data, out.width, out.height), 0, 0);
   const blob = await new Promise((res) => oc.toBlob(res, 'image/png'));
@@ -934,7 +934,7 @@ function applyAdjust() {
   $('im-preview').style.setProperty('--adj', f || pre ? `${pre}${f}` : 'none');
   $('im-preview').style.setProperty('--adj-w', wide);
   $('adj-save').disabled = adjNeutral();
-  renderRatio();
+  renderRatio(); renderThumbCheck();
 }
 // Width: a sideways stretch, done here because Gemini won't reliably change a book's proportions. Ratio = height ÷ width;
 // "typical" = the median of the library's current generated covers.
@@ -962,13 +962,61 @@ $('adj-ratio').addEventListener('click', (e) => {
   document.querySelector('[data-adj="width"]').value = m.dataset.matchW; applyAdjust();
 });
 const tintVal = () => +document.querySelector('[data-adj="tint"]').value;
+// The cover's pixels at the app's thumbnail size (320 wide), once per version — for ✨ Auto and the thumbnail check.
+const thumbPx = new Map();
+async function coverThumb(v) {
+  if (!thumbPx.has(v.id)) thumbPx.set(v.id, (async () => {
+    const bmp = await createImageBitmap(await (await fetch(`${img(v.cover)}?tr=w-320,f-png`)).blob());
+    const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height }), ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bmp, 0, 0); return ctx.getImageData(0, 0, c.width, c.height);
+  })().catch((e) => { thumbPx.delete(v.id); throw e; }));
+  return thumbPx.get(v.id);
+}
+const sliderVal = (k) => +document.querySelector(`[data-adj="${k}"]`).value;
+// Thumbnail check: how the cover — with the current Shadows/Brightness/Contrast — reads at the app's size.
+const ISSUE = { dark: 'too dark', bright: 'washed out', flat: 'flat (low contrast)', soft: 'detail lost', empty: 'nothing to measure' };
+async function renderThumbCheck() {
+  const b = imBook(), v = b && currentVersion(b), el = $('adj-thumb'); if (!el) return;
+  if (!v?.cover) { el.textContent = ''; return; }
+  try {
+    const t = await coverThumb(v), d = new Uint8ClampedArray(t.data);
+    adjustPixels(d, { shadows: sliderVal('gamma'), brightness: sliderVal('brightness'), contrast: sliderVal('contrast') });
+    const r = assessThumb(d, t.width, t.height);
+    el.className = `adj-thumb ${r.ok ? 'ok' : 'warn'}`;
+    el.innerHTML = `Thumbnail check: <b>${r.ok ? '✓ reads well' : `⚠ ${r.issues.map((x) => ISSUE[x]).join(', ')}`}</b> <small>brightness ${Math.round(r.brightness * 100)} · contrast ${Math.round(r.contrast * 100)} · detail ${Math.round(r.detail)}</small>`;
+  } catch { el.textContent = ''; }
+}
 $('adj-auto').addEventListener('click', async () => {
   const b = imBook(), v = b && currentVersion(b); if (!v?.cover) return imStatus('Only a cut-out cover can be measured.', 'err');
-  const bmp = await createImageBitmap(await (await fetch(`${img(v.cover)}?tr=w-480`)).blob());
+  const t = await coverThumb(v), a = autoAdjust(t.data, { force: true }), tint = estimateTint(t);
+  for (const [k, val] of [['gamma', a.shadows], ['brightness', a.brightness], ['contrast', a.contrast], ['tint', tint]]) document.querySelector(`[data-adj="${k}"]`).value = val;
+  applyAdjust();
+  imStatus(`Auto: shadows ${a.shadows}, brightness ${a.brightness}, contrast ${a.contrast}${tint ? `, tint ${tint}` : ''}. Check the preview, nudge if you like, then Save as new version.`, 'ok');
+});
+// ⚖ Auto-balance the selection: each cover that needs it gets its own Shadows/Brightness/Contrast (core/tone.js),
+// saved as a new version; covers that already read well are left alone.
+async function balanceCover(b) {
+  const v = currentVersion(b); if (!v?.cover) return null;
+  const a = autoAdjust((await coverThumb(v)).data);
+  if (!a.shadows && a.brightness === 100 && a.contrast === 100) return null;
+  const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
   const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height }), ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(bmp, 0, 0); const t = estimateTint(ctx.getImageData(0, 0, c.width, c.height));
-  document.querySelector('[data-adj="tint"]').value = t; applyAdjust();
-  imStatus(t ? `Pink cast measured — Tint ${t}. Check the preview, then Save as new version.` : 'No pink cast found on the neutral areas.', t ? 'ok' : '');
+  ctx.drawImage(bmp, 0, 0); const d = ctx.getImageData(0, 0, c.width, c.height);
+  adjustPixels(d.data, a); ctx.putImageData(d, 0, 0);
+  const key = await storeImage(b, 'covers', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
+  await addVersion(b, { raw: null, cover: key, prompt: v.prompt, basePrompt: v.basePrompt || null, aspect: v.aspect, w: bmp.width, h: bmp.height, lookId: v.lookId, edit: `auto-balance: shadows ${a.shadows}, brightness ${a.brightness}, contrast ${a.contrast}` });
+  return a;
+}
+$('sel-balance').addEventListener('click', async () => {
+  const books = selBooks().filter((b) => currentVersion(b)?.cover);
+  if (!books.length) return alert('None of the selected books has a cut-out cover yet.');
+  const btn = $('sel-balance'); btn.disabled = true; let done = 0, changed = 0, failed = 0;
+  for (const b of books) {
+    btn.textContent = `Balancing ${++done} of ${books.length}…`;
+    try { if (await balanceCover(b)) { changed++; renderCard(b.id); } } catch { failed++; }
+  }
+  btn.disabled = false; btn.textContent = '⚖ Auto-balance';
+  alert(`Auto-balance: ${changed} cover${changed === 1 ? '' : 's'} balanced (new versions), ${books.length - changed - failed} already read well${failed ? `, ${failed} failed` : ''}.`);
 });
 function resetAdjust() { adjSliders().forEach((s) => { s.value = neutralOf(s); }); applyAdjust(); }
 $('im-adjust').addEventListener('input', (e) => { if (e.target.matches('[data-adj]')) applyAdjust(); });
