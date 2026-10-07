@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=143';
+import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=147';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1055,7 +1055,7 @@ $('adj-save').addEventListener('click', async () => {
 });
 
 // What a version is, for the History strip: site cover, upload, edit (of what), or the look that generated it.
-const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit?.startsWith('adjust') ? 'adjusted' : /^(based on|like) /.test(x.edit || '') ? x.edit : x.edit ? 'edit' : 'generated';
+const verLabel = (x) => x.edit === 'current site cover' ? 'site cover' : x.edit === 'upload' ? 'upload' : x.edit?.startsWith('adjust') ? 'adjusted' : x.edit?.startsWith('auto-balance') ? 'balanced' : x.edit === 'fixed edges' ? 'edges fixed' : /^(based on|like) /.test(x.edit || '') ? x.edit : x.edit ? 'edit' : 'generated';
 function renderManager() {
   const b = imBook(); if (!b) return;
   $('im-layers').innerHTML = effectiveStyles(project, b).filter((l) => l.level !== 'book')
@@ -1089,7 +1089,9 @@ function renderManager() {
   renderThumbCheck();
   $('im-preview').innerHTML =  (v ? pic(v.cover || v.raw, `${b.title} cover`, '(max-width: 900px) 90vw, 440px', [480, 640, 960, 1280], true, v) : '<span class="hint">The cover appears here</span>') + backdropBar();
   const rk = document.querySelector('#imgmgr [data-act="rekey"]');
-  rk.disabled = !v?.raw; rk.title = v?.raw ? 'Cut the background away again (no new generation)' : 'This is a finished cover (from the site or an upload) — there is no magenta original to re-key. Use Edit current or Generate.';
+  rk.disabled = !(v?.raw || v?.cover);
+  rk.title = v?.raw ? '✂ Fix edges — re-cut the background from the original with the current keyer, fill bites in the outline, remove backdrop fringe (design untouched; a new version)'
+    : '✂ Fix edges — fill bites in the outline and remove backdrop fringe (this version has no original to re-cut; design untouched; a new version)';
   $('im-aspect').hidden = !(v?.aspect && !aspectOk(v.aspect));
   $('im-aspect').textContent = v?.aspect ? `proportions ${v.aspect.toFixed(2)} — check framing` : '';
   const vers = b.versions || [];
@@ -1193,13 +1195,13 @@ $('imgmgr').addEventListener('click', async (e) => {
       if (targets.length > 1) { generate(targets, { own: true }); return; }
       imBusy(true, 'Generating… (~20–40s)'); imStatus('Generating…');
       await produce(b, { removeBg, own: true }); imStatus('Generated ✓', 'ok');
-    } else if (act === 'rekey') {
+    } else if (act === 'rekey') { // ✂ Fix edges — on the server (render.js fixEdgesImage)
       const v = currentVersion(b);
-      if (!v?.raw) return imStatus('This version has no raw image to key.', 'err');
-      imBusy(true, 'Keying…');
-      const k = await keyRaw(v.raw);
-      await addVersion(b, { raw: v.raw, cover: await storeImage(b, 'covers', k.base64), prompt: v.prompt, aspect: k.aspect, w: k.w, h: k.h, edit: v.edit, lookId: v.lookId });
-      imStatus('Re-keyed ✓', 'ok');
+      if (!v?.raw && !v?.cover) return imStatus('No cover to fix.', 'err');
+      imBusy(true, 'Fixing edges…');
+      const r = await api(`${base()}/fixedges`, { method: 'POST', body: JSON.stringify({ bookId: b.id, raw: v.raw || null, cover: v.cover }) });
+      await addVersion(b, { raw: v.raw || null, cover: r.key, prompt: v.prompt, basePrompt: v.basePrompt || null, aspect: r.h / r.w, w: r.w, h: r.h, edit: 'fixed edges', lookId: v.lookId });
+      imStatus(r.from === 'raw' ? 'Edges fixed ✓ — re-cut from the original and repaired' : 'Edges repaired ✓ (this version has no original to re-cut)', 'ok');
     } else if (act === 'browse') { $('im-file').click(); return; }
   } catch (err) { imStatus(err.message, 'err'); }
   finally { imBusy(false); renderManager(); renderCard(b.id); }

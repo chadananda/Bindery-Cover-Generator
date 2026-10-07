@@ -5,6 +5,8 @@ import { PhotonImage, resize, crop, SamplingFilter } from '@cf-wasm/photon';
 import encodeWebp, { init as initWebp } from '@jsquash/webp/encode.js';
 import { coverCrop } from './image.js';
 import { autoAdjust, adjustPixels } from '../core/tone.js';
+import { keyOut, detectKey, KEYS } from '../core/keyer.js';
+import { repairEdges } from '../core/edges.js';
 
 let ready;
 export const initCodecs = (webpEncWasm) => (ready ||= initWebp(webpEncWasm));
@@ -48,5 +50,28 @@ export function balanceImage(srcBytes, { force = false } = {}) {
     adjustPixels(px, values);
     const out = new PhotonImage(new Uint8Array(px.buffer), w, h); owned.push(out);
     return { bytes: new Uint8Array(out.get_bytes()), w, h, values };
+  } finally { for (const p of owned) try { p.free(); } catch {} }
+}
+
+// ✂ Fix edges: from the raw (when the version has one) re-key with the current keyer and balance as keying does; then
+// repair the outline (core/edges.js). A cover with no raw (adjusted, balanced, uploaded) gets the outline repair only.
+export function fixEdgesImage({ rawBytes, coverBytes }) {
+  const owned = [];
+  try {
+    let img;
+    if (rawBytes) {
+      const src = PhotonImage.new_from_byteslice(rawBytes); owned.push(src);
+      const raw = { data: new Uint8ClampedArray(src.get_raw_pixels()), width: src.get_width(), height: src.get_height() };
+      const key = KEYS[detectKey(raw)] || KEYS.magenta;
+      const out = keyOut(raw, { key });
+      if (!out) throw new Error('Nothing left after keying');
+      adjustPixels(out.data, autoAdjust(out.data));
+      img = repairEdges(out, { key });
+    } else {
+      const src = PhotonImage.new_from_byteslice(coverBytes); owned.push(src);
+      img = repairEdges({ data: new Uint8ClampedArray(src.get_raw_pixels()), width: src.get_width(), height: src.get_height() });
+    }
+    const pi = new PhotonImage(new Uint8Array(img.data.buffer, img.data.byteOffset, img.data.byteLength), img.width, img.height); owned.push(pi);
+    return { bytes: new Uint8Array(pi.get_bytes()), w: img.width, h: img.height };
   } finally { for (const p of owned) try { p.free(); } catch {} }
 }

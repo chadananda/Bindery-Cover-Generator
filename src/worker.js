@@ -7,7 +7,7 @@ import { meter } from '../core/pricing.js';
 import { coverUrls } from '../core/export.js';
 import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest, spendSummary } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
-import { renderImage, initCodecs, balanceImage } from './render.js';
+import { renderImage, initCodecs, balanceImage, fixEdgesImage } from './render.js';
 import { runChat, geminiChat, geminiDescribe, geminiRefine, editSteps, bylineFrom } from './chat.js';
 import webpEncWasm from '@jsquash/webp/codec/enc/webp_enc_simd.wasm';
 
@@ -62,12 +62,21 @@ export default {
     // Anyone may browse (GET libraries, covers); every change needs the passcode cookie.
     const isAuthed = await authed(req, env);
     if (path === '/api/me') return json({ ok: true, authed: isAuthed });
+    // POST /api/admin/purge-fx → deletes up to 1000 stored size copies (fx/) per call; call until done is true.
+    if (path === '/api/admin/purge-fx' && req.method === 'POST') {
+      if (!isAuthed) return fail(401, 'Login required');
+      const page = await env.COVERS.list({ prefix: 'fx/', limit: 1000 });
+      const keys = page.objects.map((o) => o.key), bytes = page.objects.reduce((n, o) => n + o.size, 0);
+      if (keys.length) await env.COVERS.delete(keys);
+      return json({ ok: true, deleted: keys.length, bytes, done: !page.truncated });
+    }
     // GET /api/spend → estimated Gemini spend across all libraries (logged in only): today, 7 days, month, all time, by day/kind/library.
     if (path === '/api/spend' && req.method === 'GET') return isAuthed ? json({ ok: true, ...(await spendSummary(env.DB)) }) : fail(401, 'Passcode required');
     if (req.method !== 'GET' && !isAuthed) return fail(401, 'Passcode required');
 
     // GET /img/<r2 key>[?tr=w-320,...] — originals, or a resized rendition (ImageKit grammar, see src/image.js).
-    // Rendition lookup: edge cache (per colo) → stored R2 rendition → render from the original and store both.
+    // Rendition lookup: edge cache (per colo) → render from the master. Sizes are temporary (edge cache only): one PNG
+    // master per cover is all that's stored. (A permanent R2 copy of every size, fx/, was dropped 2026-10-07.)
     if (path.startsWith('/img/') && req.method === 'GET') {
       const key = decodeURIComponent(path.slice(5));
       if (!KEY.test(key)) return fail(400, 'Bad image key');
@@ -88,14 +97,11 @@ export default {
       const cacheKey = new Request(`${url.origin}/img/${key}?r=${recipe}&v=${FX_VERSION}`);
       const edge = await caches.default.match(cacheKey);
       if (edge) return new Response(edge.body, edge);
-      const fxKey = `fx/v${FX_VERSION}/${key}/${recipe}`;
-      const stored = await env.COVERS.get(fxKey);
-      if (stored) { const bytes = await stored.arrayBuffer(); ctx.waitUntil(caches.default.put(cacheKey, respond(bytes, 'edge'))); return respond(bytes, 'r2'); }
       const obj = await env.COVERS.get(key);
       if (!obj) return fail(404, 'Not found');
       await initCodecs(webpEncWasm);
       const out = await renderImage(new Uint8Array(await obj.arrayBuffer()), spec, format);
-      ctx.waitUntil(Promise.all([env.COVERS.put(fxKey, out, { httpMetadata: { contentType: type } }), caches.default.put(cacheKey, respond(out, 'edge'))]));
+      ctx.waitUntil(caches.default.put(cacheKey, respond(out, 'edge')));
       return respond(out, 'miss');
     }
 
@@ -190,6 +196,21 @@ export default {
         const key = `sets/${lib}/covers/${bookId}/${Date.now()}.png`;
         await env.COVERS.put(key, r.bytes, { httpMetadata: { contentType: 'image/png' } });
         return json({ ok: true, key, w: r.w, h: r.h, values: r.values });
+      }
+
+      // POST /api/libraries/<lib>/fixedges {bookId, raw?, cover} → {key, w, h, from} — re-key from the raw (current keyer)
+      // when there is one, then repair the outline (render.js fixEdgesImage); the client records the version.
+      if (part === 'fixedges' && req.method === 'POST') {
+        const { bookId, raw, cover } = await body();
+        const ok = (k) => KEY.test(k || '') && k.startsWith(`sets/${lib}/`);
+        if (!ID.test(bookId || '') || !(ok(raw) || ok(cover))) return fail(400, 'bookId and raw or cover required');
+        const get = async (k) => { const o = ok(k) && await env.COVERS.get(k); return o ? new Uint8Array(await o.arrayBuffer()) : null; };
+        const rawBytes = await get(raw), coverBytes = rawBytes ? null : await get(cover);
+        if (!rawBytes && !coverBytes) return fail(404, 'Image not found');
+        let r; try { r = fixEdgesImage({ rawBytes, coverBytes }); } catch (e) { return fail(422, String(e.message || e)); }
+        const key = `sets/${lib}/covers/${bookId}/${Date.now()}.png`;
+        await env.COVERS.put(key, r.bytes, { httpMetadata: { contentType: 'image/png' } });
+        return json({ ok: true, key, w: r.w, h: r.h, from: rawBytes ? 'raw' : 'cover' });
       }
 
       // POST /api/libraries/<lib>/refine {bookId, text} → {instruction}: the user's edit feedback rewritten, against the

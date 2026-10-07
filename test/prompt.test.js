@@ -231,6 +231,18 @@ describe('effectiveStyles', () => {
     }
   });
 
+  it('a subtitle is bold and at least half the title height, not just "smaller" (Volume I came out unreadable)', async () => {
+    const p = composePrompt({ app: {} }, { title: 'Sri Guru Granth Sahib', subtitle: 'Volume I' });
+    expect(p).toMatch(/subtitle "Volume I" beneath it in bold letters at least half the title's height/);
+    expect(p).not.toMatch(/"Volume I" smaller/);
+  });
+
+  it('the title is hand-lettered and artistic, described positively (stock faces kept appearing)', async () => {
+    const p = composePrompt({ app: {} }, { title: 'Japji' });
+    expect(p).toMatch(/drawn by hand by a master letterer/);
+    expect(p).not.toMatch(/Arial|Times/);
+  });
+
   it('every generation asks for a LARGE title, broken over lines when long (titles came out small)', async () => {
     const p = composePrompt({ app: {} }, { title: 'Sri Guru Granth Sahib, Volume I' });
     expect(p).toMatch(/The title "Sri Guru Granth Sahib, Volume I" is stamped on the cover — LARGE[^\n]*two or three lines/);
