@@ -123,7 +123,7 @@ export default {
       if (part === 'covers' && req.method === 'GET') {
         const project = await loadLibrary(env.DB, lib);
         if (!project) return fail(404, 'No such library');
-        const map = coverUrls(project, url.origin, { newOnly: url.searchParams.get('new') === '1', original: url.searchParams.get('original') === '1' });
+        const map = coverUrls(project, url.origin, { newOnly: url.searchParams.get('new') === '1' });
         return new Response(JSON.stringify(map, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="${lib}-covers.json"`, 'cache-control': 'no-store' } });
       }
 

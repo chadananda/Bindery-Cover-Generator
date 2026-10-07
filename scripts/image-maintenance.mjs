@@ -50,9 +50,7 @@ if (step === 'dims') {
   console.log(`${todo.length} versions without a size → ${sql.length} measured, ${bad} unreadable → tmp/version-dims.sql`);
 } else if (step === 'warm') {
   const cur = all.filter(({ b, v }) => v.id === (b.selected || b.versions.at(-1)?.id) && (v.cover || v.raw));
-  // The grid's toned thumbnails (public/app.js FX) and the Covers JSON export rendition (core/export.js).
-  const urls = cur.flatMap(({ v }) => [...[160, 240, 320].map((w) => `${BASE}/img/${v.cover || v.raw}?tr=w-${w},e-contrast,e-sharpen`),
-    ...(v.cover ? [`${BASE}/img/${v.cover}?tr=w-960,e-contrast,f-webp`] : [])]);
+  const urls = cur.flatMap(({ v }) => [160, 240, 320].map((w) => `${BASE}/img/${v.cover || v.raw}?tr=w-${w},e-contrast,e-sharpen`));
   const tally = {}; const t0 = Date.now();
   await pool(urls, 8, async (u) => { const r = await fetch(u, { headers: { accept: 'image/avif,image/webp,*/*' } }); await r.arrayBuffer(); const k = r.ok ? r.headers.get('x-img-cache') : `HTTP ${r.status}`; tally[k] = (tally[k] || 0) + 1; });
   console.log(`warmed ${urls.length} renditions of ${cur.length} covers in ${Math.round((Date.now() - t0) / 1000)}s`, tally);

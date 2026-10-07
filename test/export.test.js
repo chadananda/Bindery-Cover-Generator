@@ -23,8 +23,7 @@ describe('export file names', () => {
       { id: 'c3', versions: [{ id: 'v1', raw: 'sets/x/raw/c3/1.png' }] },            // no cut-out yet: left out
       { id: 'd4', versions: [] },
     ] };
-    expect(coverUrls(project, 'https://bindery.lnker.com', { original: true })).toEqual({ a1: 'https://bindery.lnker.com/img/sets/x/covers/a1/2.png', b2: 'https://bindery.lnker.com/img/sets/x/covers/b2/1.png' });
-    expect(coverUrls(project, 'https://bindery.lnker.com').a1).toBe('https://bindery.lnker.com/img/sets/x/covers/a1/2.png?tr=w-960,e-contrast,f-webp'); // toned by default
+    expect(coverUrls(project, 'https://bindery.lnker.com')).toEqual({ a1: 'https://bindery.lnker.com/img/sets/x/covers/a1/2.png', b2: 'https://bindery.lnker.com/img/sets/x/covers/b2/1.png' });
     expect(Object.keys(coverUrls(project, 'https://bindery.lnker.com', { newOnly: true }))).toEqual(['a1']);
   });
 });
