@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=135';
+import { exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=136';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -12,7 +12,10 @@ const img = (key) => `/img/${key}`; // the full-size original: keying and downlo
 // Displayed images always go through the resize worker: srcset of allowed widths, the browser picks by size × DPR.
 // width/height = the image's pixel size (from D1): the browser reserves the box before loading — no layout shift, and
 // lazy loading works (zero-height images all count as on-screen, so every one would be fetched at once).
-const pic = (key, alt, sizes, widths, eager = false, v = null) => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w} ${w}w`).join(', ')}" sizes="${sizes}"${v?.w && v?.h ? ` width="${v.w}" height="${v.h}"` : ''} alt="${esc(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async" />`;
+// fx: thumbnails add auto tone + sharpen (covers come out a little dark and flat; detail sinks at thumbnail size). The
+// editor and lightbox show the true pixels — Adjust and every edit work on the original.
+const FX = ',e-contrast,e-sharpen';
+const pic = (key, alt, sizes, widths, eager = false, v = null, fx = '') => `<img src="${img(key)}?tr=w-${widths[1] || widths[0]}${fx}" srcset="${widths.map((w) => `${img(key)}?tr=w-${w}${fx} ${w}w`).join(', ')}" sizes="${sizes}"${v?.w && v?.h ? ` width="${v.w}" height="${v.h}"` : ''} alt="${esc(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async" />`;
 const THUMB = ['160', '240', '320', '480'].map(Number);
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 const CONCURRENCY = 2;
@@ -244,7 +247,7 @@ const cardHtml = (b, head = null) => {
   return `<article class="card ${selected.has(b.id) ? 'sel' : ''} ${head ? `head ${head.open ? 'open' : ''}` : ''}" data-book="${b.id}"${head ? ` data-head="${b.collectionId}"` : ''}>
     ${badge}
     <div class="thumb"><div class="book" data-open title="Open the Image Manager"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
-      ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(b.title)}</span>`}
+      ${src ? pic(src, b.title, '(max-width: 600px) 112px, 150px', THUMB, false, v, FX) : `<span class="none">${esc(b.title)}</span>`}
       <button type="button" class="star ${project.app.modelBookId === b.id ? 'on' : ''}" data-star ${authed ? '' : 'disabled'} aria-pressed="${project.app.modelBookId === b.id}" title="${project.app.modelBookId === b.id ? 'The model — selected books can be regenerated from it (click to clear)' : 'Make this the model (the edit source for Regenerate from model)'}">★</button>
     </div></div>
     <div class="meta"><span class="t">${esc(b.title)}</span>${b.author ? `<span class="a">${esc(b.author)}</span>` : ''}
@@ -325,7 +328,7 @@ function seriesCard(key, stem, vols, open) {
   const first = vols.find((b) => currentVersion(b)) || vols[0], v = currentVersion(first), src = v?.cover || v?.raw;
   return `<article class="card head series ${open ? 'open' : ''}" data-series="${esc(key)}">
     <div class="thumb"><div class="book" data-coll-toggle="${esc(key)}" title="${esc(stem)} — show the volumes"${v?.w && v?.h ? ` style="--ar:${v.w}/${v.h}"` : ''}>
-      ${src ? pic(src, stem, '(max-width: 600px) 112px, 150px', THUMB, false, v) : `<span class="none">${esc(stem)}</span>`}</div></div>
+      ${src ? pic(src, stem, '(max-width: 600px) 112px, 150px', THUMB, false, v, FX) : `<span class="none">${esc(stem)}</span>`}</div></div>
     <div class="meta"><span class="t">${esc(stem)}</span><span class="tags">Series</span>
       <button type="button" class="vols" data-coll-toggle="${esc(key)}" aria-expanded="${open}">${open ? '▴ Hide' : '▾ Show'} ${vols.length} volumes</button>
       <button type="button" class="vols make-coll" data-make-coll="${esc(key)}" data-write title="Make these volumes a real collection, with its own cover you can select, generate and restyle">＋ Make a collection</button></div>

@@ -19,6 +19,12 @@ export function parseTr(tr) {
     format: f === 'jpg' || f === 'jpeg' ? 'jpeg' : f === 'png' || f === 'webp' ? f : 'auto',
     quality: clamp(num('q') ?? 82, 1, 100),
   };
+  // Effects (ImageKit names): e-contrast = auto tone (core/tone.js), e-sharpen[-N] = unsharp, N 1–100 (default 50).
+  // Several e- tokens can appear, so they're read from the raw list, not the key/value map.
+  const fx = tr.split(':').at(-1).split(',').map((t) => t.trim()).filter((t) => t.startsWith('e-'));
+  if (fx.includes('e-contrast')) spec.tone = true;
+  const sh = fx.find((t) => /^e-sharpen(-\d+)?$/.test(t));
+  if (sh) spec.sharpen = clamp((parseInt(sh.slice(10), 10) || 50) / 100, 0.01, 1);
   const w = num('w') && num('w') * dpr, h = num('h') && num('h') * dpr;
   if (w) {
     spec.width = WIDTHS.find((x) => x >= w) || WIDTHS.at(-1);
@@ -36,7 +42,7 @@ export function resolveFormat(spec, accept = '') {
 }
 
 /** Canonical rendition id: the cache key for both the edge cache and the stored R2 derivative. */
-export const recipeKey = (s, format) => `w${s.width ?? ''}h${s.height ?? ''}-${s.fit}-${s.focus}-q${s.quality}.${format}`;
+export const recipeKey = (s, format) => `w${s.width ?? ''}h${s.height ?? ''}-${s.fit}-${s.focus}-q${s.quality}${s.tone ? '-tone' : ''}${s.sharpen ? `-sh${Math.round(s.sharpen * 100)}` : ''}.${format}`;
 
 /** Focal "cover": scale to cover the box, then crop the box around the focus point. */
 export function coverCrop(sw, sh, tw, th, focus) {
