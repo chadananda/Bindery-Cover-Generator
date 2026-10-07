@@ -407,9 +407,9 @@ describe('effectiveStyles', () => {
     const { composePrompt: compose } = await import('../core/prompt.js');
     const proj = { app: {}, shelves: [], collections: [{ id: 'c', name: 'The Bible', style: 'morocco', override: true }] };
     const own = compose(proj, { title: 'Joshua', collectionId: 'c', style: 'Vivid cardinal-red leather.' });
-    expect(own).not.toMatch(/match the other volumes exactly in leather/i);
-    expect(own).toMatch(/sets its own leather colour/i);
-    expect(compose(proj, { title: 'Ruth', collectionId: 'c' })).toMatch(/match the other volumes exactly in leather/i);
+    expect(own).not.toMatch(/match the other volumes exactly in binding/i);
+    expect(own).toMatch(/sets its own binding colour/i);
+    expect(compose(proj, { title: 'Ruth', collectionId: 'c' })).toMatch(/match the other volumes exactly in binding/i);
   });
 
   it('picks the backdrop opposite the cover: green behind purple/pink bindings, magenta otherwise', async () => {

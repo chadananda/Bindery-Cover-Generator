@@ -86,8 +86,8 @@ export function composePrompt(project, book, opts = {}) {
         `This book is one volume of the collection "${layer.name}". ` + (styleBook?.style?.trim()
           // Its own style (e.g. a Bible division's leather colour) must be allowed to differ — "match exactly in leather"
           // made every Bible volume the same maroon.
-          ? 'It shares the other volumes\' border, typography and layout; THIS BOOK below sets its own leather colour, ornament and emblem, which take precedence.'
-          : 'It must match the other volumes exactly in leather, border, typography and layout, differing only in its title and centre illustration.'));
+          ? 'It shares the other volumes\' border, typography and layout; THIS BOOK below sets its own binding colour, ornament and emblem, which take precedence.'
+          : 'It must match the other volumes exactly in binding (material and colour), border, typography and layout, differing only in its title and centre illustration.'));
     }
     if (layer.level === 'book') out.push(`THIS BOOK: ${layer.style}`);
   }
