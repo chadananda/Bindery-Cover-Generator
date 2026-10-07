@@ -145,7 +145,9 @@ export function keyOut(img, { key = MAGENTA, tolerance = 75, pad = 12 } = {}) {
   head = 0; tail = 0;
   for (let p = 0; p < W * H; p++) {
     const x = p % W, y = (p - x) / W;
-    if ((x === 0 || y === 0 || x === W - 1 || y === H - 1) && !transparent(p) && floorLike(p * 4)) { queued[p] = 1; queue[tail++] = p; }
+    // Seeds: the image border, AND anything touching cleared backdrop — when the edge itself is light enough for the flood
+    // to take first, a deeper band under the book (Granth: (192,50,134) above a (233,71,170) edge) was never reached.
+    if (!transparent(p) && (x === 0 || y === 0 || x === W - 1 || y === H - 1 || neighbours(p).some(transparent)) && floorLike(p * 4)) { queued[p] = 1; queue[tail++] = p; }
   }
   while (head < tail) { const p = queue[head++]; queued[p] = 0; if (transparent(p) || !floorLike(p * 4)) continue; clear(p); for (const q of neighbours(p)) if (!transparent(q) && !queued[q] && floorLike(q * 4)) { queued[q] = 1; queue[tail++] = q; } }
 

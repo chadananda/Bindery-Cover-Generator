@@ -125,6 +125,14 @@ describe('keyOut — the four passes, then trim + pad', () => {
     }
   });
 
+  it('clears a deeper-pink band under the book even when the image edge itself is light pink (cleared first)', () => {
+    // The Granth raw: backdrop (248,128,226) at the top, (233,71,170) at the bottom edge, (192,50,134) under the book.
+    const img = canvas(60, 80, { bg: [248, 128, 226] });
+    for (let y = 72; y < 80; y++) for (let x = 0; x < 60; x++) img.set(x, y, y >= 77 ? [233, 71, 170] : [192, 50, 134]);
+    const out = keyOut(img, { pad: 0 });
+    expect(out.height).toBe(64);
+  });
+
   it('keeps a dark purple-maroon SPINE at the edge on a pale backdrop (the shadow rules bit it: (68,7,51), (96,0,48))', () => {
     const img = canvas(60, 80, { bg: [248, 128, 226] });
     for (let y = 8; y <= 71; y++) { img.set(8, y, [96, 0, 48]); img.set(9, y, [68, 7, 51]); img.set(10, y, [80, 5, 50]); }
