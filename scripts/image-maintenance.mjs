@@ -26,7 +26,7 @@ function size(b) {
   return null;
 }
 async function head(key, bytes = 65536) {
-  const res = await fetch(`${BASE}/img/${key}`);
+  const res = await fetch(`${BASE}/img/${key}?tr=orig-true`); // the master (bare /img is a WebP rendition)
   const reader = res.body.getReader(); const chunks = []; let n = 0;
   while (n < bytes) { const { value, done } = await reader.read(); if (done) break; chunks.push(value); n += value.length; }
   reader.cancel().catch(() => {});

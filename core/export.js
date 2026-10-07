@@ -10,7 +10,8 @@ export function parseExportName(name) {
 
 // Library export: { bookId: url } of each book's current cut-out cover (full-size transparent PNG, served from R2 by
 // the Worker's /img/). newOnly drops books still on the imported site cover — the importer only fetches what changed.
-// The full-size original: the importer sizes it through /img?tr= on request.
+// The full-size cover: WebP by default (ImageKit-style — bare /img negotiates the format), ?tr=orig-true for the PNG
+// master, ?tr=w-<n> for a size.
 export function coverUrls(project, origin, { newOnly = false } = {}) {
   const out = {};
   for (const b of project.books || []) {

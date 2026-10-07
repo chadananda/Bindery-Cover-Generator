@@ -71,8 +71,11 @@ export default {
     if (path.startsWith('/img/') && req.method === 'GET') {
       const key = decodeURIComponent(path.slice(5));
       if (!KEY.test(key)) return fail(400, 'Bad image key');
-      const spec = parseTr(url.searchParams.get('tr'));
-      if (!spec) {
+      // ImageKit-style: no tr = the full-size image in the best format the client takes (WebP; PNG clients get the
+      // master as stored); tr=orig-true = the untouched master (PNG cover, JPEG raw). Masters stay PNG — WebP is lossy.
+      const tr = url.searchParams.get('tr') || '';
+      const spec = /(^|,)orig-true(,|$)/.test(tr) ? null : parseTr(tr) || { fit: 'inside', focus: 'center', format: 'auto', quality: 90 };
+      if (!spec || (!tr && resolveFormat(spec, req.headers.get('accept')) === 'png')) {
         const obj = await env.COVERS.get(key);
         if (!obj) return fail(404, 'Not found');
         // Serve the stored type: Gemini returns JPEG raws even though every key ends in .png.

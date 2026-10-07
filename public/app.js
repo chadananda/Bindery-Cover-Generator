@@ -1,14 +1,15 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=141';
+import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=142';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const norm = (x) => String(x || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/['’‘ʻʼ`]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const rid = () => Math.random().toString(36).slice(2, 10);
 const slug = (s) => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'cover';
-const img = (key) => `/img/${key}`; // the full-size original: keying and downloads only
+const img = (key) => `/img/${key}`; // + ?tr=… for renditions; bare = a full-size WebP (ImageKit-style default)
+const orig = (key) => `/img/${key}?tr=orig-true`; // the PNG master (raws: Gemini's JPEG) — keying, balance, edits
 // Displayed images always go through the resize worker: srcset of allowed widths, the browser picks by size × DPR.
 // width/height = the image's pixel size (from D1): the browser reserves the box before loading — no layout shift, and
 // lazy loading works (zero-height images all count as on-screen, so every one would be fetched at once).
@@ -470,7 +471,7 @@ $('sel-delete').addEventListener('click', async () => {
   await remove('books', ids);
 });
 
-// Download: a zip of <id>--<shelf-slug>--<title-slug>.png (core/export.js — parseable back to the book id) with the
+// Download: a zip of <id>--<shelf-slug>--<title-slug>.webp (core/export.js — parseable back to the book id) with the
 // prompt that made it beside each (.txt), plus manifest.csv.
 $('sel-download').addEventListener('click', async () => {
   const books = selBooks().filter((b) => currentVersion(b));
@@ -480,9 +481,9 @@ $('sel-download').addEventListener('click', async () => {
     const { zipSync, strToU8 } = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
     const files = {}, manifest = [['file', 'id', 'title', 'author', 'bookshelf', 'collection', 'source']];
     for (const b of books) {
-      const v = currentVersion(b), shelf = shelfById(b.shelfId)?.name || '', file = exportName(b, shelf);
-      files[file] = new Uint8Array(await (await fetch(img(v.cover || v.raw))).arrayBuffer());
-      files[file.replace(/\.png$/, '.txt')] = strToU8(v.prompt || '');
+      const v = currentVersion(b), shelf = shelfById(b.shelfId)?.name || '', file = exportName(b, shelf, 'webp');
+      files[file] = new Uint8Array(await (await fetch(`${img(v.cover || v.raw)}?tr=f-webp`)).arrayBuffer());
+      files[file.replace(/\.webp$/, '.txt')] = strToU8(v.prompt || '');
       manifest.push([file, b.id, b.title, b.author, shelf, collById(b.collectionId)?.name || '', b.source || '']);
     }
     files['manifest.csv'] = strToU8(manifest.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'));
@@ -656,7 +657,7 @@ const toB64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); 
 
 /** Key a raw generation in the browser with core/keyer.js → { base64 (lossless PNG), aspect }. */
 async function keyRaw(rawKey) {
-  const bmp = await createImageBitmap(await (await fetch(img(rawKey))).blob());
+  const bmp = await createImageBitmap(await (await fetch(orig(rawKey))).blob());
   const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(bmp, 0, 0);
@@ -686,7 +687,7 @@ async function addVersion(book, v) {
 /** A finished cover (site import or upload) has no raw. To edit it, put it back on the key colour with a margin — the
  *  framing the edit prompt and the keyer expect — and store that as a raw. */
 async function rawFromCover(book, v) {
-  const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
+  const bmp = await createImageBitmap(await (await fetch(orig(v.cover))).blob());
   const c = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * 1.24), height: Math.round(bmp.height * 1.16) });
   const ctx = c.getContext('2d', { willReadFrequently: true });
   // The backdrop opposite the cover: a purple/pink cover goes on green, anything else on magenta.
@@ -783,7 +784,7 @@ async function produceNow(book, { removeBg = true, change = '', lookId = null, o
   const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, styleKey, why }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
-  else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
+  else ({ w, h } = await createImageBitmap(await (await fetch(orig(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
   return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: basePrompt && basePrompt !== prompt ? basePrompt : null, inputKey: inputKey || null, styleKey, aspect, w, h, edit: change || (firstSet ? `set from ${refBook.title}` : asSet ? `set restyled like ${refBook.title}` : basedOn ? `based on ${refBook.title}${book.refMode === 'exact' ? ' (exact)' : ''}` : similar ? `like ${refBook.title}` : null), lookId: change ? from.lookId : lookId });
 }
 
@@ -799,7 +800,7 @@ async function tryAgain(book, removeBg = true, extra = '') {
   const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, styleKey, inputWidth: req.inputWidth || (v.edit === 'restored' ? 240 : undefined), why: `try again${extra ? ` + ${extra}` : ''}: ${v.edit || 'generate'}` }) });
   let cover = null, aspect = null, w = null, h = null;
   if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
-  else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
+  else ({ w, h } = await createImageBitmap(await (await fetch(orig(rawKey))).blob()).then((b) => ({ w: b.width, h: b.height })));
   return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: v.basePrompt || null, inputKey: inputKey || null, styleKey, aspect, w, h, edit: extra ? `${v.edit || 'generate'} + ${extra}` : v.edit, lookId: v.lookId });
 }
 // Restore ("re-upscale"): the current image goes to Gemini shrunk to a ~240px design reference (480 still carried the damage) — the blotches and smeared
@@ -1032,7 +1033,7 @@ $('adj-save').addEventListener('click', async () => {
   const b = imBook(), v = currentVersion(b); if (!b || !v?.cover) return imStatus('Only a cut-out cover can be adjusted.', 'err');
   imBusy(true, 'Saving…');
   try {
-    const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
+    const bmp = await createImageBitmap(await (await fetch(orig(v.cover))).blob());
     const W = Math.round(bmp.width * widthPct() / 100); // the width stretch, if any
     const c = Object.assign(document.createElement('canvas'), { width: W, height: bmp.height });
     const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -1297,7 +1298,7 @@ function replayEdit(book, text, inputKey, removeBg = true) {
     const { rawKey } = await api(`${base()}/generate`, { method: 'POST', body: JSON.stringify({ bookId: book.id, prompt, inputKey, why: `edit (resubmitted): ${text}` }) });
     let cover = null, aspect = null, w = null, h = null;
     if (removeBg) { const k = await keyRaw(rawKey); ({ aspect, w, h } = k); cover = await storeImage(book, 'covers', k.base64); }
-    else ({ w, h } = await createImageBitmap(await (await fetch(img(rawKey))).blob()).then((x) => ({ w: x.width, h: x.height })));
+    else ({ w, h } = await createImageBitmap(await (await fetch(orig(rawKey))).blob()).then((x) => ({ w: x.width, h: x.height })));
     return addVersion(book, { raw: rawKey, cover, prompt, basePrompt: from?.basePrompt || null, inputKey, aspect, w, h, edit: text, lookId: from?.lookId || null });
   });
   const tail = run.catch(() => {}); coverJobs.set(book.id, tail); return run;
