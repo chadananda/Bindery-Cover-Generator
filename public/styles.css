@@ -677,7 +677,9 @@ body.bench-open .libhead { margin-right: var(--bench-w); }
 
 /* Editor vs chat: the cover editor sits on a warm tinted panel with a firm edge, the chat on the plain page — the
    two areas shared one background and the division was hard to see. */
-.bench .cover { background: #f1e6cf; border-bottom: 2px solid #c8a24b; box-shadow: 0 3px 8px -4px rgb(61 36 20 / .35); position: relative; z-index: 1; }
-:root[data-theme="dark"] .bench .cover { background: #232019; border-bottom-color: #8a6d2c; }
+/* An evenly inset card: the same margin, padding and thin gold border on all four sides. */
+.bench .cover { background: #f1e6cf; margin: .6rem; padding: .7rem; border: 1px solid #c8a24b; border-radius: 10px; box-shadow: 0 2px 8px -3px rgb(61 36 20 / .3); position: relative; z-index: 1; }
+:root[data-theme="dark"] .bench .cover { background: #232019; border-color: #8a6d2c; }
+.bench .cover .tools { padding-bottom: 0; }
 .adj-bar { background: #f1e6cf; }
 :root[data-theme="dark"] .adj-bar { background: #232019; }
