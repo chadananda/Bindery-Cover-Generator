@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=148';
+import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=149';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -439,11 +439,14 @@ function setModel(id) {
 }
 // The editor acts on the selection when the open cover is part of one (like every other action), else on the open cover.
 const selTargets = (b) => selected.has(b.id) && selected.size > 1 ? selBooks() : [b];
+// How many covers an action will touch: a small badge floating on the button's corner (labels keep their width).
+const setCount = (el, n) => { if (n > 1) { el.dataset.n = n; el.title = el.title.replace(/ \(acts on \d+ selected\)$/, '') + ` (acts on ${n} selected)`; } else { delete el.dataset.n; el.title = el.title.replace(/ \(acts on \d+ selected\)$/, ''); } };
 function genLabel(b, src) {
   const n = selTargets(b).length, gen = document.querySelector('#imgmgr [data-act="generate"]');
-  gen.textContent = `✦ Generate${n > 1 ? ` · ${n}` : ''}`; gen.classList.toggle('gold', !src);
+  gen.textContent = '✦ Generate'; gen.classList.toggle('gold', !src);
+  for (const act of ['generate', 'retry', 'restore', 'balance']) setCount(document.querySelector(`#imgmgr [data-act="${act}"]`), n);
 }
-// The model buttons say how many covers they'll make ("Same Cover · 2 selected"); refreshed as the selection changes.
+// The model buttons show how many covers they will make (a corner badge, setCount); refreshed as the selection changes.
 function likeLabels(b, src) {
   const n = likeTargets(b, src).length, LIKE = { similar: 'Similar Style', style: 'Same Style', exact: 'Same Cover' };
   // A collection cover is a boxed set: the same three buttons, each meaning what it can for a set.
@@ -455,9 +458,10 @@ function likeLabels(b, src) {
   };
   $('im-model').querySelectorAll('[data-like]').forEach((x) => {
     x.hidden = false;
-    x.textContent = LIKE[x.dataset.like] + (n > 1 ? ` · ${n}` : '');
+    x.textContent = LIKE[x.dataset.like];
     x.dataset.tip ??= x.title; // the button's own tooltip, restored for ordinary books
     x.title = set ? SET_TIP[x.dataset.like] : x.dataset.tip;
+    setCount(x, n);
   });
 }
 // The editor's model buttons: every selected cover when the open one is part of a multi-selection, else just it.

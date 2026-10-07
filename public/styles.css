@@ -683,3 +683,7 @@ body.bench-open .libhead { margin-right: var(--bench-w); }
 .bench .cover .tools { padding-bottom: 0; }
 .adj-bar { background: #f1e6cf; }
 :root[data-theme="dark"] .adj-bar { background: #232019; }
+
+/* Selection count: a small badge floating on the button's top-right corner instead of widening the label. */
+.btn[data-n] { position: relative; }
+.btn[data-n]::after { content: attr(data-n); position: absolute; top: -.45rem; right: -.35rem; min-width: 1.15rem; height: 1.15rem; padding: 0 .28rem; box-sizing: border-box; border-radius: 999px; background: #7a3a1c; color: #fdf9ef; font: 700 10.5px/1.15rem var(--sans); text-align: center; box-shadow: 0 1px 2px rgb(0 0 0 / .3); pointer-events: none; }
