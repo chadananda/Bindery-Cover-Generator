@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=137';
+import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=140';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -976,15 +976,19 @@ const sliderVal = (k) => +document.querySelector(`[data-adj="${k}"]`).value;
 // Thumbnail check: how the cover — with the current Shadows/Brightness/Contrast — reads at the app's size.
 const ISSUE = { dark: 'too dark', bright: 'washed out', flat: 'flat (low contrast)', soft: 'detail lost', empty: 'nothing to measure' };
 async function renderThumbCheck() {
-  const b = imBook(), v = b && currentVersion(b), el = $('adj-thumb'); if (!el) return;
-  if (!v?.cover) { el.textContent = ''; return; }
+  const b = imBook(), v = b && currentVersion(b), el = $('adj-thumb'), chip = $('im-thumbchk');
+  if (!v?.cover) { el.textContent = ''; chip.hidden = true; return; }
   try {
     const t = await coverThumb(v), d = new Uint8ClampedArray(t.data);
     adjustPixels(d, { shadows: sliderVal('gamma'), brightness: sliderVal('brightness'), contrast: sliderVal('contrast') });
     const r = assessThumb(d, t.width, t.height);
     el.className = `adj-thumb ${r.ok ? 'ok' : 'warn'}`;
-    el.innerHTML = `Thumbnail check: <b>${r.ok ? '✓ reads well' : `⚠ ${r.issues.map((x) => ISSUE[x]).join(', ')}`}</b> <small>brightness ${Math.round(r.brightness * 100)} · contrast ${Math.round(r.contrast * 100)} · detail ${Math.round(r.detail)}</small>`;
-  } catch { el.textContent = ''; }
+    el.innerHTML = `Thumbnail: <b>${r.ok ? '✓ reads well' : `⚠ ${r.issues.map((x) => ISSUE[x]).join(', ')}`}</b> <small>brightness ${Math.round(r.brightness * 100)} · contrast ${Math.round(r.contrast * 100)} · detail ${Math.round(r.detail)}</small>`;
+    // The chip on the preview: the cover as saved (slider values apart), so it reads without opening Adjust.
+    const s = assessThumb(t.data, t.width, t.height);
+    chip.hidden = false; chip.className = `thumbchk ${s.ok ? 'ok' : 'warn'}`;
+    chip.textContent = s.ok ? '✓ thumbnail' : `⚠ ${s.issues.map((x) => ISSUE[x]).join(', ')}`;
+  } catch { el.textContent = ''; chip.hidden = true; }
 }
 $('adj-auto').addEventListener('click', async () => {
   const b = imBook(), v = b && currentVersion(b); if (!v?.cover) return imStatus('Only a cut-out cover can be measured.', 'err');
@@ -995,26 +999,29 @@ $('adj-auto').addEventListener('click', async () => {
 });
 // ⚖ Auto-balance the selection: each cover that needs it gets its own Shadows/Brightness/Contrast (core/tone.js),
 // saved as a new version; covers that already read well are left alone.
-async function balanceCover(b) {
+// Done on the server, next to the stored original (worker /balance): in the browser it meant downloading ~6 MB,
+// re-encoding and uploading it again — 10+ seconds a cover.
+async function balanceCover(b, { force = false } = {}) {
   const v = currentVersion(b); if (!v?.cover) return null;
-  const a = autoAdjust((await coverThumb(v)).data);
-  if (!a.shadows && a.brightness === 100 && a.contrast === 100) return null;
-  const bmp = await createImageBitmap(await (await fetch(img(v.cover))).blob());
-  const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height }), ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(bmp, 0, 0); const d = ctx.getImageData(0, 0, c.width, c.height);
-  adjustPixels(d.data, a); ctx.putImageData(d, 0, 0);
-  const key = await storeImage(b, 'covers', await toB64(await new Promise((r) => c.toBlob(r, 'image/png'))));
-  await addVersion(b, { raw: null, cover: key, prompt: v.prompt, basePrompt: v.basePrompt || null, aspect: v.aspect, w: bmp.width, h: bmp.height, lookId: v.lookId, edit: `auto-balance: shadows ${a.shadows}, brightness ${a.brightness}, contrast ${a.contrast}` });
+  const r = await api(`${base()}/balance`, { method: 'POST', body: JSON.stringify({ bookId: b.id, cover: v.cover, force }) });
+  if (r.skipped) return null;
+  const a = r.values;
+  await addVersion(b, { raw: null, cover: r.key, prompt: v.prompt, basePrompt: v.basePrompt || null, aspect: v.aspect, w: r.w, h: r.h, lookId: v.lookId, edit: `auto-balance: shadows ${a.shadows}, brightness ${a.brightness}, contrast ${a.contrast}` });
   return a;
+}
+// Several at once (server work, so the browser just waits): 4 in flight.
+async function balanceMany(books, { force = false, onEach } = {}) {
+  let i = 0, done = 0, changed = 0, failed = 0;
+  await Promise.all(Array.from({ length: Math.min(4, books.length) }, async () => {
+    while (i < books.length) { const b = books[i++]; try { if (await balanceCover(b, { force })) { changed++; renderCard(b.id); } } catch { failed++; } onEach?.(++done); }
+  }));
+  return { changed, failed };
 }
 $('sel-balance').addEventListener('click', async () => {
   const books = selBooks().filter((b) => currentVersion(b)?.cover);
   if (!books.length) return alert('None of the selected books has a cut-out cover yet.');
-  const btn = $('sel-balance'); btn.disabled = true; let done = 0, changed = 0, failed = 0;
-  for (const b of books) {
-    btn.textContent = `Balancing ${++done} of ${books.length}…`;
-    try { if (await balanceCover(b)) { changed++; renderCard(b.id); } } catch { failed++; }
-  }
+  const btn = $('sel-balance'); btn.disabled = true; btn.textContent = `Balancing 0 of ${books.length}…`;
+  const { changed, failed } = await balanceMany(books, { onEach: (n) => { btn.textContent = `Balancing ${n} of ${books.length}…`; } });
   btn.disabled = false; btn.textContent = '⚖ Auto-balance';
   alert(`Auto-balance: ${changed} cover${changed === 1 ? '' : 's'} balanced (new versions), ${books.length - changed - failed} already read well${failed ? `, ${failed} failed` : ''}.`);
 });
@@ -1063,7 +1070,7 @@ function renderManager() {
   $('im-model').hidden = !src;
   if (src) {
     $('im-model-lab').innerHTML = `<button type="button" class="ref-img" data-open-ref="${src.id}" title="Open ${esc(src.title)}">${pic(srcV.cover || srcV.raw, src.title, '40px', [160], true, srcV)}</button>
-      <span class="im-model-t" title="${esc(src.title)}${refV && src === libModel && refB.id !== libModel.id ? ` — previously based on “${refB.title}”; these buttons use the model` : ''}">${src === libModel ? 'Model' : src === vol ? 'Style from its volume' : 'Based on'}: <b>${esc(src.title)}</b></span>${src !== libModel && src !== vol ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
+      <span class="im-model-t" title="${esc(src.title)}${refV && src === libModel && refB.id !== libModel.id ? ` — previously based on “${refB.title}”; these buttons use the model` : ''}">${src === libModel ? '★' : src === vol ? 'Volume:' : 'Based on'} <b>${esc(src.title)}</b></span>${src !== libModel && src !== vol ? `<button type="button" class="ref-x" data-unref-book title="Stop basing this cover on ${esc(src.title)}" aria-label="Unlink">×</button>` : ''}`
       ;
     $('im-model').querySelector('[data-like="similar"]').title = similarPrompt(src) ? "Its exact prompt, with this book's title, author and illustration — a fresh generation"
       : "A fresh generation in its look (read from its image — it has no prompt to reuse), with this book's title, author and illustration";
@@ -1078,6 +1085,7 @@ function renderManager() {
   const v = currentVersion(b);
   const bd = store.get('backdrop', 'sweep');
   $('im-preview').className = `stage im-preview bd-${bd}`;
+  renderThumbCheck();
   $('im-preview').innerHTML =  (v ? pic(v.cover || v.raw, `${b.title} cover`, '(max-width: 900px) 90vw, 440px', [480, 640, 960, 1280], true, v) : '<span class="hint">The cover appears here</span>') + backdropBar();
   const rk = document.querySelector('#imgmgr [data-act="rekey"]');
   rk.disabled = !v?.raw; rk.title = v?.raw ? 'Cut the background away again (no new generation)' : 'This is a finished cover (from the site or an upload) — there is no magenta original to re-key. Use Edit current or Generate.';
@@ -1172,6 +1180,12 @@ $('imgmgr').addEventListener('click', async (e) => {
   try {
     if (act === 'retry') { await tryAgainAll(selTargets(b)); return; }
     if (act === 'restore') { await restoreAll(selTargets(b)); return; }
+    if (act === 'balance') { // one cover: the full recipe, now; a selection: each as it needs (as the selection bar does)
+      const targets = selTargets(b), many = targets.length > 1;
+      imBusy(true, many ? `Balancing 0 of ${targets.length}…` : 'Balancing…');
+      const { changed } = await balanceMany(targets, { force: !many, onEach: (n) => many && imBusy(true, `Balancing ${n} of ${targets.length}…`) });
+      imStatus(many ? `Balanced ${changed} of ${targets.length} ✓ (the rest already read well)` : changed ? 'Balanced ✓ — saved as a new version' : 'Already balanced', 'ok');
+    } else
     if (act === 'generate') {
       const targets = selTargets(b);
       uiLog('generate', { bookId: b.id, input: { from: 'editor' }, output: { targets: targets.map((x) => `${x.id} “${x.title}”`) } });

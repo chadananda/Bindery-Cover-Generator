@@ -231,6 +231,11 @@ describe('effectiveStyles', () => {
     }
   });
 
+  it('every generation asks for a LARGE title, broken over lines when long (titles came out small)', async () => {
+    const p = composePrompt({ app: {} }, { title: 'Sri Guru Granth Sahib, Volume I' });
+    expect(p).toMatch(/The title "Sri Guru Granth Sahib, Volume I" is stamped on the cover — LARGE[^\n]*two or three lines/);
+  });
+
   it('Same Style REPLACES the model\'s art (explicitly, first), with a concrete subject even without a description', async () => {
     const { composeBasedOnPrompt } = await import('../core/prompt.js');
     const p = composeBasedOnPrompt({ app: {} }, { title: 'Centres of Bahá’í Learning', author: 'Research Department' }, 'Divorce');

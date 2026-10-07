@@ -642,3 +642,42 @@ body.bench-open .libhead { margin-right: var(--bench-w); }
 .adj-thumb { margin: .2rem 0 .4rem; font-size: .82rem; color: var(--muted, #6b6258); }
 .adj-thumb.ok b { color: #2f7a3a; }
 .adj-thumb.warn b { color: #a4561c; }
+
+/* Compact Binder (2026-10-07) */
+.cover:has(#im-spin:not([hidden])) .im-status-row,
+.im-status-row:not(:has(#im-status:not(:empty))):not(:has(#im-aspect:not([hidden]))) { display: none; }
+.cover-side { gap: .4rem; }
+.on-cover { padding: 0; border: 0; background: none; gap: .3rem; }
+.cover-actions { gap: .3rem; }
+.cover-actions .btn.small { padding: .3rem .6rem; font-size: 12.5px; }
+.cover-actions .minor { margin-left: auto; }
+.im-model { padding: .3rem .45rem; flex-wrap: nowrap; }
+.im-model-head { flex: 1 1 auto; flex-basis: auto; min-width: 0; }
+.im-model .btn.small { flex: none; padding: .26rem .5rem; font-size: 12px; }
+@container (max-width: 380px) { .im-model { flex-wrap: wrap; } }
+.cover-side .strip { padding-top: .2rem; }
+.cover-side .ver { flex-basis: 64px; grid-template-rows: 76px auto auto; }
+.cover-side .ver img { height: 76px; }
+.tools { padding: .35rem 0 .3rem; }
+.tool { padding: .28rem .7rem; }
+.adj-bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; padding: .3rem 0; background: var(--paper, #fbf7ef); }
+:root[data-theme="dark"] .adj-bar { background: var(--paper, #1d1913); }
+.adj-thumb { margin: 0 0 .2rem; }
+.drawer .sliders { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .25rem 1.1rem; margin: .2rem 0 .3rem; }
+.drawer .sliders label { grid-template-columns: 5.3rem 1fr 2.2rem; }
+.drawer .sliders label:has(.range-wrap) { grid-column: 1 / -1; }
+.adj-ratio { margin: .1rem 0 .2rem; }
+.thumbchk { position: absolute; top: .45rem; left: .45rem; z-index: 3; font: 600 11px var(--sans); padding: .15rem .45rem; border-radius: 999px; background: rgb(255 255 255 / .85); color: #2f7a3a; pointer-events: auto; }
+.thumbchk.warn { color: #a4561c; }
+.im-preview-wrap { position: relative; }
+
+.pv-tools { position: absolute; top: .35rem; right: .35rem; z-index: 3; display: flex; gap: .2rem; }
+.pv-tools .icon-btn { background: rgb(255 255 255 / .85); border-radius: 999px; }
+.im-model-t { flex: 1 1 auto; }
+
+/* Editor vs chat: the cover editor sits on a warm tinted panel with a firm edge, the chat on the plain page — the
+   two areas shared one background and the division was hard to see. */
+.bench .cover { background: #f1e6cf; border-bottom: 2px solid #c8a24b; box-shadow: 0 3px 8px -4px rgb(61 36 20 / .35); position: relative; z-index: 1; }
+:root[data-theme="dark"] .bench .cover { background: #232019; border-bottom-color: #8a6d2c; }
+.adj-bar { background: #f1e6cf; }
+:root[data-theme="dark"] .adj-bar { background: #232019; }

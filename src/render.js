@@ -4,6 +4,7 @@
 import { PhotonImage, resize, crop, SamplingFilter } from '@cf-wasm/photon';
 import encodeWebp, { init as initWebp } from '@jsquash/webp/encode.js';
 import { coverCrop } from './image.js';
+import { autoAdjust, adjustPixels } from '../core/tone.js';
 
 let ready;
 export const initCodecs = (webpEncWasm) => (ready ||= initWebp(webpEncWasm));
@@ -34,4 +35,18 @@ export async function renderImage(srcBytes, spec, format) {
   } finally {
     for (const p of owned) try { p.free(); } catch {}
   }
+}
+
+// Auto-balance a stored cover in place of the browser (which had to download ~6 MB, re-encode and upload it again —
+// 10+ s a cover): decode, pick Shadows/Brightness/Contrast (core/tone.js), apply, PNG. null = it already reads well.
+export function balanceImage(srcBytes, { force = false } = {}) {
+  const img = PhotonImage.new_from_byteslice(srcBytes), owned = [img];
+  try {
+    const w = img.get_width(), h = img.get_height(), px = new Uint8ClampedArray(img.get_raw_pixels());
+    const values = autoAdjust(px, { force });
+    if (!values.shadows && values.brightness === 100 && values.contrast === 100) return null;
+    adjustPixels(px, values);
+    const out = new PhotonImage(new Uint8Array(px.buffer), w, h); owned.push(out);
+    return { bytes: new Uint8Array(out.get_bytes()), w, h, values };
+  } finally { for (const p of owned) try { p.free(); } catch {} }
 }

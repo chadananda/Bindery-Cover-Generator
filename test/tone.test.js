@@ -21,10 +21,11 @@ describe('autoAdjust + adjustPixels', () => {
   it('baked in at keying, it does not compound: a second pass on a balanced cover is (near) neutral', () => {
     const d = img(Array.from({ length: 400 }, (_, i) => { const v = 20 + (i % 90); return [v + 15, v, v - 10]; }));
     const size = (a) => a.shadows + (a.brightness - 100) + (a.contrast - 100);
-    const first = autoAdjust(d); adjustPixels(d, first);
-    const second = autoAdjust(d); adjustPixels(d, second);   // a very dark cover can hit the slider limits once…
-    expect(size(second)).toBeLessThan(size(first));
-    expect(size(autoAdjust(d))).toBe(0);                     // …then it settles
+    // A very dark cover can hit the (capped) slider limits for a pass or two; each pass is no bigger, and it settles.
+    let prev = Infinity, passes = 0;
+    for (let a = autoAdjust(d); size(a) > 0 && passes < 6; a = autoAdjust(d), passes++) { expect(size(a)).toBeLessThanOrEqual(prev); prev = size(a); adjustPixels(d, a); }
+    expect(size(autoAdjust(d))).toBe(0);
+    expect(passes).toBeLessThanOrEqual(4);
     expect(autoAdjust(d, { force: true }).contrast + autoAdjust(d, { force: true }).brightness).toBeGreaterThanOrEqual(200); // ✨ Auto still offers a nudge
   });
 

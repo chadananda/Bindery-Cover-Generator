@@ -13,8 +13,9 @@ export function adjustPixels(data, { shadows = 0, brightness = 100, contrast = 1
   return data;
 }
 
+// Ranges are capped (shadows ≤ 20, brightness ≤ 115, contrast ≤ 125): at up to 150 contrast, new covers looked glaring.
 // Search the three sliders for the cover's own histogram (opaque pixels): lift the median toward a target (×1.5 or
-// +0.08, never past 0.5; brightness only ever up), widen the 5–95% spread toward 0.78 — weighted double, as Chad does — and clip
+// +0.08, never past 0.5; brightness only ever up), widen the 5–95% spread toward 0.72 — weighted double, as Chad does — and clip
 // almost nothing. A cover that already reads well gets values near neutral.
 // force (✨ Auto, asked for): the full recipe. Otherwise (baked in at keying) only what a cover needs: a dark cover
 // (median < 0.2) is lifted to ≥ 0.22, a flat one (spread < 0.7) gets contrast and a small lift, and a cover that
@@ -30,12 +31,12 @@ export function autoAdjust(data, { force = false } = {}) {
   };
   const ident = Uint8ClampedArray.from({ length: 256 }, (_, v) => v), base = stats(ident);
   const flat = base.spread < 0.7;
-  const target = Math.min(0.5, force ? Math.max(base.med * 1.5, base.med + 0.08)
-    : base.med < 0.2 ? Math.max(base.med * 1.5, base.med + 0.08, 0.22) : flat && base.med < 0.4 ? base.med + 0.05 : base.med);
-  const spreadTarget = force || flat ? 0.78 : base.spread;
+  const target = Math.min(0.45, force ? Math.max(base.med * 1.3, base.med + 0.06)
+    : base.med < 0.2 ? Math.max(base.med * 1.3, base.med + 0.06) : flat && base.med < 0.4 ? base.med + 0.04 : base.med);
+  const spreadTarget = force || flat ? 0.72 : base.spread;
   if (!force && target === base.med && !flat) return { shadows: 0, brightness: 100, contrast: 100 };
   let best = { shadows: 0, brightness: 100, contrast: 100 }, bestScore = Infinity;
-  for (let shadows = 0; shadows <= 60; shadows += 5) for (let brightness = 100; brightness <= 130; brightness += 5) for (let contrast = 100; contrast <= 150; contrast += 5) {
+  for (let shadows = 0; shadows <= 20; shadows += 5) for (let brightness = 100; brightness <= 115; brightness += 5) for (let contrast = 100; contrast <= 125; contrast += 5) {
     const g = 1 / (1 + shadows / 30), b = brightness / 100, c = contrast / 100;
     const lut = Uint8ClampedArray.from({ length: 256 }, (_, v) => Math.round(((((v / 255) ** g) * b - 0.5) * c + 0.5) * 255));
     const s = stats(lut);

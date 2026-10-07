@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=64" />
+  <link rel="stylesheet" href="/styles.css?v=66" />
 </head>
 <body>
   <!-- Navbar (after CTAI.info): sticky dark glass bar, mono gold wordmark, mono pill links. Dialogs hold the rest. -->
@@ -165,12 +165,13 @@
         <div class="im-preview-wrap">
           <div id="im-preview" class="stage im-preview"><span class="hint">The cover appears here</span></div>
           <div id="im-spin" class="im-spin" hidden><span class="spinner"></span><span id="im-spin-lab">Working…</span></div>
+          <span class="minor pv-tools" data-write><button type="button" class="icon-btn" data-act="browse" title="Upload an image as a new version" aria-label="Upload"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg></button><button type="button" class="icon-btn" data-act="rekey" aria-label="Re-key"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/></svg></button></span>
+          <span id="im-thumbchk" class="thumbchk" hidden title="How this cover reads at the app's thumbnail size (≤304×400)"></span>
         </div>
         <div class="cover-side">
           <div class="im-ref" id="im-ref" hidden></div>
           <div class="im-status-row"><span id="im-status" class="status"></span><span id="im-aspect" class="badge" hidden></span></div>
           <div class="on-cover" data-write title="What the cover prints. Changing it here never changes the catalogue title or author.">
-            <span class="oc-lab">On the cover</span>
             <input id="oc-title" aria-label="Title printed on the cover" placeholder="Title" />
             <div class="oc-row"><input id="oc-by" aria-label="Author line printed on the cover" placeholder="Author line" /><label class="check oc-none"><input type="checkbox" id="oc-noby" /> none</label></div>
           </div>
@@ -178,7 +179,7 @@
             <button type="button" class="btn small gold" data-act="generate" title="A new cover from this book's own style layers (library → shelf → collection → book; Details → centre illustration)">✦ Generate</button>
             <button type="button" class="btn small" data-act="retry" title="Send the request that made this version again — same prompt, same starting image — for another roll">↻ Try again</button>
             <button type="button" class="btn small" data-act="restore" title="A fresh, full-detail photograph of this exact design — layout, lettering, art and colours kept; paper, leather, cloth and cord rendered anew. Clears the blotches and colour cast that build up over edits.">✨ Restore</button>
-            <span class="minor"><button type="button" class="icon-btn" data-act="browse" title="Upload an image as a new version" aria-label="Upload"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg></button><button type="button" class="icon-btn" data-act="rekey" aria-label="Re-key"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/></svg></button></span>
+            <button type="button" class="btn small" data-act="balance" title="Auto-balance shadows, brightness and contrast so the cover reads well as a thumbnail — saved straight away as a new version (History has the previous one)">⚖ Balance</button>
             <input type="file" id="im-file" accept="image/*" hidden />
           </div>
           <div class="im-model" id="im-model" hidden data-write>
@@ -188,8 +189,7 @@
             <button type="button" class="btn small" data-like="exact" title="Edit the model's cover: only title and author change">Same Cover</button>
           </div>
           <div id="im-versions" hidden>
-            <h3 class="hist-h" title="Click a version to make it the current cover · × deletes a generated version">History</h3>
-            <div id="im-strip" class="strip"></div>
+            <div id="im-strip" class="strip" title="History — click a version to make it the current cover · × deletes a generated version"></div>
           </div>
           <nav class="tools" aria-label="Cover tools">
             <button type="button" class="tool" data-drawer="adjust" aria-expanded="false" title="Brightness, colour, width — free and instant">Adjust</button>
@@ -198,6 +198,8 @@
         </div>
       </div>
       <div class="drawer" id="im-adjust" data-for="adjust" hidden>
+        <div class="adj-bar"><button type="button" class="btn small" id="adj-auto" title="Set Shadows, Brightness and Contrast so the cover reads well as a thumbnail, and Tint to cancel any pink cast — check the preview, nudge, then save">✨ Auto</button><button type="button" class="btn small gold" id="adj-save" data-write title="Free and instant">Save as new version</button><button type="button" class="btn small ghost" id="adj-reset">Reset</button></div>
+        <p class="adj-thumb" id="adj-thumb" aria-live="polite"></p>
         <div class="sliders">
           <label><span>Shadows</span><input type="range" min="0" max="100" value="0" data-adj="gamma" title="Lift the dark tones (dark leather) without blowing out the light ones" /><output>0</output></label>
           <label><span>Brightness</span><input type="range" min="50" max="250" value="100" data-adj="brightness" /><output>100</output></label>
@@ -208,8 +210,6 @@
           <label><span>Width</span><span class="range-wrap"><input type="range" min="85" max="120" value="100" data-adj="width" title="Stretch the cover sideways — Gemini can't reliably change a book's proportions" /><span class="ticks" id="adj-width-ticks" aria-hidden="true"></span></span><output>100</output></label>
         </div>
         <p class="adj-ratio" id="adj-ratio"></p>
-        <p class="adj-thumb" id="adj-thumb" aria-live="polite"></p>
-        <div class="row wrap"><button type="button" class="btn small ghost" id="adj-reset">Reset</button><button type="button" class="btn small" id="adj-auto" title="Set Shadows, Brightness and Contrast so the cover reads well as a thumbnail, and Tint to cancel any pink cast — check the preview, nudge, then save">✨ Auto</button><button type="button" class="btn small gold" id="adj-save" data-write>Save as new version</button><small>free · instant</small></div>
       </div>
       <div class="drawer" data-for="details" hidden>
         <details class="inherit" id="im-about-wrap" hidden><summary>About this book <small>· guides the imagery, never printed</small></summary><p id="im-about"></p></details>
@@ -268,6 +268,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/app.js?v=137"></script>
+  <script type="module" src="/app.js?v=140"></script>
 </body>
 </html>

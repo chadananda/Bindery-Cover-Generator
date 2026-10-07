@@ -7,7 +7,7 @@ import { meter } from '../core/pricing.js';
 import { coverUrls } from '../core/export.js';
 import { listLibraries, createLibrary, loadLibrary, insertRows, patchRow, deleteRows, addLog, listLogs, loggedRequest, spendSummary } from './store.js';
 import { parseTr, resolveFormat, recipeKey } from './image.js';
-import { renderImage, initCodecs } from './render.js';
+import { renderImage, initCodecs, balanceImage } from './render.js';
 import { runChat, geminiChat, geminiDescribe, geminiRefine, editSteps, bylineFrom } from './chat.js';
 import webpEncWasm from '@jsquash/webp/codec/enc/webp_enc_simd.wasm';
 
@@ -173,6 +173,20 @@ export default {
         const key = `sets/${lib}/${kind}/${bookId}/${Date.now()}.png`;
         await env.COVERS.put(key, bytes, { httpMetadata: { contentType: 'image/png' } });
         return json({ ok: true, key });
+      }
+
+      // POST /api/libraries/<lib>/balance {bookId, cover, force?} → {key, w, h, values} | {skipped} — auto-balance done
+      // next to R2 (render.js balanceImage); the client then records the version.
+      if (part === 'balance' && req.method === 'POST') {
+        const { bookId, cover, force = false } = await body();
+        if (!ID.test(bookId || '') || !KEY.test(cover || '') || !cover.startsWith(`sets/${lib}/`)) return fail(400, 'bookId and cover required');
+        const obj = await env.COVERS.get(cover);
+        if (!obj) return fail(404, 'Cover not found');
+        const r = balanceImage(new Uint8Array(await obj.arrayBuffer()), { force: !!force });
+        if (!r) return json({ ok: true, skipped: true });
+        const key = `sets/${lib}/covers/${bookId}/${Date.now()}.png`;
+        await env.COVERS.put(key, r.bytes, { httpMetadata: { contentType: 'image/png' } });
+        return json({ ok: true, key, w: r.w, h: r.h, values: r.values });
       }
 
       // POST /api/libraries/<lib>/refine {bookId, text} → {instruction}: the user's edit feedback rewritten, against the

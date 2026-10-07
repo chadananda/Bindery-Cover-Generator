@@ -125,7 +125,9 @@ function bookLines(project, book) {
     const n = (project?.books || []).filter((b) => b.collectionId && b.collectionId === book.collectionId && b.type !== 'Collection').length;
     out.push(`This is the cover picture for a whole COLLECTION: photograph a boxed set${n ? ` of its ${n} volumes` : ''} — a slipcase or box holding the volumes, their spines showing side by side, in the binding described above; the set's title "${title}" on the front of the box.`);
   }
-  if (title) out.push(`The title "${title}" is stamped on the cover${book?.subtitle ? `, with the subtitle "${book.subtitle}" smaller beneath it` : ''}.`);
+  // Size, stated every time: titles came out small (a long title on one thin line) wherever a style didn't say.
+  if (title) out.push(`The title "${title}" is stamped on the cover${book?.subtitle ? `, with the subtitle "${book.subtitle}" smaller beneath it` : ''}` +
+    ` — LARGE, the most prominent text on the cover, filling the width; a longer title is broken over two or three lines so its letters stay big, readable even as a small thumbnail.`);
   // "smaller" came out too small to read in a thumbnail on nearly every cover.
   if (by) out.push(`The line "${by}" is stamped at the bottom of the cover — about half the height of the title letters, bold and in strong contrast, so it reads clearly even as a small thumbnail.`);
   else if (book?.byline === '') out.push(NO_BYLINE);
