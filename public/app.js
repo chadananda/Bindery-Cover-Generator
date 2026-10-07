@@ -1,7 +1,7 @@
 // Bindery UI. Cover logic comes from ./core (prompts, CSV, keyer); this file is state, rendering and
 // plumbing. Data lives in D1 via granular row endpoints (patch per field edit, debounced); images in R2.
 // Keying runs HERE on the stored raw, so re-keying never costs a generation. History is never deleted.
-import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=147';
+import { autoAdjust, adjustPixels, assessThumb, exportName, withStyleReference, estimateTint, applyTint, restorePrompt, detectKey, KEYS, composePrompt, composeEditPrompt, composeSetFromVolumePrompt, composeBasedOnPrompt, composeSetStylePrompt, coverText, retitlePrompt, isGenerationPrompt, tryAgainIntent, retryPrompt, effectiveStyles, keyColor, csvToBooks, keyOut, aspectOk, DEFAULT_APP_STYLE } from './core/index.js?v=148';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -446,13 +446,18 @@ function genLabel(b, src) {
 // The model buttons say how many covers they'll make ("Same Cover · 2 selected"); refreshed as the selection changes.
 function likeLabels(b, src) {
   const n = likeTargets(b, src).length, LIKE = { similar: 'Similar Style', style: 'Same Style', exact: 'Same Cover' };
-  // A collection cover is a boxed set: one action — restyle the set like the model (the others would make a single book).
+  // A collection cover is a boxed set: the same three buttons, each meaning what it can for a set.
   const set = isHead(b) && !(selected.size > 1 && selected.has(b.id));
+  const SET_TIP = {
+    similar: "A new photograph of the whole boxed set in the model's look",
+    style: "Keeps this set's photograph (volumes, angle, framing) and gives it the model's binding, gold and ornament, with an emblem chosen for the set",
+    exact: "Keeps this set's photograph and gives it the model's binding — and the model's own centre emblem on the front panel",
+  };
   $('im-model').querySelectorAll('[data-like]').forEach((x) => {
-    x.hidden = set && x.dataset.like !== 'style';
-    x.textContent = set ? `✦ Match ${src === project.books.find((y) => y.id === project.app.modelBookId) ? "the model's" : 'its volumes’'} style` : LIKE[x.dataset.like] + (n > 1 ? ` · ${n}` : '');
+    x.hidden = false;
+    x.textContent = LIKE[x.dataset.like] + (n > 1 ? ` · ${n}` : '');
     x.dataset.tip ??= x.title; // the button's own tooltip, restored for ordinary books
-    x.title = set ? "Keeps this boxed set (volumes, angle, framing) and gives it the model's binding, gold and ornament" : x.dataset.tip;
+    x.title = set ? SET_TIP[x.dataset.like] : x.dataset.tip;
   });
 }
 // The editor's model buttons: every selected cover when the open one is part of a multi-selection, else just it.
@@ -757,8 +762,11 @@ async function produceNow(book, { removeBg = true, change = '', lookId = null, o
   // 'similar' = fresh generation with the model's style layers; 'style'/'exact' = an edit of the model's photograph.
   // A collection cover (its boxed-set photograph) based on a model — in ANY mode: edit ITS picture, taking the look from the
   // model's (second image). Editing the model's single-book photograph, or a fresh single-book generation, lost the set.
-  const ownV = refBook && (refV?.cover || refV?.raw) && isHead(book) ? currentVersion(book) : null, asSet = !!(ownV?.raw || ownV?.cover);
-  // A collection with no cover of its own yet: a new photograph of the whole set, from the volume.
+  // Similar Style on a set = a NEW photograph of the whole set in the model's look (as for a set with no cover yet);
+  // Same Style / Same Cover = restyle THIS set's photograph (Same Cover also carries the model's own emblem).
+  const headSimilar = isHead(book) && book.refMode === 'similar';
+  const ownV = refBook && (refV?.cover || refV?.raw) && isHead(book) && !headSimilar ? currentVersion(book) : null, asSet = !!(ownV?.raw || ownV?.cover);
+  // A collection with no cover of its own yet (or Similar Style): a new photograph of the whole set, from the volume.
   const firstSet = !!refBook && (refV?.cover || refV?.raw) && isHead(book) && !asSet;
   const similar = !!refBook && book.refMode === 'similar' && !asSet && !firstSet;
   const basedOn = !similar && !!(refV?.cover || refV?.raw);
@@ -775,7 +783,7 @@ async function produceNow(book, { removeBg = true, change = '', lookId = null, o
     : mp && !asSet && !firstSet ? retitlePrompt(mp, project, book, { keepByline: sameAuthor }) : null;
   const inKey = await keyOfRaw(inputKey); // edits keep the backdrop of the image they edit
   const vols = firstSet ? project.books.filter((b) => b.collectionId === book.collectionId && b.type !== 'Collection').length : 0;
-  let prompt = change ? composeEditPrompt(project, change, inKey) : firstSet ? composeSetFromVolumePrompt(project, book, refBook.title, vols, inKey) : asSet ? composeSetStylePrompt(project, book, refBook.title, inKey, await describedStyle(refBook)) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { key: inKey, exact: book.refMode === 'exact', refAuthor: refBook.author, refByline: refBook.byline }) : null;
+  let prompt = change ? composeEditPrompt(project, change, inKey) : firstSet ? composeSetFromVolumePrompt(project, book, refBook.title, vols, inKey) : asSet ? composeSetStylePrompt(project, book, refBook.title, inKey, await describedStyle(refBook), { exact: book.refMode === 'exact' }) : basedOn ? composeBasedOnPrompt(project, book, refBook.title, { key: inKey, exact: book.refMode === 'exact', refAuthor: refBook.author, refByline: refBook.byline }) : null;
   if (!prompt && similar) // the model's exact generation prompt, retitled — or its look in words; defaults never consulted
     prompt = basePrompt || composePrompt(project, sameAuthor && book.byline == null ? { ...book, author: '' } : book, { styleText: await describedStyle(refBook) });
   if (similar && styleKey) prompt = withStyleReference(prompt, refBook.title);

@@ -275,7 +275,7 @@ export function composeBasedOnPrompt(project, book, refTitle, { exact = false, r
 /** A collection cover (a photograph of the boxed set) in the model's style: edit the FIRST image — the set itself stays
  *  (its shape, number of volumes, angle, framing) — so its books look like the SECOND image (the model volume).
  *  "Same Style" on a set edited the model's single-book photograph instead and lost the set. */
-export function composeSetStylePrompt(project, book, refTitle, key, look = '') {
+export function composeSetStylePrompt(project, book, refTitle, key, look = '', { exact = false } = {}) {
   const k = KEY_COLORS[key] || keyColor(project); // the set photograph's own backdrop
   const title = coverText(book).title;
   // The set's own credit ("J.M. Rodwell translation") stays unless the book has a byline setting.
@@ -289,7 +289,9 @@ export function composeSetStylePrompt(project, book, refTitle, key, look = '') {
     `borders, ornaments and lettering style. ` +
     `The result keeps this photograph's object and framing exactly: the boxed set, its shape and outline, the number of ` +
     `volumes, their arrangement, the camera angle, scale and position in the frame. The front panel reads "${title}"; ${credit}. ` +
-    `Its emblem is one chosen for the whole set, in the volume's technique. Do not re-shoot, crop or zoom. ` +
+    // exact (Same Cover on a set): the volume's own emblem; otherwise (Same Style) one chosen for the whole set.
+    (exact ? "Its emblem is the volume's own centre emblem, reproduced faithfully on the front panel — the same design, technique and colours. "
+      : "Its emblem is one chosen for the whole set, in the volume's technique. ") + 'Do not re-shoot, crop or zoom. ' +
     `${metal(k)} ${noDrift(k)} Keep the background SOLID PURE ${k.name} (${k.hex}), uniform, ` +
     `with NO shadow, and keep the same ${k.name.toLowerCase()} margin around the set.`;
 }

@@ -446,6 +446,12 @@ describe('effectiveStyles', () => {
       expect(x).toMatch(/whites, creams and ivories stay clean and neutral.*correct it; never add one/i);
   });
 
+  it('Same Cover on a boxed set carries the volume\'s own emblem; Same Style one chosen for the set', async () => {
+    const { composeSetStylePrompt } = await import('../core/prompt.js');
+    expect(composeSetStylePrompt({ app: {} }, { title: 'Avesta' }, 'The Yasna', 'magenta', 'red leather', { exact: true })).toMatch(/volume's own centre emblem, reproduced faithfully/);
+    expect(composeSetStylePrompt({ app: {} }, { title: 'Avesta' }, 'The Yasna', 'magenta', 'red leather')).toMatch(/one chosen for the whole set/);
+  });
+
   it('a collection with no cover yet gets a boxed set built from a volume (not another single book)', async () => {
     const { composeSetFromVolumePrompt, composePrompt: compose } = await import('../core/prompt.js');
     const p = composeSetFromVolumePrompt({ app: {} }, { title: 'Sahih Muslim', type: 'Collection' }, 'Sahih Muslim (Book 1)', 19);
