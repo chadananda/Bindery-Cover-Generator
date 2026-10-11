@@ -43,11 +43,15 @@ async function persist(fn) {
 }
 // Field edits: merged per row and sent after a pause in typing.
 const pending = new Map();
+// When each row's last edit reached the server (Infinity while waiting or in flight). A library reload that started
+// before then holds the row as it was and must not overwrite it: a model button's refBookId, cleared by the reload
+// produce() starts, sent a Similar Style out as the shelf style.
+const landed = new Map();
 function patch(table, id, fields) {
   const k = `${table}/${id}`;
   const p = pending.get(k) || { fields: {} };
-  Object.assign(p.fields, fields); clearTimeout(p.t);
-  p.t = setTimeout(() => { pending.delete(k); persist(() => api(table === 'libraries' ? base() : `${base()}/${table}/${id}`, { method: 'PATCH', body: JSON.stringify(p.fields) })).catch(() => {}); }, 500);
+  Object.assign(p.fields, fields); clearTimeout(p.t); landed.set(k, Infinity);
+  p.t = setTimeout(() => { pending.delete(k); persist(() => api(table === 'libraries' ? base() : `${base()}/${table}/${id}`, { method: 'PATCH', body: JSON.stringify(p.fields) })).catch(() => {}).finally(() => { if (!pending.has(k)) landed.set(k, Date.now()); }); }, 500);
   pending.set(k, p); saveState('Editing…');
 }
 // Reloading within the 500ms pause dropped the edit (e.g. a model just starred). On page hide, send every pending patch
@@ -178,11 +182,11 @@ const FRESH = { app: ['style', 'keyColor', 'name'], shelves: ['name', 'style', '
   books: ['title', 'subtitle', 'author', 'style', 'override', 'content', 'byline', 'coverTitle', 'pos', 'collectionId', 'shelfId', 'refBookId', 'refMode'] };
 async function refreshProject() {
   if (!lib || !project || document.hidden) return;
+  const started = Date.now();
   let fresh; try { ({ project: fresh } = await api(base())); } catch { return; }
   if (!fresh || fresh.app.name == null) return;
   let changed = false;
-  const take = (table, cur, nu) => { for (const f of FRESH[table]) {
-    if (pending.has(`${table === 'app' ? 'libraries' : table}/${table === 'app' ? lib : cur.id}`) && f in (pending.get(`${table === 'app' ? 'libraries' : table}/${table === 'app' ? lib : cur.id}`).fields)) continue;
+  const take = (table, cur, nu) => { if ((landed.get(`${table === 'app' ? 'libraries' : table}/${table === 'app' ? lib : cur.id}`) ?? 0) >= started) return; for (const f of FRESH[table]) {
     if (JSON.stringify(cur[f] ?? null) !== JSON.stringify(nu[f] ?? null)) { cur[f] = nu[f]; changed = true; } } };
   take('app', project.app, fresh.app);
   for (const t of ['shelves', 'collections', 'books']) {
