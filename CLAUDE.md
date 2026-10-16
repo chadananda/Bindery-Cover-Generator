@@ -30,6 +30,7 @@ Demo https://bindery.lnker.com (custom domain; workers.dev is off). Public read;
 - Shelf and house styles are DRAFTS for Chad to tune. Book `description` feeds the prompt as context (never printed).
 - Looks retired (2026-10-03): no UI, no auto-snapshots; looks table + versions.lookId kept as history.
 - Open: Workers Builds (dashboard connect, deploy command `npm run deploy`); send Yevhenii (byev@solvve.com) the demo; settle golden prompt + 604-vs-450 count.
+- OceanLibrary book ids = the site's ilmId (renamed from Ocean _id 2026-10-16 via ocean-published-books.csv; collections keep col-* ids). R2 keys keep the old id in their path — harmless.
 - Working state is per-browser localStorage, never the DB: the ★ model (`model:<lib>`, sent to /chat), selection, open book,
   chat conversation/mode/draft, drawer, scroll anchor (`view`). libraries.modelBookId is unused (multi-user).
 - Author line: books.byline (NULL = author, '' = none, text = credit) — set by chat (plan `bylines`, Edit-mode `BYLINE:`) or Details. A model's no-author passes to every book based on it. versions.basePrompt = the generation prompt an edit/model-copy descends from (regenerations reuse it).
